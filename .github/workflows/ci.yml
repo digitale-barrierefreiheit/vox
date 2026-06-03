@@ -1,10 +1,11 @@
+# SPDX note: workflow YAML is not part of the SPDX-header check set.
 name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
 
 # Cancel superseded runs on the same ref to save runner minutes.
@@ -14,6 +15,14 @@ concurrency:
 
 permissions:
   contents: read
+
+env:
+  # vcpkg registry commit the build is pinned to. MUST stay in sync with
+  # "builtin-baseline" in vcpkg.json: run-vcpkg checks out vcpkg at exactly this
+  # commit, so the baseline is always resolvable and port versions are
+  # reproducible (architecture §8.6.7). Do not rely on the runner's preinstalled
+  # vcpkg — its commit drifts with the image and may not contain the baseline.
+  VCPKG_BASELINE: "059d760472984042e1b4db0d40efd935a1adcbc9"
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -56,27 +65,20 @@ jobs:
             msvc_arch: amd64_x86
             configure_preset: x86-msvc
             build_preset: x86-msvc-release
-            test_preset: x86-msvc-debug
-    env:
-      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+            test_preset: x86-msvc-release
     steps:
       - uses: actions/checkout@v4
       - uses: lukka/get-cmake@latest
-      - name: Point VCPKG_ROOT at the preinstalled vcpkg
-        shell: pwsh
-        run: |
-          echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
-          New-Item -ItemType Directory -Force -Path "$env:VCPKG_DEFAULT_BINARY_CACHE" | Out-Null
-      - name: Cache vcpkg binary artifacts
-        uses: actions/cache@v4
-        with:
-          path: ${{ github.workspace }}/.vcpkg-cache
-          key: vcpkg-${{ matrix.arch }}-${{ hashFiles('vcpkg.json') }}
-          restore-keys: vcpkg-${{ matrix.arch }}-
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: ${{ matrix.msvc_arch }}
+      # run-vcpkg runs AFTER the MSVC env so its VCPKG_ROOT is not clobbered by
+      # the vcvars that ship with Visual Studio's bundled vcpkg.
+      - name: Set up vcpkg (pinned to the manifest baseline)
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_BASELINE }}
       - name: Configure
         run: cmake --preset ${{ matrix.configure_preset }}
       - name: Build
@@ -90,23 +92,15 @@ jobs:
   clang-tidy:
     name: clang-tidy
     runs-on: ubuntu-24.04
-    env:
-      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
     steps:
       - uses: actions/checkout@v4
       - uses: lukka/get-cmake@latest
       - name: Install LLVM tools
         run: sudo apt-get update && sudo apt-get install -y clang-18 clang-tidy-18 clang-tools-18 ninja-build
-      - name: Point VCPKG_ROOT at the preinstalled vcpkg
-        run: |
-          echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
-          mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
-      - name: Cache vcpkg binary artifacts
-        uses: actions/cache@v4
+      - name: Set up vcpkg (pinned to the manifest baseline)
+        uses: lukka/run-vcpkg@v11
         with:
-          path: ${{ github.workspace }}/.vcpkg-cache
-          key: vcpkg-linux-${{ hashFiles('vcpkg.json') }}
-          restore-keys: vcpkg-linux-
+          vcpkgGitCommitId: ${{ env.VCPKG_BASELINE }}
       - name: Configure (generates compile_commands.json)
         run: cmake --preset linux-clang
         env:
@@ -130,22 +124,15 @@ jobs:
     env:
       CC: clang-18
       CXX: clang++-18
-      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
     steps:
       - uses: actions/checkout@v4
       - uses: lukka/get-cmake@latest
       - name: Install Clang + sanitizer runtimes
         run: sudo apt-get update && sudo apt-get install -y clang-18 ninja-build
-      - name: Point VCPKG_ROOT at the preinstalled vcpkg
-        run: |
-          echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
-          mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
-      - name: Cache vcpkg binary artifacts
-        uses: actions/cache@v4
+      - name: Set up vcpkg (pinned to the manifest baseline)
+        uses: lukka/run-vcpkg@v11
         with:
-          path: ${{ github.workspace }}/.vcpkg-cache
-          key: vcpkg-linux-${{ hashFiles('vcpkg.json') }}
-          restore-keys: vcpkg-linux-
+          vcpkgGitCommitId: ${{ env.VCPKG_BASELINE }}
       - name: Configure
         run: cmake --preset linux-clang-${{ matrix.sanitizer }}
       - name: Build

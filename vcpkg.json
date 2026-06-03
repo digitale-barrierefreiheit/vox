@@ -5,6 +5,7 @@
   "description": "Vox — a high-efficiency, low-latency screen reader (Windows-first).",
   "homepage": "https://github.com/digitale-barrierefreiheit/vox",
   "license": "Apache-2.0",
+  "builtin-baseline": "059d760472984042e1b4db0d40efd935a1adcbc9",
   "dependencies": [
     "gtest"
   ],

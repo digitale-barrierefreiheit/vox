@@ -7,6 +7,12 @@
 # bypass actor (actor_type: DeployKey) on `dev`'s ruleset. Repo-scoped, not
 # person-bound, no PAT. Provide the deploy key's private half as the repo secret
 # `BACKMERGE_SSH_KEY`; the job no-ops with a warning if it is absent.
+#
+# Credentials: we check out WITHOUT persisting any (so the default GITHUB_TOKEN is never
+# written to .git/config), then configure the deploy key explicitly for the fetch/push —
+# so the push unambiguously uses the deploy key. (`token: ""` is NOT an option: checkout
+# rejects an empty token. `persist-credentials: false` together with `ssh-key` is also no
+# good: checkout removes the SSH key on the same cleanup, so a later push has no key.)
 name: Back-merge main to dev
 
 on:
@@ -38,23 +44,27 @@ jobs:
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Check out dev with the back-merge deploy key
+      - name: Check out dev (no persisted credentials)
         if: steps.guard.outputs.run == 'true'
         uses: actions/checkout@v6
         with:
           ref: dev
           fetch-depth: 0
-          ssh-key: ${{ secrets.BACKMERGE_SSH_KEY }}
-          # Persist the deploy key (the push step below needs it), but pass an empty token
-          # so the default GITHUB_TOKEN is NOT also written into .git/config — the push then
-          # unambiguously uses the deploy key. persist-credentials:false would drop the deploy
-          # key too (actions/checkout removes BOTH on cleanup) and break the push.
-          token: ""
-          persist-credentials: true
+          persist-credentials: false
 
-      - name: Merge main into dev and push
+      - name: Merge main into dev and push with the deploy key
         if: steps.guard.outputs.run == 'true'
+        env:
+          DEPLOY_KEY: ${{ secrets.BACKMERGE_SSH_KEY }}
         run: |
+          # Configure the write deploy key for SSH, kept outside the worktree and used
+          # only for this fetch/push (the checkout persisted no credentials).
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/backmerge_key
+          chmod 600 ~/.ssh/backmerge_key
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/backmerge_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          git remote set-url origin "git@github.com:${GITHUB_REPOSITORY}.git"
+
           git config user.name "vox back-merge"
           git config user.email "actions@github.com"
           git fetch origin main

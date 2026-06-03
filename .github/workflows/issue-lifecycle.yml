@@ -7,11 +7,13 @@
 # Branch convention: <type>/<issue-number>-<slug> (e.g. fix/8-...). The issue
 # number is also read from the PR's "Closes #N" references.
 #
-# NOTE on GitHub semantics:
-#   - `create` events run this workflow from the DEFAULT branch (main), so the
-#     "In Progress" step only takes effect once this file is on main.
-#   - `pull_request_target` runs from the PR's BASE branch, so the merge steps
-#     work for dev once this file is on dev, and for main once it is on main.
+# NOTE on GitHub semantics (observed):
+#   - `create` runs this workflow from the NEWLY CREATED branch's copy, so the
+#     "In Progress" step works as soon as a branch carrying this file is pushed
+#     (e.g. branched from dev) — it does not need to be on main.
+#   - `pull_request_target` runs from the DEFAULT branch (main), so the merge
+#     steps (Resolved/Released + branch delete) only take effect once this file is
+#     on main.
 name: Issue lifecycle
 
 on:

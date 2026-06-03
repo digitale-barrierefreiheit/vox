@@ -1,0 +1,124 @@
+# Automates issue status labels across the gitflow and tidies merged branches.
+#
+#   feature branch created  -> issue gets "In Progress"
+#   PR merged into dev       -> "In Progress" -> "Resolved"; delete the feature branch
+#   PR merged into main      -> "Resolved" -> "Released"; close the issue
+#
+# Branch convention: <type>/<issue-number>-<slug> (e.g. fix/8-...). The issue
+# number is also read from the PR's "Closes #N" references.
+#
+# NOTE on GitHub semantics:
+#   - `create` events run this workflow from the DEFAULT branch (main), so the
+#     "In Progress" step only takes effect once this file is on main.
+#   - `pull_request_target` runs from the PR's BASE branch, so the merge steps
+#     work for dev once this file is on dev, and for main once it is on main.
+name: Issue lifecycle
+
+on:
+  create:
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  issues: write
+  contents: write # delete merged feature branches
+  pull-requests: read
+
+jobs:
+  start:
+    name: Mark In Progress on branch creation
+    if: ${{ github.event_name == 'create' && github.event.ref_type == 'branch' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const branch = context.payload.ref;
+            const match = branch.match(/^[^/]+\/(\d+)(?:[-_/]|$)/);
+            if (!match) {
+              core.info(`Branch '${branch}' has no issue number; skipping.`);
+              return;
+            }
+            const issue_number = Number(match[1]);
+            try {
+              const { data: issue } = await github.rest.issues.get({ ...context.repo, issue_number });
+              if (issue.state !== 'open') {
+                core.info(`Issue #${issue_number} is ${issue.state}; skipping.`);
+                return;
+              }
+            } catch (error) {
+              core.info(`Issue #${issue_number} not found; skipping.`);
+              return;
+            }
+            for (const name of ['Resolved', 'Released']) {
+              try {
+                await github.rest.issues.removeLabel({ ...context.repo, issue_number, name });
+              } catch (error) { /* label not present */ }
+            }
+            await github.rest.issues.addLabels({ ...context.repo, issue_number, labels: ['In Progress'] });
+            core.info(`Marked #${issue_number} as In Progress.`);
+
+  finish:
+    name: Update labels on merge
+    if: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.merged == true }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const base = pr.base.ref;
+            if (base !== 'dev' && base !== 'main') {
+              core.info(`PR base '${base}' is not tracked; skipping.`);
+              return;
+            }
+
+            // Collect issue numbers from the head branch name and "Closes #N".
+            const issues = new Set();
+            const branchMatch = pr.head.ref.match(/^[^/]+\/(\d+)(?:[-_/]|$)/);
+            if (branchMatch) issues.add(Number(branchMatch[1]));
+            const query = `query($owner:String!,$repo:String!,$num:Int!){
+              repository(owner:$owner,name:$repo){
+                pullRequest(number:$num){
+                  closingIssuesReferences(first:20){nodes{number}}}}}`;
+            try {
+              const result = await github.graphql(query, {
+                owner: context.repo.owner, repo: context.repo.repo, num: pr.number,
+              });
+              for (const node of result.repository.pullRequest.closingIssuesReferences.nodes) {
+                issues.add(node.number);
+              }
+            } catch (error) {
+              core.info(`closingIssuesReferences lookup failed: ${error.message}`);
+            }
+            core.info(`Linked issues: ${[...issues].join(', ') || '(none)'}`);
+
+            const remove = async (issue_number, names) => {
+              for (const name of names) {
+                try {
+                  await github.rest.issues.removeLabel({ ...context.repo, issue_number, name });
+                } catch (error) { /* label not present */ }
+              }
+            };
+
+            for (const issue_number of issues) {
+              if (base === 'dev') {
+                await remove(issue_number, ['In Progress']);
+                await github.rest.issues.addLabels({ ...context.repo, issue_number, labels: ['Resolved'] });
+              } else {
+                await remove(issue_number, ['In Progress', 'Resolved']);
+                await github.rest.issues.addLabels({ ...context.repo, issue_number, labels: ['Released'] });
+                await github.rest.issues.update({ ...context.repo, issue_number, state: 'closed' });
+              }
+            }
+
+            // Delete the merged feature branch (same-repo only; never dev/main).
+            const sameRepo = pr.head.repo && pr.head.repo.full_name === pr.base.repo.full_name;
+            if (sameRepo && pr.head.ref !== 'dev' && pr.head.ref !== 'main') {
+              try {
+                await github.rest.git.deleteRef({ ...context.repo, ref: `heads/${pr.head.ref}` });
+                core.info(`Deleted branch ${pr.head.ref}.`);
+              } catch (error) {
+                core.info(`Branch ${pr.head.ref} already deleted.`);
+              }
+            }

@@ -3,7 +3,7 @@
 # clang-cl on the host or CI — not this image.
 #
 # Base image ships CMake, Ninja, and a vcpkg checkout at $VCPKG_ROOT.
-FROM mcr.microsoft.com/devcontainers/cpp:1-debian-12
+FROM mcr.microsoft.com/devcontainers/cpp:2.0-debian-13
 
 ARG LLVM_VERSION=18
 

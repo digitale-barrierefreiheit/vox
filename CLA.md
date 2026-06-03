@@ -35,6 +35,6 @@ The owner is under no obligation to accept or use any contribution.
 
 Contributions are gated by an automated CLA check on each pull request (`.github/workflows/cla.yml`). On your first pull request, the bot will ask you to confirm agreement by posting a comment with the exact sentence:
 
-> I have read the CLA document and I hereby sign the CLA
+> I have read the CLA document and I hereby sign the CLA!
 
 Your GitHub username and the signing commit are recorded in a signatures file in this repository. Signing once covers all your future contributions unless this agreement changes.

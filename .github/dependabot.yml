@@ -1,0 +1,28 @@
+# Dependabot keeps our GitHub Actions and the devcontainer base image current.
+#
+# Note: Dependabot does NOT support the vcpkg manifest, so vcpkg.json's
+# "builtin-baseline" (and any port version pins) must be bumped manually.
+version: 2
+updates:
+  # GitHub Actions used across .github/workflows.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    target-branch: "dev" # follow the gitflow: PRs land on dev, not main
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  # Devcontainer base image (.devcontainer/Dockerfile).
+  - package-ecosystem: "docker"
+    directory: "/.devcontainer"
+    schedule:
+      interval: "weekly"
+    target-branch: "dev"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"

@@ -1,0 +1,29 @@
+name: Feature request
+description: Propose a capability or improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What user need or limitation does this address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should Vox do? Note any impact on the latency / overhead quality goals.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: docs
+    attributes:
+      label: Documentation impact
+      options:
+        - label: This likely needs a requirement in doc/requirements
+        - label: This likely needs an architecture/ADR update

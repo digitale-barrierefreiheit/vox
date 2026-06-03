@@ -1,0 +1,66 @@
+# Vox static-analysis & naming ruleset (architecture §8.6.5 / ADR-13).
+# Enforced in CI alongside MSVC /analyze. C++ Core Guidelines form the baseline;
+# a few checks are relaxed because they fight the hot-path / Win32 reality
+# documented in the architecture (raw pointers across the COM/SHM boundary,
+# C-style POD wire structs, etc.). Keep the sanctioned-deviation list honest.
+---
+Checks: >
+  -*,
+  bugprone-*,
+  cert-*,
+  clang-analyzer-*,
+  concurrency-*,
+  cppcoreguidelines-*,
+  hicpp-*,
+  misc-*,
+  modernize-*,
+  performance-*,
+  portability-*,
+  readability-*,
+  -modernize-use-trailing-return-type,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  -cppcoreguidelines-avoid-non-const-global-variables,
+  -hicpp-no-array-decay,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -misc-no-recursion,
+  -modernize-use-nodiscard,
+  -llvmlibc-*
+
+# CI fails the build on any warning that survives the filter above (mirrors /WX).
+WarningsAsErrors: '*'
+
+HeaderFilterRegex: '.*/(src|libs|include)/.*\.(h|hpp|hxx|inl)$'
+FormatStyle: file
+
+CheckOptions:
+  # --- Naming (architecture §8.6.5: intention-revealing, no Hungarian) ---------
+  - { key: readability-identifier-naming.NamespaceCase,            value: lower_case }
+  - { key: readability-identifier-naming.ClassCase,               value: CamelCase }
+  - { key: readability-identifier-naming.StructCase,              value: CamelCase }
+  - { key: readability-identifier-naming.EnumCase,                value: CamelCase }
+  - { key: readability-identifier-naming.UnionCase,               value: CamelCase }
+  - { key: readability-identifier-naming.TypeAliasCase,           value: CamelCase }
+  - { key: readability-identifier-naming.TypedefCase,             value: CamelCase }
+  - { key: readability-identifier-naming.TemplateParameterCase,   value: CamelCase }
+  - { key: readability-identifier-naming.FunctionCase,            value: camelBack }
+  - { key: readability-identifier-naming.MethodCase,              value: camelBack }
+  - { key: readability-identifier-naming.ParameterCase,           value: camelBack }
+  - { key: readability-identifier-naming.VariableCase,            value: camelBack }
+  - { key: readability-identifier-naming.LocalVariableCase,       value: camelBack }
+  - { key: readability-identifier-naming.MemberCase,              value: camelBack }
+  - { key: readability-identifier-naming.PrivateMemberSuffix,     value: _ }
+  - { key: readability-identifier-naming.ProtectedMemberSuffix,   value: _ }
+  - { key: readability-identifier-naming.PublicMemberCase,        value: camelBack }
+  - { key: readability-identifier-naming.EnumConstantCase,        value: CamelCase }
+  - { key: readability-identifier-naming.ScopedEnumConstantCase,  value: CamelCase }
+  - { key: readability-identifier-naming.ConstexprVariableCase,   value: CamelCase }
+  - { key: readability-identifier-naming.GlobalConstantCase,      value: CamelCase }
+  - { key: readability-identifier-naming.MacroDefinitionCase,     value: UPPER_CASE }
+  # --- Behaviour tweaks --------------------------------------------------------
+  - { key: readability-braces-around-statements.ShortStatementLines, value: '0' }
+  - { key: performance-move-const-arg.CheckTriviallyCopyableMove,    value: 'false' }
+  - { key: misc-include-cleaner.IgnoreHeaders,                       value: 'windows\.h;.*/detail/.*' }

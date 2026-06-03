@@ -1,0 +1,55 @@
+# ---------------------------------------------------------------------------
+# Normalize line endings. The repo is worked on from both Windows (MSVC) and
+# Linux (devcontainer / sanitizer CI); storing LF in the repo keeps diffs and
+# hashes stable across platforms. Git checks out native endings per the rules
+# below.
+# ---------------------------------------------------------------------------
+* text=auto
+
+# Source and text: stored as LF in the repo.
+*.c     text eol=lf
+*.cc    text eol=lf
+*.cpp   text eol=lf
+*.cxx   text eol=lf
+*.h     text eol=lf
+*.hpp   text eol=lf
+*.hxx   text eol=lf
+*.inl   text eol=lf
+*.ipp   text eol=lf
+*.cmake text eol=lf
+*.txt   text eol=lf
+*.md    text eol=lf
+*.json  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.toml  text eol=lf
+*.py    text eol=lf
+*.sh    text eol=lf
+
+# Windows-native scripts must stay CRLF to run correctly.
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+*.ps1   text eol=crlf
+*.sln   text eol=crlf
+
+# ---------------------------------------------------------------------------
+# Binary assets — never normalize, never diff as text.
+# (Voices, models and the phrase cache ship as binary; see architecture §7.)
+# ---------------------------------------------------------------------------
+*.onnx   binary
+*.pcm    binary
+*.wav    binary
+*.bin    binary
+*.png    binary
+*.jpg    binary
+*.ico    binary
+*.pdf    binary
+*.ttf    binary
+*.zip    binary
+
+# ---------------------------------------------------------------------------
+# GitHub Linguist hints: keep generated/vendored content out of the language
+# stats and mark documentation so the repo isn't reported as "Markdown".
+# ---------------------------------------------------------------------------
+doc/**          linguist-documentation
+third_party/**  linguist-vendored

@@ -1,0 +1,37 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "CMake: configure (x64-msvc)",
+      "type": "shell",
+      "command": "cmake",
+      "args": ["--preset", "x64-msvc"],
+      "problemMatcher": ["$msCompile"],
+      "group": "build"
+    },
+    {
+      "label": "CMake: build (x64-msvc Debug)",
+      "type": "shell",
+      "command": "cmake",
+      "args": ["--build", "--preset", "x64-msvc-debug"],
+      "problemMatcher": ["$msCompile"],
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "CTest: run (x64-msvc Debug)",
+      "type": "shell",
+      "command": "ctest",
+      "args": ["--preset", "x64-msvc-debug"],
+      "problemMatcher": [],
+      "group": { "kind": "test", "isDefault": true },
+      "dependsOn": "CMake: build (x64-msvc Debug)"
+    },
+    {
+      "label": "clang-format: check all",
+      "type": "shell",
+      "command": "python",
+      "args": ["${workspaceFolder}/tools/run-clang-format.py", "--check"],
+      "problemMatcher": []
+    }
+  ]
+}

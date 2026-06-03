@@ -1,0 +1,53 @@
+name: Bug report
+description: Report a defect in Vox
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a report. For **security** issues, use the private
+        process in [SECURITY.md](../../SECURITY.md) instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the problem and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal, ordered steps. Include the application being read if relevant.
+      placeholder: |
+        1. Open ...
+        2. Navigate to ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: input
+    id: app
+    attributes:
+      label: Affected application(s)
+      description: e.g. Chrome 126, Word, Windows Explorer, a terminal.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Suspected component
+      options:
+        - Unknown
+        - Input / keyboard
+        - Provider (UIA / IA2 / MSAA)
+        - In-process helper / injection
+        - Object model / browse mode
+        - Output manager
+        - TTS / German front-end
+        - Braille
+        - Build / tooling
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Windows version, Vox version/commit, architecture (x64/x86).
+    validations:
+      required: true

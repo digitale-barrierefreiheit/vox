@@ -1,0 +1,29 @@
+{
+  "name": "Vox (Clang / sanitizers / Linux core)",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "containerEnv": {
+    "VCPKG_ROOT": "/usr/local/vcpkg",
+    "VCPKG_FORCE_SYSTEM_BINARIES": "1"
+  },
+  "remoteEnv": {
+    "PATH": "${containerEnv:PATH}:/usr/local/vcpkg"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools-extension-pack",
+        "ms-vscode.cmake-tools",
+        "llvm-vs-code-extensions.vscode-clangd",
+        "editorconfig.editorconfig",
+        "github.vscode-github-actions"
+      ],
+      "settings": {
+        "cmake.useCMakePresets": "always"
+      }
+    }
+  },
+  "postCreateCommand": "cmake --version && clang --version && ninja --version",
+  "remoteUser": "vscode"
+}

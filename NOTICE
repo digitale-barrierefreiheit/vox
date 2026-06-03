@@ -1,0 +1,22 @@
+Vox
+Copyright 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+When redistributing this software, retain this NOTICE file and the attribution
+above (Apache-2.0 §4(d)).
+
+------------------------------------------------------------------------------
+Third-party components
+------------------------------------------------------------------------------
+
+This product depends on software developed by third parties. Their licenses
+govern those components; the list below is informational.
+
+- ONNX Runtime — MIT License — https://github.com/microsoft/onnxruntime
+- GoogleTest (test only) — BSD 3-Clause — https://github.com/google/googletest
+
+The German grapheme-to-phoneme component (espeak-ng, GPLv3) is NOT linked into
+any first-party Vox binary. Where used, it runs as a separate, optional,
+arm's-length process under its own GPLv3 terms; its source is provided
+independently. See ADR-15/ADR-16 in doc/architecture/architecture.md.

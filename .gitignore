@@ -1,0 +1,89 @@
+# ---------------------------------------------------------------------------
+# Build output
+# ---------------------------------------------------------------------------
+/build/
+/out/
+/cmake-build-*/
+**/CMakeUserPresets.json
+
+# CMake intermediate
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+compile_commands.json
+Testing/
+
+# ---------------------------------------------------------------------------
+# vcpkg (manifest mode: deps are restored, never committed)
+# ---------------------------------------------------------------------------
+/vcpkg_installed/
+**/vcpkg_installed/
+.vcpkg-root
+
+# ---------------------------------------------------------------------------
+# Visual Studio / MSBuild
+# ---------------------------------------------------------------------------
+.vs/
+*.vcxproj.user
+*.suo
+*.user
+*.aps
+*.sln.docstates
+[Dd]ebug/
+[Rr]elease/
+[Xx]64/
+[Xx]86/
+[Ww]in32/
+
+# ---------------------------------------------------------------------------
+# VSCode — keep shared settings, ignore machine-local artifacts
+# ---------------------------------------------------------------------------
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/cmake-kits.json
+.vscode/.cmaketools.json
+.vscode/ipch/
+
+# ---------------------------------------------------------------------------
+# Compiler / linker / debug artifacts
+# ---------------------------------------------------------------------------
+*.obj
+*.o
+*.a
+*.lib
+*.pdb
+*.ilk
+*.exp
+*.idb
+*.dll
+*.exe
+*.so
+*.so.*
+*.dylib
+*.gcda
+*.gcno
+*.profraw
+*.profdata
+
+# ---------------------------------------------------------------------------
+# Generated documentation (Doxygen)
+# ---------------------------------------------------------------------------
+/doc/reference/
+
+# ---------------------------------------------------------------------------
+# Tooling caches / logs
+# ---------------------------------------------------------------------------
+.cache/
+*.log
+
+# ---------------------------------------------------------------------------
+# OS noise
+# ---------------------------------------------------------------------------
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store

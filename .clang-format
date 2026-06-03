@@ -1,0 +1,53 @@
+# Vox C++ formatting — one enforced style, gated in CI (architecture §8.6.5).
+# Requires clang-format >= 17.
+---
+Language: Cpp
+BasedOnStyle: LLVM
+
+# Indentation: 2 spaces, never tabs (matches .editorconfig).
+IndentWidth: 2
+TabWidth: 2
+UseTab: Never
+ContinuationIndentWidth: 4
+AccessModifierOffset: -2
+NamespaceIndentation: None
+
+# Line length: generous enough for spelled-out, intention-revealing names.
+ColumnLimit: 100
+
+# Braces & spacing.
+BreakBeforeBraces: Attach
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+FixNamespaceComments: true
+ShortNamespaceLines: 0
+
+# Pointers/references bind to the type: `int* p`, `const Foo& ref`.
+PointerAlignment: Left
+ReferenceAlignment: Left
+QualifierAlignment: Left
+
+# Includes: group and sort so include-what-you-use stays tidy (§8.6.5).
+SortIncludes: CaseInsensitive
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^<vox/'      # project public headers
+    Priority: 4
+  - Regex: '^"'          # local headers
+    Priority: 5
+  - Regex: '^<windows\.h>'
+    Priority: 1
+  - Regex: '^<(gtest|gmock)/'
+    Priority: 3
+  - Regex: '^<'          # standard / third-party
+    Priority: 2
+
+# Misc modern-C++ niceties.
+Cpp11BracedListStyle: true
+SpaceAfterTemplateKeyword: false
+AlwaysBreakTemplateDeclarations: Yes
+EmptyLineBeforeAccessModifier: LogicalBlock
+SeparateDefinitionBlocks: Always
+IndentPPDirectives: AfterHash

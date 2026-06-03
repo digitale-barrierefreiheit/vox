@@ -1,0 +1,40 @@
+# Doxygen configuration template. CMake substitutes @VARS@ (see doc/CMakeLists.txt).
+# Tuned for: documented private members (AGENTS.md), C++ source, Markdown docs.
+
+PROJECT_NAME           = "Vox"
+PROJECT_NUMBER         = "@PROJECT_VERSION@"
+PROJECT_BRIEF          = "@PROJECT_DESCRIPTION@"
+OUTPUT_DIRECTORY       = "@VOX_DOXYGEN_OUTPUT_DIR@"
+
+INPUT                  = "@VOX_DOXYGEN_INPUT_DIR@" "@PROJECT_SOURCE_DIR@/doc/architecture"
+RECURSIVE              = YES
+FILE_PATTERNS          = *.hpp *.hxx *.h *.cpp *.inl *.ipp *.md
+EXTENSION_MAPPING      = in=C++
+USE_MDFILE_AS_MAINPAGE = "@PROJECT_SOURCE_DIR@/README.md"
+
+# Document everything, including private/internal members (AGENTS.md).
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = YES
+EXTRACT_STATIC         = YES
+EXTRACT_ANON_NSPACES   = YES
+
+# Surface gaps so doc coverage can be enforced over time.
+WARN_IF_UNDOCUMENTED   = YES
+WARN_IF_DOC_ERROR      = YES
+WARN_AS_ERROR          = NO
+QUIET                  = YES
+
+# Output: HTML reference; no LaTeX.
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+HTML_OUTPUT            = html
+
+# C++-friendly parsing.
+BUILTIN_STL_SUPPORT    = YES
+JAVADOC_AUTOBRIEF      = YES
+MARKDOWN_SUPPORT       = YES
+SOURCE_BROWSER         = YES
+GENERATE_TREEVIEW      = YES
+
+# Diagrams (rendered only if Graphviz/dot is available).
+HAVE_DOT               = NO

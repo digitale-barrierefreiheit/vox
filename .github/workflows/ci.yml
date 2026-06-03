@@ -1,0 +1,154 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref to save runner minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Fast, dependency-free gates: license headers and code formatting.
+  # ---------------------------------------------------------------------------
+  license-headers:
+    name: license-headers
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check SPDX headers
+        run: python3 tools/check-license-headers.py
+
+  format:
+    name: clang-format
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format-18
+      - name: Check formatting
+        run: python3 tools/run-clang-format.py --check --clang-format clang-format-18
+
+  # ---------------------------------------------------------------------------
+  # Shipping toolchain: MSVC, static CRT, 64-bit and 32-bit (R12 wire layout).
+  # ---------------------------------------------------------------------------
+  windows:
+    name: windows-${{ matrix.arch }}-msvc
+    runs-on: windows-2025
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            msvc_arch: amd64
+            configure_preset: x64-msvc
+            build_preset: x64-msvc-release
+            test_preset: x64-msvc-release
+          - arch: x86
+            msvc_arch: amd64_x86
+            configure_preset: x86-msvc
+            build_preset: x86-msvc-release
+            test_preset: x86-msvc-debug
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lukka/get-cmake@latest
+      - name: Point VCPKG_ROOT at the preinstalled vcpkg
+        shell: pwsh
+        run: |
+          echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+          New-Item -ItemType Directory -Force -Path "$env:VCPKG_DEFAULT_BINARY_CACHE" | Out-Null
+      - name: Cache vcpkg binary artifacts
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.vcpkg-cache
+          key: vcpkg-${{ matrix.arch }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-${{ matrix.arch }}-
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc_arch }}
+      - name: Configure
+        run: cmake --preset ${{ matrix.configure_preset }}
+      - name: Build
+        run: cmake --build --preset ${{ matrix.build_preset }}
+      - name: Test
+        run: ctest --preset ${{ matrix.test_preset }}
+
+  # ---------------------------------------------------------------------------
+  # Static analysis: clang-tidy over the compile database (incl. Core Guidelines).
+  # ---------------------------------------------------------------------------
+  clang-tidy:
+    name: clang-tidy
+    runs-on: ubuntu-24.04
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lukka/get-cmake@latest
+      - name: Install LLVM tools
+        run: sudo apt-get update && sudo apt-get install -y clang-18 clang-tidy-18 clang-tools-18 ninja-build
+      - name: Point VCPKG_ROOT at the preinstalled vcpkg
+        run: |
+          echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
+          mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+      - name: Cache vcpkg binary artifacts
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.vcpkg-cache
+          key: vcpkg-linux-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-linux-
+      - name: Configure (generates compile_commands.json)
+        run: cmake --preset linux-clang
+        env:
+          CC: clang-18
+          CXX: clang++-18
+      - name: Run clang-tidy
+        run: |
+          run-clang-tidy-18 -p build/linux-clang -warnings-as-errors='*' \
+            $(git ls-files 'src/*.cpp' 'tests/*.cpp')
+
+  # ---------------------------------------------------------------------------
+  # Sanitizer matrix on the OS-independent cores (ASan+UBSan, TSan) — ADR-14.
+  # ---------------------------------------------------------------------------
+  sanitizers:
+    name: linux-clang-${{ matrix.sanitizer }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [asan, tsan]
+    env:
+      CC: clang-18
+      CXX: clang++-18
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lukka/get-cmake@latest
+      - name: Install Clang + sanitizer runtimes
+        run: sudo apt-get update && sudo apt-get install -y clang-18 ninja-build
+      - name: Point VCPKG_ROOT at the preinstalled vcpkg
+        run: |
+          echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
+          mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+      - name: Cache vcpkg binary artifacts
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.vcpkg-cache
+          key: vcpkg-linux-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-linux-
+      - name: Configure
+        run: cmake --preset linux-clang-${{ matrix.sanitizer }}
+      - name: Build
+        run: cmake --build --preset linux-clang-${{ matrix.sanitizer }}
+      - name: Test
+        run: ctest --preset linux-clang-${{ matrix.sanitizer }}

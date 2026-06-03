@@ -1,0 +1,40 @@
+# EditorConfig — single source of truth for indentation and whitespace.
+# Honoured natively by Visual Studio, and by VSCode/CLion with the
+# EditorConfig extension. https://editorconfig.org
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# C/C++ sources follow the project .clang-format; 2-space indent matches it.
+[*.{c,cc,cpp,cxx,h,hpp,hxx,inl,ipp}]
+indent_size = 2
+
+[*.{cmake,txt}]
+indent_size = 2
+
+[CMakeLists.txt]
+indent_size = 2
+
+[*.{json,jsonc}]
+indent_size = 2
+
+[*.{yml,yaml}]
+indent_size = 2
+
+[*.md]
+indent_size = 2
+# Markdown uses trailing spaces for hard line breaks.
+trim_trailing_whitespace = false
+
+# Windows-native scripts keep CRLF (mirrors .gitattributes).
+[*.{bat,cmd,ps1}]
+end_of_line = crlf
+
+[Makefile]
+indent_style = tab

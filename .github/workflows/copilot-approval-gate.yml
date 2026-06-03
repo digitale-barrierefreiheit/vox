@@ -12,8 +12,12 @@
 #      review (the repo allows Actions to approve), making the PR mergeable.
 #   4. A human code owner performs the actual merge.
 #
-# Security: the approve job acts ONLY on reviews authored by the Copilot bot, so a human
-# cannot spoof the verdict, and it never merges — a person still pulls the trigger.
+# Security: the approve job acts ONLY on reviews whose author login EXACTLY matches the
+# Copilot review bot — `copilot-pull-request-reviewer[bot]`, overridable via the
+# `COPILOT_REVIEWER_LOGIN` repo variable. A substring match would be too weak: other bot
+# accounts (e.g. this repo's `copilot-swe-agent`, or a malicious `notcopilot[bot]`) could
+# satisfy it and self-approve. A human cannot spoof the verdict, and the job never merges —
+# a person still pulls the trigger.
 name: Copilot approval gate
 
 on:
@@ -62,7 +66,7 @@ jobs:
       github.event_name == 'pull_request_review' &&
       github.event.pull_request.base.ref == 'main' &&
       github.event.review.user.type == 'Bot' &&
-      contains(github.event.review.user.login, 'opilot') &&
+      github.event.review.user.login == (vars.COPILOT_REVIEWER_LOGIN || 'copilot-pull-request-reviewer[bot]') &&
       contains(github.event.review.body, 'OK, I APPROVE')
     runs-on: ubuntu-24.04
     steps:

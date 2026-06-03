@@ -8,11 +8,13 @@
 # person-bound, no PAT. Provide the deploy key's private half as the repo secret
 # `BACKMERGE_SSH_KEY`; the job no-ops with a warning if it is absent.
 #
-# Credentials: we check out WITHOUT persisting any (so the default GITHUB_TOKEN is never
-# written to .git/config), then configure the deploy key explicitly for the fetch/push —
-# so the push unambiguously uses the deploy key. (`token: ""` is NOT an option: checkout
-# rejects an empty token. `persist-credentials: false` together with `ssh-key` is also no
-# good: checkout removes the SSH key on the same cleanup, so a later push has no key.)
+# Credentials & key handling: we check out WITHOUT persisting any credentials (so the
+# default GITHUB_TOKEN is never written to .git/config), then configure the deploy key
+# explicitly for the fetch/push. The private key is written to a per-job temp file (never
+# ~/.ssh), GitHub's host keys are pinned via ssh-keyscan (no blind TOFU), and a final
+# always() step removes the key even if the push failed. (`token: ""` is NOT an option:
+# checkout rejects an empty token. `persist-credentials: false` together with `ssh-key` is
+# also no good: checkout removes the SSH key on the same cleanup, so a later push has no key.)
 name: Back-merge main to dev
 
 on:
@@ -57,12 +59,18 @@ jobs:
         env:
           DEPLOY_KEY: ${{ secrets.BACKMERGE_SSH_KEY }}
         run: |
-          # Configure the write deploy key for SSH, kept outside the worktree and used
-          # only for this fetch/push (the checkout persisted no credentials).
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/backmerge_key
-          chmod 600 ~/.ssh/backmerge_key
-          export GIT_SSH_COMMAND="ssh -i ~/.ssh/backmerge_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          # Write the deploy key to a per-job temp file (never ~/.ssh), created with strict
+          # perms; the always() step below removes it even if this step fails. Pin GitHub's
+          # host keys via ssh-keyscan rather than blindly trusting whatever is presented.
+          key_file="$RUNNER_TEMP/backmerge_key"
+          known_hosts="$RUNNER_TEMP/known_hosts"
+          (umask 077; printf '%s\n' "$DEPLOY_KEY" > "$key_file")
+          ssh-keyscan -t rsa,ecdsa,ed25519 github.com > "$known_hosts" 2>/dev/null
+          if [ ! -s "$known_hosts" ]; then
+            echo "::error::ssh-keyscan returned no host keys for github.com."
+            exit 1
+          fi
+          export GIT_SSH_COMMAND="ssh -i $key_file -o IdentitiesOnly=yes -o UserKnownHostsFile=$known_hosts -o StrictHostKeyChecking=yes"
           git remote set-url origin "git@github.com:${GITHUB_REPOSITORY}.git"
 
           git config user.name "vox back-merge"
@@ -76,3 +84,7 @@ jobs:
             git merge --abort || true
             exit 1
           fi
+
+      - name: Remove the deploy key (always, even on failure)
+        if: always()
+        run: rm -f "$RUNNER_TEMP/backmerge_key" "$RUNNER_TEMP/known_hosts"

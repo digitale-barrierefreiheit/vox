@@ -1,0 +1,47 @@
+# After anything lands on `main` (a release), back-merge `main` into `dev` so `dev`
+# never falls behind `main`. This keeps the "require branches up to date" (strict)
+# rule on `main` — which we keep on for quality — from blocking the next
+# `dev -> main` release PR.
+#
+# Why a PAT: writing to the protected `dev` branch from Actions needs a token that
+# can bypass its protection. The default GITHUB_TOKEN cannot (protected branch, and
+# it does not trigger downstream CI). Provide a repo secret `BACKMERGE_TOKEN`: a
+# fine-grained PAT of a repo admin with Contents: read/write (an admin bypasses
+# `dev`'s protection because enforce_admins is off). The job no-ops if it is unset.
+name: Back-merge main to dev
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Serialize so two quick releases can't race on the dev ref.
+concurrency:
+  group: back-merge-main-to-dev
+  cancel-in-progress: false
+
+jobs:
+  back-merge:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Merge main into dev
+        env:
+          GH_TOKEN: ${{ secrets.BACKMERGE_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::BACKMERGE_TOKEN is not set; skipping the back-merge."
+            exit 0
+          fi
+          # merges API: 201 = merged, 204 = already up to date (both exit 0);
+          # 409 = merge conflict -> fail and ask for a manual resolution.
+          if gh api --method POST "repos/$REPO/merges" \
+               -f base=dev -f head=main \
+               -f commit_message="chore: back-merge main into dev"; then
+            echo "dev is up to date with main."
+          else
+            echo "::error::Back-merge failed (merge conflict or permissions). Resolve dev <- main manually."
+            exit 1
+          fi

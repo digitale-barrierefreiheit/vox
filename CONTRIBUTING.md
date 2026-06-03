@@ -87,6 +87,10 @@ Write clear, imperative commit subjects (e.g. "Add SPSC ring index math").
 Reference issues where relevant. Keep changes small and focused — the
 architecture explicitly favours small steps over large ones.
 
-**Squash before merging.** Merge a branch as a single squashed commit with a
-Conventional-Commits message: lowercase after the `type:`, imperative, and no
-`Co-Authored-By` trailer.
+**Merge strategy.** Squash at the feature level only:
+
+- **feature → `dev`:** squash-merge (one clean commit per issue), with a
+  Conventional-Commits message: lowercase after the `type:`, imperative, and no
+  `Co-Authored-By` trailer.
+- **`dev` → `main`:** **merge commit** — never squash or rewrite `dev` (it diverges
+  the branches and breaks feature branches based on `dev`); **tag releases on `main`**.

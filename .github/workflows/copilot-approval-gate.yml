@@ -1,0 +1,78 @@
+# Copilot-gated approval for PRs into `main`.
+#
+# A solo code owner cannot self-approve their own release PR, so instead of an admin
+# bypass (which performs no review at all) we automate the *approval* gated on a strict
+# Copilot review, and keep the *merge* a manual human (code-owner) action.
+#
+#   1. On a PR into `main`, post a comment with a strict review prompt for Copilot.
+#   2. A maintainer triggers Copilot review (the org's Copilot is unconfigured, so this
+#      is manual via a personal seat).
+#   3. When Copilot submits a review whose body contains "OK, I APPROVE", this workflow
+#      approves the PR with GITHUB_TOKEN. That approval counts toward the single required
+#      review (the repo allows Actions to approve), making the PR mergeable.
+#   4. A human code owner performs the actual merge.
+#
+# Security: the approve job acts ONLY on reviews authored by the Copilot bot, so a human
+# cannot spoof the verdict, and it never merges — a person still pulls the trigger.
+name: Copilot approval gate
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+    branches: [main]
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  prompt:
+    name: Post the Copilot review prompt
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Comment with the strict review prompt
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh pr comment "$PR" --repo "$REPO" --body "$(cat <<'BODY'
+          You opened this pull request as a code owner. Trigger a Copilot review and it can
+          approve automatically if everything is in order.
+
+          **@copilot** Please review this pull request **very strictly**:
+
+          - Were the coding guidelines respected (`AGENTS.md`, `doc/architecture`)?
+          - Is everything well covered by automated tests?
+          - Did you find anything that is a security problem or could be considered harmful?
+          - Is everything green (build, tests, linters/analyzers — no errors or warnings)?
+
+          If you find anything that should block a release, reply with **STOP** and say what to fix.
+          If nothing critical blocks a release, include the exact line **OK, I APPROVE** (alongside
+          any suggestions).
+          BODY
+          )"
+
+  approve:
+    name: Approve when Copilot says OK
+    if: >
+      github.event_name == 'pull_request_review' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.review.user.type == 'Bot' &&
+      contains(github.event.review.user.login, 'opilot') &&
+      contains(github.event.review.body, 'OK, I APPROVE')
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Approve the pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          REVIEWER: ${{ github.event.review.user.login }}
+        run: |
+          echo "Copilot ($REVIEWER) returned OK, I APPROVE on PR #$PR — approving."
+          gh pr review "$PR" --repo "$REPO" --approve \
+            --body "Auto-approved: Copilot's strict review returned **OK, I APPROVE**. A code owner still performs the merge."

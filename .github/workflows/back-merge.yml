@@ -45,6 +45,11 @@ jobs:
           ref: dev
           fetch-depth: 0
           ssh-key: ${{ secrets.BACKMERGE_SSH_KEY }}
+          # Persist the deploy key (the push step below needs it), but pass an empty token
+          # so the default GITHUB_TOKEN is NOT also written into .git/config — the push then
+          # unambiguously uses the deploy key. persist-credentials:false would drop the deploy
+          # key too (actions/checkout removes BOTH on cleanup) and break the push.
+          token: ""
           persist-credentials: true
 
       - name: Merge main into dev and push

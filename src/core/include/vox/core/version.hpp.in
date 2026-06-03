@@ -14,17 +14,17 @@
 #include <cstdint>
 #include <string_view>
 
-/// Major version component, fixed at configure time.
-#define VOX_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
-/// Minor version component, fixed at configure time.
-#define VOX_VERSION_MINOR @PROJECT_VERSION_MINOR@
-/// Patch version component, fixed at configure time.
-#define VOX_VERSION_PATCH @PROJECT_VERSION_PATCH@
-/// Dotted version string, e.g. "0.0.1".
-#define VOX_VERSION_STRING "@PROJECT_VERSION@"
-
 /// Root namespace for all first-party Vox code.
 namespace vox::core {
+
+/// Major version component, fixed at configure time (incompatible API changes).
+inline constexpr std::uint32_t VersionMajor = @PROJECT_VERSION_MAJOR@;
+/// Minor version component, fixed at configure time (compatible additions).
+inline constexpr std::uint32_t VersionMinor = @PROJECT_VERSION_MINOR@;
+/// Patch version component, fixed at configure time (compatible fixes).
+inline constexpr std::uint32_t VersionPatch = @PROJECT_VERSION_PATCH@;
+/// Dotted version string, e.g. "0.0.1".
+inline constexpr std::string_view VersionString = "@PROJECT_VERSION@";
 
 /// Immutable description of the build's semantic version.
 struct VersionInfo {

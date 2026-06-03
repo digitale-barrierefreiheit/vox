@@ -69,9 +69,15 @@ ADR-15/ADR-16 in `doc/architecture/architecture.md`.
 is merged via pull request into `dev`; `dev` is released to `main` via a
 `dev` → `main` pull request. Direct pushes to `dev`/`main` are blocked.
 
-**Squash before merging.** Always squash a branch into a single commit when
-merging (squash-merge), with a clean Conventional-Commits message: lowercase
-after the `type:`, imperative mood, and **no `Co-Authored-By` trailer**.
+**Merge strategy.** Squash at the feature level only:
+
+- **feature → `dev`:** **squash-merge** — one clean commit per issue, with a
+  Conventional-Commits message: lowercase after the `type:`, imperative mood, and
+  **no `Co-Authored-By` trailer**.
+- **`dev` → `main`:** **merge commit** — never squash or rewrite `dev` (that would
+  diverge `dev`/`main` and break feature branches based on `dev`). This keeps
+  `dev` an ancestor of `main`. **Tag releases on `main`** rather than collapsing
+  to a single commit.
 
 **Issue label lifecycle** (automated by `.github/workflows/issue-lifecycle.yml`):
 

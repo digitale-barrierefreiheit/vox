@@ -70,8 +70,23 @@ contributors to sign on their pull request. Every source file must start with:
 Use `#` comments for CMake/Python/YAML. Do **not** introduce GPL/LGPL code into
 any first-party binary.
 
+## Branching & workflow (gitflow)
+
+We plan and track everything as **GitHub issues** — there is no `doc/todo`.
+
+- Branch off `dev` as `<type>/<issue-number>-<slug>` (e.g. `fix/8-issue-lifecycle`).
+- Open a pull request **into `dev`**. Releases go out via a `dev` → `main` PR.
+- Status labels are automated: creating the branch marks the issue
+  **In Progress**; merging into `dev` makes it **Resolved** (and deletes the
+  branch); merging into `main` makes it **Released** and closes it.
+- Tick an issue's acceptance-criteria checkboxes as they are actually met.
+
 ## Commit style
 
 Write clear, imperative commit subjects (e.g. "Add SPSC ring index math").
 Reference issues where relevant. Keep changes small and focused — the
 architecture explicitly favours small steps over large ones.
+
+**Squash before merging.** Merge a branch as a single squashed commit with a
+Conventional-Commits message: lowercase after the `type:`, imperative, and no
+`Co-Authored-By` trailer.

@@ -3,16 +3,16 @@
 # rule on `main` — which we keep on for quality — from blocking the next
 # `dev -> main` release PR.
 #
-# Why a PAT: writing to the protected `dev` branch from Actions needs a token that
-# can bypass its protection. The default GITHUB_TOKEN cannot (protected branch, and
-# it does not trigger downstream CI). Provide a repo secret `BACKMERGE_TOKEN`: a
-# fine-grained PAT of a repo admin with Contents: read/write (an admin bypasses
-# `dev`'s protection because enforce_admins is off). The job no-ops if it is unset.
+# Mechanism: push to the protected `dev` branch using a write DEPLOY KEY, which is a
+# bypass actor (actor_type: DeployKey) on `dev`'s ruleset. Repo-scoped, not
+# person-bound, no PAT. Provide the deploy key's private half as the repo secret
+# `BACKMERGE_SSH_KEY`; the job no-ops with a warning if it is absent.
 name: Back-merge main to dev
 
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -26,22 +26,38 @@ jobs:
   back-merge:
     runs-on: ubuntu-24.04
     steps:
-      - name: Merge main into dev
+      - name: Check for the deploy-key secret
+        id: guard
         env:
-          GH_TOKEN: ${{ secrets.BACKMERGE_TOKEN }}
-          REPO: ${{ github.repository }}
+          KEY: ${{ secrets.BACKMERGE_SSH_KEY }}
         run: |
-          if [ -z "$GH_TOKEN" ]; then
-            echo "::warning::BACKMERGE_TOKEN is not set; skipping the back-merge."
-            exit 0
+          if [ -z "$KEY" ]; then
+            echo "::warning::BACKMERGE_SSH_KEY is not set; skipping the back-merge."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
           fi
-          # merges API: 201 = merged, 204 = already up to date (both exit 0);
-          # 409 = merge conflict -> fail and ask for a manual resolution.
-          if gh api --method POST "repos/$REPO/merges" \
-               -f base=dev -f head=main \
-               -f commit_message="chore: back-merge main into dev"; then
+
+      - name: Check out dev with the back-merge deploy key
+        if: steps.guard.outputs.run == 'true'
+        uses: actions/checkout@v6
+        with:
+          ref: dev
+          fetch-depth: 0
+          ssh-key: ${{ secrets.BACKMERGE_SSH_KEY }}
+          persist-credentials: true
+
+      - name: Merge main into dev and push
+        if: steps.guard.outputs.run == 'true'
+        run: |
+          git config user.name "vox back-merge"
+          git config user.email "actions@github.com"
+          git fetch origin main
+          if git merge --no-edit -m "chore: back-merge main into dev" origin/main; then
+            git push origin HEAD:dev
             echo "dev is up to date with main."
           else
-            echo "::error::Back-merge failed (merge conflict or permissions). Resolve dev <- main manually."
+            echo "::error::Back-merge hit a conflict; resolve dev <- main manually."
+            git merge --abort || true
             exit 1
           fi

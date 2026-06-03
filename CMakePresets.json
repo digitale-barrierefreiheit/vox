@@ -127,6 +127,7 @@
     { "name": "x64-msvc-debug",   "inherits": "common", "configurePreset": "x64-msvc",         "configuration": "Debug" },
     { "name": "x64-msvc-release", "inherits": "common", "configurePreset": "x64-msvc",         "configuration": "Release" },
     { "name": "x86-msvc-debug",   "inherits": "common", "configurePreset": "x86-msvc",         "configuration": "Debug" },
+    { "name": "x86-msvc-release", "inherits": "common", "configurePreset": "x86-msvc",         "configuration": "Release" },
     { "name": "linux-clang-debug","inherits": "common", "configurePreset": "linux-clang",      "configuration": "Debug" },
     { "name": "linux-clang-asan", "inherits": "common", "configurePreset": "linux-clang-asan", "configuration": "Debug" },
     { "name": "linux-clang-tsan", "inherits": "common", "configurePreset": "linux-clang-tsan", "configuration": "Debug" }

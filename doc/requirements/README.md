@@ -11,7 +11,7 @@ verifiable.
   §1.2 and §10 (latency, system overhead, German quality).
 - **Functional requirements** trace to tests under `tests/` and, for spoken
   output, to utterance-text assertions at the Output Manager seam (ADR-12).
-- Open planning lives in [`doc/todo`](../todo/).
+- Open planning lives in [GitHub issues](https://github.com/digitale-barrierefreiheit/vox/issues).
 
 ## Template for a requirement document
 

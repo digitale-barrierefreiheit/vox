@@ -15,14 +15,14 @@ namespace {
 
 TEST(CoreVersion, ReportsConfiguredComponents) {
   const vox::core::VersionInfo info = vox::core::version();
-  EXPECT_EQ(info.major, VOX_VERSION_MAJOR);
-  EXPECT_EQ(info.minor, VOX_VERSION_MINOR);
-  EXPECT_EQ(info.patch, VOX_VERSION_PATCH);
+  EXPECT_EQ(info.major, vox::core::VersionMajor);
+  EXPECT_EQ(info.minor, vox::core::VersionMinor);
+  EXPECT_EQ(info.patch, vox::core::VersionPatch);
 }
 
 TEST(CoreVersion, TextMatchesNumericComponents) {
   const vox::core::VersionInfo info = vox::core::version();
-  EXPECT_EQ(info.text, VOX_VERSION_STRING);
+  EXPECT_EQ(info.text, vox::core::VersionString);
   EXPECT_FALSE(info.text.empty());
 }
 

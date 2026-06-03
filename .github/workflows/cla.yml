@@ -34,7 +34,7 @@ jobs:
     steps:
       - name: CLA Assistant
         if: >
-          (github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA')
+          (github.event.comment.body == 'I have read the CLA document and I hereby sign the CLA!')
           || github.event_name == 'pull_request_target'
         uses: contributor-assistant/github-action@v2.6.1
         env:
@@ -48,7 +48,7 @@ jobs:
           path-to-document: "https://github.com/digitale-barrierefreiheit/vox/blob/main/CLA.md"
           branch: "cla-signatures"
           allowlist: "dependabot[bot],bot*"
-          custom-pr-sign-comment: "I have read the CLA Document and I hereby sign the CLA"
+          custom-pr-sign-comment: "I have read the CLA document and I hereby sign the CLA!"
           custom-notsigned-prcomment: >
             Thank you for your pull request. Before we can merge it, please sign
             our [Contributor License Agreement](https://github.com/digitale-barrierefreiheit/vox/blob/main/CLA.md)

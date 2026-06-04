@@ -13,3 +13,6 @@ add_subdirectory(core)
 
 # vox::model — normalized, provider-independent Accessibility Object Model.
 add_subdirectory(model)
+
+# vox::german — German announcement vocabulary + minimal normalization.
+add_subdirectory(german)

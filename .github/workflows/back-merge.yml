@@ -11,10 +11,12 @@
 # Credentials & key handling: we check out WITHOUT persisting any credentials (so the
 # default GITHUB_TOKEN is never written to .git/config), then configure the deploy key
 # explicitly for the fetch/push. The private key is written to a per-job temp file (never
-# ~/.ssh), GitHub's host keys are pinned via ssh-keyscan (no blind TOFU), and a final
-# always() step removes the key even if the push failed. (`token: ""` is NOT an option:
-# checkout rejects an empty token. `persist-credentials: false` together with `ssh-key` is
-# also no good: checkout removes the SSH key on the same cleanup, so a later push has no key.)
+# ~/.ssh) and removed by a final always() step, even if the push fails. GitHub's SSH host
+# keys are pinned from its published metadata (api.github.com/meta, fetched over
+# authenticated HTTPS) — not ssh-keyscan, which is unauthenticated TOFU. (`token: ""` is
+# NOT an option: checkout rejects an empty token. `persist-credentials: false` together
+# with `ssh-key` is also no good: checkout removes the SSH key on the same cleanup, so a
+# later push has no key.)
 name: Back-merge main to dev
 
 on:
@@ -58,19 +60,23 @@ jobs:
         if: steps.guard.outputs.run == 'true'
         env:
           DEPLOY_KEY: ${{ secrets.BACKMERGE_SSH_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Write the deploy key to a per-job temp file (never ~/.ssh), created with strict
-          # perms; the always() step below removes it even if this step fails. Pin GitHub's
-          # host keys via ssh-keyscan rather than blindly trusting whatever is presented.
+          # perms; the always() step below removes it even if this step fails.
           key_file="$RUNNER_TEMP/backmerge_key"
           known_hosts="$RUNNER_TEMP/known_hosts"
           (umask 077; printf '%s\n' "$DEPLOY_KEY" > "$key_file")
-          ssh-keyscan -t rsa,ecdsa,ed25519 github.com > "$known_hosts" 2>/dev/null
+
+          # Pin GitHub's SSH host keys from its published metadata, fetched over
+          # authenticated HTTPS — not ssh-keyscan, which would be unauthenticated TOFU.
+          gh api meta --jq '.ssh_keys[] | "github.com " + .' > "$known_hosts"
           if [ ! -s "$known_hosts" ]; then
-            echo "::error::ssh-keyscan returned no host keys for github.com."
+            echo "::error::Could not fetch GitHub's published SSH host keys from api.github.com/meta."
             exit 1
           fi
-          export GIT_SSH_COMMAND="ssh -i $key_file -o IdentitiesOnly=yes -o UserKnownHostsFile=$known_hosts -o StrictHostKeyChecking=yes"
+
+          export GIT_SSH_COMMAND="ssh -i \"$key_file\" -o IdentitiesOnly=yes -o UserKnownHostsFile=\"$known_hosts\" -o StrictHostKeyChecking=yes"
           git remote set-url origin "git@github.com:${GITHUB_REPOSITORY}.git"
 
           git config user.name "vox back-merge"

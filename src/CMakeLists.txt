@@ -10,3 +10,6 @@
 # its own CMakeLists and a `vox::<module>` alias. The single `core` library
 # below is the seed: it anchors the build, namespace, and include layout.
 add_subdirectory(core)
+
+# vox::model — normalized, provider-independent Accessibility Object Model.
+add_subdirectory(model)

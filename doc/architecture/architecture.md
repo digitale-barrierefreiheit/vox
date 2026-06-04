@@ -1,6 +1,6 @@
-# Architecture Documentation — Klar Screen Reader
+# Architecture Documentation — Vox Screen Reader
 
-> **Working title:** *Klar* (German: "clear / lucid"). Replace with the final product name.
+> **Product name:** *Vox* (Latin: "voice").
 > **Format:** arc42 (v8 section structure). Markdown with embedded Mermaid diagrams for machine/AI readability.
 > **Status:** Draft / design phase.
 > **Scope of this document:** the architecture of a Windows screen reader focused on (1) low system overhead, (2) low speech latency, and (3) high-quality German text-to-speech.
@@ -9,7 +9,7 @@
 
 ## 1. Introduction and Goals
 
-*Klar* is a Windows screen reader for blind and low-vision users. It conveys on-screen information through speech and braille, with a particular focus on the German language and on being noticeably lighter and more responsive than existing readers (NVDA, JAWS, Dolphin SuperNova).
+*Vox* is a Windows screen reader for blind and low-vision users. It conveys on-screen information through speech and braille, with a particular focus on the German language and on being noticeably lighter and more responsive than existing readers (NVDA, JAWS, Dolphin SuperNova).
 
 ### 1.1 Requirements Overview
 
@@ -62,17 +62,17 @@ Supporting goals: **stability/reliability** (the user depends on this software t
 ```mermaid
 graph LR
     User([Blind / low-vision user])
-    subgraph Klar[Klar Screen Reader]
+    subgraph Vox[Vox Screen Reader]
       Core
     end
     Apps[Applications<br/>browsers, Office, Explorer, terminals]
     Speakers([Audio output / speakers])
     Braille([Braille display])
 
-    User -- keyboard / commands --> Klar
-    Apps -- accessibility data + events --> Klar
-    Klar -- speech --> Speakers
-    Klar -- braille cells --> Braille
+    User -- keyboard / commands --> Vox
+    Apps -- accessibility data + events --> Vox
+    Vox -- speech --> Speakers
+    Vox -- braille cells --> Braille
     Speakers -- audio --> User
     Braille -- tactile --> User
 ```
@@ -106,11 +106,11 @@ graph LR
 
 ## 5. Building Block View
 
-### 5.1 Level 1 — Whitebox: Klar Core
+### 5.1 Level 1 — Whitebox: Vox Core
 
 ```mermaid
 graph TD
-    subgraph Core[Klar Core process - C++]
+    subgraph Core[Vox Core process - C++]
       Input[Input Layer<br/>keyboard hook, command/gesture mapping]
       Provider[Provider Layer<br/>UIA client / IA2 / MSAA fallback]
       Model[Accessibility Object Model<br/>+ Browse-mode virtual buffer]
@@ -219,7 +219,7 @@ graph LR
       UIthread --> Hook --> HReader --> Ring1
       Ring2 --> Hook
     end
-    subgraph CoreP[Klar Core process]
+    subgraph CoreP[Vox Core process]
       Consumer[Consumer thread]
       ModelC[Object Model]
       Consumer --> ModelC
@@ -272,7 +272,7 @@ Provider Layer detects poor/absent UIA, falls back to IA2 (browser) or MSAA; if 
 ```mermaid
 graph TD
     subgraph Machine[User's Windows machine]
-      subgraph KlarProc[Klar Core process]
+      subgraph VoxProc[Vox Core process]
         CoreC[C++ Core, Object Model, Output Mgr]
         TTSW[TTS Inference Worker - warm ONNX session]
       end
@@ -342,7 +342,7 @@ Backed by `CreateFileMapping` (pagefile-backed) + `MapViewOfFile`. The control b
 
 ```cpp
 // Little-endian, fixed layout, asserted identical on both bitness builds.
-constexpr uint32_t KLAR_MAGIC = 0x314C4B52;          // "RKL1"
+constexpr uint32_t VOX_MAGIC = 0x31584F56;           // "VOX1"
 enum ConsumerState : uint32_t { RUNNING=0, SPINNING=1, SLEEPING=2 };
 
 struct alignas(64) ProducerBlock {                   // written by helper only
@@ -530,7 +530,7 @@ The policy is **patterns for structure, data-oriented design for hot loops** (AD
 
 #### 8.6.8 Dogfooding with target users — the real acceptance test
 
-The decisive measure of success is not a coverage number; it is whether blind users navigating real applications in German find *Klar* fast and natural. **Test continuously with blind users and native German speakers from the first milestone**, run usability sessions each release, and let their feedback set priorities. An engineering team can pass every automated gate and still build the wrong thing without this. (See R14.)
+The decisive measure of success is not a coverage number; it is whether blind users navigating real applications in German find *Vox* fast and natural. **Test continuously with blind users and native German speakers from the first milestone**, run usability sessions each release, and let their feedback set priorities. An engineering team can pass every automated gate and still build the wrong thing without this. (See R14.)
 
 ---
 

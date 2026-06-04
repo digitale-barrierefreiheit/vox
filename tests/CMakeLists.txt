@@ -7,7 +7,11 @@
 find_package(GTest CONFIG REQUIRED)
 include(GoogleTest)
 
+# Shared test-support (fakes) first, so test targets can link vox::testing.
+add_subdirectory(support)
+
 add_subdirectory(core)
 add_subdirectory(model)
 add_subdirectory(german)
 add_subdirectory(output)
+add_subdirectory(provider)

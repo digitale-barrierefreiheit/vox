@@ -12,7 +12,11 @@ CMakeFiles/
 cmake_install.cmake
 CTestTestfile.cmake
 compile_commands.json
-Testing/
+# CTest output dir — anchored to the repo root so it can't swallow source
+# directories named "testing" (git is case-insensitive on Windows). In-source
+# builds are blocked and build trees live under /build/, so this only guards a
+# stray top-level run.
+/Testing/
 
 # ---------------------------------------------------------------------------
 # vcpkg (manifest mode: deps are restored, never committed)

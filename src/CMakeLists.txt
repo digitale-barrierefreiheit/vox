@@ -19,3 +19,6 @@ add_subdirectory(german)
 
 # vox::output — Output Manager v0 + inspectable Utterance seam.
 add_subdirectory(output)
+
+# vox::provider — accessibility provider seam (UIA today; portable mapper, COM glue).
+add_subdirectory(provider)

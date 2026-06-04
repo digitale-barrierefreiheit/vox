@@ -16,3 +16,6 @@ add_subdirectory(model)
 
 # vox::german — German announcement vocabulary + minimal normalization.
 add_subdirectory(german)
+
+# vox::output — Output Manager v0 + inspectable Utterance seam.
+add_subdirectory(output)

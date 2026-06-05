@@ -15,33 +15,27 @@
 
 namespace vox::input {
 
-/// Bitmask of the modifier keys held when a key event occurred.
-enum class KeyModifiers : std::uint8_t {
-  None = 0U,
-  Shift = 1U << 0U,
-  Control = 1U << 1U,
-  Alt = 1U << 2U,
-  Win = 1U << 3U,
+/// The modifier keys held when a key event occurred. Compared by value, so a
+/// binding matches only when exactly the same modifiers are down.
+struct KeyModifiers {
+  bool shift{false};
+  bool control{false};
+  bool alt{false};
+  bool win{false};
+
+  [[nodiscard]] friend constexpr bool operator==(const KeyModifiers&,
+                                                 const KeyModifiers&) noexcept = default;
 };
-
-[[nodiscard]] constexpr KeyModifiers operator|(KeyModifiers lhs, KeyModifiers rhs) noexcept {
-  return static_cast<KeyModifiers>(static_cast<std::uint8_t>(lhs) | static_cast<std::uint8_t>(rhs));
-}
-
-constexpr KeyModifiers& operator|=(KeyModifiers& lhs, KeyModifiers rhs) noexcept {
-  lhs = lhs | rhs;
-  return lhs;
-}
 
 /// One keyboard event, OS-independent. `virtualKey` uses the Windows virtual-key
 /// numbering (VK_*) — the only source the MVP hook has — but is just an integer
 /// to the pure mapper. Bindings match `modifiers` exactly, so an unrelated held
 /// modifier (e.g. Win) simply makes a key fall through to the focused app.
 struct KeyEvent {
-  std::uint32_t virtualKey{0};                ///< Virtual-key code (VK_*).
-  KeyModifiers modifiers{KeyModifiers::None}; ///< Modifiers held at the time.
-  bool pressed{false};                        ///< True on key-down, false on key-up.
-  bool injected{false};                       ///< True if synthesized (e.g. SendInput).
+  std::uint32_t virtualKey{0}; ///< Virtual-key code (VK_*).
+  KeyModifiers modifiers{};    ///< Modifiers held at the time.
+  bool pressed{false};         ///< True on key-down, false on key-up.
+  bool injected{false};        ///< True if synthesized (e.g. SendInput).
 };
 
 } // namespace vox::input

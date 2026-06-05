@@ -33,6 +33,10 @@ public:
   virtual ~ICommandHandler() = default;
 
   /// @brief Called when a bound key resolves to @p command. Must return promptly.
+  /// @warning Invoked from the keyboard hook's callback, which keeps using the
+  ///          hook after onCommand returns. Do not destroy the KeyboardHook from
+  ///          within onCommand (it would free state the callback still touches).
+  ///          To exit, request shutdown and tear the hook down on another thread.
   virtual void onCommand(Command command) = 0;
 };
 

@@ -27,16 +27,16 @@ namespace vox::input {
 CommandMap::CommandMap()
     : bindings_{{
           // Navigation: plain keys (Shift only distinguishes Tab direction).
-          {VkTab, KeyModifiers::None, Command::NavigateNext},
-          {VkTab, KeyModifiers::Shift, Command::NavigatePrevious},
-          {VkRightArrow, KeyModifiers::None, Command::NavigateNext},
-          {VkLeftArrow, KeyModifiers::None, Command::NavigatePrevious},
-          {VkUpArrow, KeyModifiers::None, Command::NavigateUp},
-          {VkDownArrow, KeyModifiers::None, Command::NavigateDown},
+          {VkTab, KeyModifiers{}, Command::NavigateNext},
+          {VkTab, KeyModifiers{.shift = true}, Command::NavigatePrevious},
+          {VkRightArrow, KeyModifiers{}, Command::NavigateNext},
+          {VkLeftArrow, KeyModifiers{}, Command::NavigatePrevious},
+          {VkUpArrow, KeyModifiers{}, Command::NavigateUp},
+          {VkDownArrow, KeyModifiers{}, Command::NavigateDown},
           // Reader-control chord: Control+Shift+<key>. No Alt, so it never clashes
           // with AltGr (Control+Alt) used for German keyboard typing.
-          {VkQ, KeyModifiers::Control | KeyModifiers::Shift, Command::Quit},
-          {VkS, KeyModifiers::Control | KeyModifiers::Shift, Command::ToggleSpeech},
+          {VkQ, KeyModifiers{.shift = true, .control = true}, Command::Quit},
+          {VkS, KeyModifiers{.shift = true, .control = true}, Command::ToggleSpeech},
       }} {}
 
 Command CommandMap::map(const KeyEvent& event) const {

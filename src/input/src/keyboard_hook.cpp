@@ -29,23 +29,13 @@ namespace {
 /// low-level hook `GetAsyncKeyState` reflects the current physical key state, so
 /// modifiers pressed before this key are already visible.
 KeyModifiers currentModifiers() {
-  KeyModifiers modifiers = KeyModifiers::None;
   const auto held = [](int virtualKey) {
     return (static_cast<unsigned int>(::GetAsyncKeyState(virtualKey)) & 0x8000U) != 0U;
   };
-  if (held(VK_SHIFT)) {
-    modifiers |= KeyModifiers::Shift;
-  }
-  if (held(VK_CONTROL)) {
-    modifiers |= KeyModifiers::Control;
-  }
-  if (held(VK_MENU)) {
-    modifiers |= KeyModifiers::Alt;
-  }
-  if (held(VK_LWIN) || held(VK_RWIN)) {
-    modifiers |= KeyModifiers::Win;
-  }
-  return modifiers;
+  return KeyModifiers{.shift = held(VK_SHIFT),
+                      .control = held(VK_CONTROL),
+                      .alt = held(VK_MENU),
+                      .win = held(VK_LWIN) || held(VK_RWIN)};
 }
 
 } // namespace
@@ -121,7 +111,8 @@ private:
       }
       hook_ = ::SetWindowsHookExW(WH_KEYBOARD_LL, &Impl::hookProc, ::GetModuleHandleW(nullptr), 0);
       if (hook_ == nullptr) {
-        error_ = "KeyboardHook: SetWindowsHookEx failed";
+        error_ = "KeyboardHook: SetWindowsHookEx failed (error " +
+                 std::to_string(::GetLastError()) + ")";
       }
       signalReady();
 

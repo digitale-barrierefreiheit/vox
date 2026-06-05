@@ -31,16 +31,16 @@ constexpr std::uint32_t VkA = 0x41;
 constexpr std::uint32_t VkQ = 0x51;
 constexpr std::uint32_t VkS = 0x53;
 
-constexpr KeyModifiers ReaderChord = KeyModifiers::Control | KeyModifiers::Shift;
+constexpr KeyModifiers ReaderChord{.shift = true, .control = true};
 
-KeyEvent down(std::uint32_t virtualKey, KeyModifiers modifiers = KeyModifiers::None) {
+KeyEvent down(std::uint32_t virtualKey, KeyModifiers modifiers = {}) {
   return KeyEvent{.virtualKey = virtualKey, .modifiers = modifiers, .pressed = true};
 }
 
 TEST(CommandMap, TabNavigatesNextAndPrevious) {
   const CommandMap map;
   EXPECT_EQ(map.map(down(VkTab)), Command::NavigateNext);
-  EXPECT_EQ(map.map(down(VkTab, KeyModifiers::Shift)), Command::NavigatePrevious);
+  EXPECT_EQ(map.map(down(VkTab, KeyModifiers{.shift = true})), Command::NavigatePrevious);
 }
 
 TEST(CommandMap, ArrowsNavigate) {
@@ -59,7 +59,7 @@ TEST(CommandMap, ReaderChordQuitAndToggle) {
 
 TEST(CommandMap, KeyUpProducesNoCommand) {
   const CommandMap map;
-  const KeyEvent release{.virtualKey = VkTab, .modifiers = KeyModifiers::None, .pressed = false};
+  const KeyEvent release{.virtualKey = VkTab, .modifiers = {}, .pressed = false};
   EXPECT_EQ(map.map(release), Command::None);
 }
 
@@ -71,11 +71,11 @@ TEST(CommandMap, UnboundKeyIsNone) {
 TEST(CommandMap, ModifiersMustMatchExactly) {
   const CommandMap map;
   // AltGr (Control+Alt) on German layouts: Tab with it held is not navigation.
-  EXPECT_EQ(map.map(down(VkTab, KeyModifiers::Control | KeyModifiers::Alt)), Command::None);
+  EXPECT_EQ(map.map(down(VkTab, KeyModifiers{.control = true, .alt = true})), Command::None);
   // Shift+arrow is app text-selection, not navigation.
-  EXPECT_EQ(map.map(down(VkDown, KeyModifiers::Shift)), Command::None);
+  EXPECT_EQ(map.map(down(VkDown, KeyModifiers{.shift = true})), Command::None);
   // The reader chord needs both Control and Shift.
-  EXPECT_EQ(map.map(down(VkQ, KeyModifiers::Control)), Command::None);
+  EXPECT_EQ(map.map(down(VkQ, KeyModifiers{.control = true})), Command::None);
 }
 
 TEST(RouteKeyEvent, NavigationDispatchesAndPassesThrough) {

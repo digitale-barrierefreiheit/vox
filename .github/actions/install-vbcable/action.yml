@@ -1,0 +1,48 @@
+# Installs the VB-CABLE virtual audio render device so headless WASAPI
+# integration tests have a real device. Shared by both Windows CI jobs so the
+# security-sensitive logic stays in one place. (Action YAML is exempt from the
+# SPDX-header check.)
+#
+# Unlike a self-signed driver (whose install hangs on the GitHub runner waiting
+# on a Driver Signature Enforcement / Windows Security dialog), VB-CABLE is
+# signed by a publicly trusted CA, so it installs under normal DSE. We additionally
+# trust its (pinned) publisher certificate so the install runs fully unattended.
+name: Install VB-CABLE virtual audio
+description: Provision the VB-CABLE virtual audio render device on a Windows runner.
+runs:
+  using: composite
+  steps:
+    - shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        # Pin the exact driver pack and publisher certificate we trust.
+        $expectedZipHash = '66FD0A4D9F4896FF41632B7E3D53892C085C4561F53E8AE8D0F0BC10EEDD1CDD'
+        $expectedThumbprint = '00859AAC6A54B8C1B3C139DE67846E64E7B82DB2'
+        Invoke-WebRequest -Uri https://download.vb-audio.com/Download_CABLE/VBCABLE_Driver_Pack43.zip -OutFile VBCable.zip -TimeoutSec 120
+        if ((Get-FileHash VBCable.zip -Algorithm SHA256).Hash -ne $expectedZipHash) { throw "VB-CABLE zip SHA256 mismatch" }
+        Expand-Archive -Path VBCable.zip -DestinationPath VBCable
+        # Trust the publisher cert so the signed-driver install is unattended
+        # (no Windows Security dialog -> no hang).
+        $sig = Get-AuthenticodeSignature "VBCable\vbaudio_cable64_win7.cat"
+        if ($sig.Status -ne 'Valid') { throw "VB-CABLE catalog signature is not Valid: $($sig.Status)" }
+        $cert = $sig.SignerCertificate
+        if (-not $cert -or $cert.Thumbprint -ne $expectedThumbprint) { throw "Unexpected VB-CABLE cert: $($cert.Thumbprint)" }
+        $store = [System.Security.Cryptography.X509Certificates.X509Store]::new('TrustedPublisher', 'LocalMachine')
+        $store.Open('ReadWrite')
+        try { $store.Add($cert) } finally { $store.Close() } # always release the store handle
+        Start-Service audiosrv -ErrorAction SilentlyContinue # no-op if already running
+        # Silent install (-i -h). Runner steps run elevated, so no UAC prompt is
+        # raised; time-box defensively and then verify the endpoint came up.
+        $setupExe = (Resolve-Path "VBCable\VBCABLE_Setup_x64.exe").Path
+        $setup = Start-Process -FilePath $setupExe -ArgumentList '-i','-h' -PassThru -NoNewWindow
+        if (-not $setup.WaitForExit(120000)) {
+          Stop-Process -Id $setup.Id -Force -ErrorAction SilentlyContinue
+          throw "VB-CABLE setup did not finish in 120s"
+        }
+        Write-Host "VB-CABLE setup exit code: $($setup.ExitCode)"
+        if ($setup.ExitCode -ne 0) { throw "VB-CABLE setup failed (exit code $($setup.ExitCode))" }
+        Start-Sleep -Seconds 10
+        $cable = Get-PnpDevice -ErrorAction SilentlyContinue |
+          Where-Object { $_.FriendlyName -like '*CABLE*' -or $_.InstanceId -like '*VBAUDIO*' }
+        if (-not $cable) { throw "VB-CABLE device did not appear after install" }
+        Write-Host "VB-CABLE device: $($cable.FriendlyName) [$($cable.Status)]"

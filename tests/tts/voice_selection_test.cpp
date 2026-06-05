@@ -39,7 +39,7 @@ TEST(SelectVoice, PicksTheGermanVoiceWhenPresent) {
             std::optional(SelectedVoice{"de-DE", true}));
 }
 
-TEST(SelectVoice, PrefersGermanOverTheDefaultEnglishVoice) {
+TEST(SelectVoice, RequireGermanPicksGermanOverTheDefault) {
   const std::vector<VoiceDescriptor> available{
       voice("en-US", false, true),
       voice("de-DE", true, false),

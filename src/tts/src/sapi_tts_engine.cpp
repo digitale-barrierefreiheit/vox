@@ -10,7 +10,7 @@
 /// never crosses the COM ABI boundary.
 #include <atomic>
 #include <cstddef>
-#include <cstring>
+#include <cwchar>
 #include <optional>
 #include <span>
 #include <stdexcept>

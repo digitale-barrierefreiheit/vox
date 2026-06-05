@@ -47,14 +47,16 @@ bool inputHookRequired() {
 }
 
 /// Synthesizes a Tab press + release; a low-level hook sees injected keys.
-void sendTab() {
+/// Returns true if both events were injected.
+bool sendTab() {
   std::array<INPUT, 2> inputs{};
   inputs[0].type = INPUT_KEYBOARD;
   inputs[0].ki.wVk = VK_TAB;
   inputs[1].type = INPUT_KEYBOARD;
   inputs[1].ki.wVk = VK_TAB;
   inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
-  ::SendInput(static_cast<UINT>(inputs.size()), inputs.data(), sizeof(INPUT));
+  const auto count = static_cast<UINT>(inputs.size());
+  return ::SendInput(count, inputs.data(), sizeof(INPUT)) == count;
 }
 
 TEST(KeyboardHookITest, InjectedTabReachesHandlerAsNavigateNext) {
@@ -69,7 +71,13 @@ TEST(KeyboardHookITest, InjectedTabReachesHandlerAsNavigateNext) {
     GTEST_SKIP() << "Keyboard hook unavailable on this desktop (" << error.what() << ").";
   }
 
-  sendTab();
+  if (!sendTab()) {
+    hook.stop();
+    if (inputHookRequired()) {
+      FAIL() << "VOX_REQUIRE_INPUT_HOOK is set but SendInput could not inject the key.";
+    }
+    GTEST_SKIP() << "SendInput could not inject a key on this desktop.";
+  }
 
   // The hook callback runs on its own thread; poll briefly for the command.
   for (int attempt = 0; attempt < 200 && handler.count() == 0; ++attempt) {

@@ -50,6 +50,7 @@ struct KeyEvent {
   std::uint32_t virtualKey{0};                ///< Virtual-key code (VK_*).
   KeyModifiers modifiers{KeyModifiers::None}; ///< Modifiers held at the time.
   bool pressed{false};                        ///< True on key-down, false on key-up.
+  bool injected{false};                       ///< True if synthesized (e.g. SendInput).
 };
 
 } // namespace vox::input

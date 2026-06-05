@@ -3,7 +3,9 @@
 
 #if defined(_WIN32)
 
+#  include <array>
 #  include <atomic>
+#  include <cstddef>
 #  include <cstdint>
 #  include <future>
 #  include <stdexcept>
@@ -62,7 +64,13 @@ public:
     std::promise<void> ready;
     std::future<void> readyFuture = ready.get_future();
     error_.clear();
-    thread_ = std::thread([this, &ready] { run(ready); });
+    try {
+      thread_ = std::thread([this, &ready] { run(ready); });
+    } catch (...) {
+      // Translate a std::thread failure (e.g. std::system_error) so start()
+      // only ever throws std::runtime_error, as documented.
+      throw std::runtime_error("KeyboardHook: failed to create the hook thread");
+    }
     readyFuture.wait();
     if (!error_.empty()) {
       thread_.join();
@@ -119,11 +127,22 @@ private:
     if (code == HC_ACTION && self != nullptr) {
       const auto* info = reinterpret_cast<const KBDLLHOOKSTRUCT*>(lParam);
       const bool pressed = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
-      const KeyEvent event{.virtualKey = static_cast<std::uint32_t>(info->vkCode),
-                           .modifiers = currentModifiers(),
-                           .pressed = pressed};
-      if (routeKeyEvent(event, self->map_, self->handler_)) {
-        return 1; // consumed (reader-control key) — hide it from the focused app
+      const std::size_t vk = info->vkCode & 0xFFU; // vkCode is 1..254
+      if (pressed) {
+        if (self->consumed_[vk]) {
+          return 1; // auto-repeat of a key we are consuming: swallow, do not re-dispatch
+        }
+        const KeyEvent event{.virtualKey = static_cast<std::uint32_t>(info->vkCode),
+                             .modifiers = currentModifiers(),
+                             .pressed = true,
+                             .injected = (info->flags & LLKHF_INJECTED) != 0U};
+        if (routeKeyEvent(event, self->map_, self->handler_)) {
+          self->consumed_[vk] = true; // remember so we also swallow this key's key-up
+          return 1;                   // consumed (reader-control key) — hide it from the app
+        }
+      } else if (self->consumed_[vk]) {
+        self->consumed_[vk] = false;
+        return 1; // swallow the key-up of a key whose key-down we consumed
       }
     }
     return ::CallNextHookEx(nullptr, code, wParam, lParam);
@@ -136,6 +155,10 @@ private:
   std::string error_;
   bool running_{false};
   HHOOK hook_{nullptr};
+
+  // Virtual keys whose key-down we consumed, so we also swallow their key-up and
+  // ignore auto-repeat. Touched only on the (single) hook thread — no locking.
+  std::array<bool, 256> consumed_{};
 
   // A WH_KEYBOARD_LL callback gets no user pointer, so the active hook publishes
   // itself here for hookProc. The compare-exchange in run() enforces one at a time.

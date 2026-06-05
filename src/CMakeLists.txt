@@ -22,3 +22,9 @@ add_subdirectory(output)
 
 # vox::provider — accessibility provider seam (UIA today; portable mapper, COM glue).
 add_subdirectory(provider)
+
+# vox::audio — small PCM seam (AudioFormat + PcmBuffer) shared by TTS and audio.
+add_subdirectory(audio)
+
+# vox::tts — text-to-speech seam (ITtsEngine; portable selection, SAPI5 glue).
+add_subdirectory(tts)

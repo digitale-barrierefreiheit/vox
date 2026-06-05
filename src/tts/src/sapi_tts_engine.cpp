@@ -164,6 +164,9 @@ public:
   }
 
   HRESULT STDMETHODCALLTYPE Write(const void* pv, ULONG cb, ULONG* written) override {
+    if (written != nullptr) {
+      *written = 0; // keep pcbWritten meaningful on every path, including failures
+    }
     if (cancelled_.load(std::memory_order_relaxed)) {
       return E_ABORT; // makes the synchronous Speak() unwind promptly
     }

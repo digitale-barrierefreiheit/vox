@@ -61,8 +61,8 @@ WAVEFORMATEX makeWaveFormat() {
   wfx.nChannels = OutputFormat.channels;
   wfx.nSamplesPerSec = OutputFormat.sampleRate;
   wfx.wBitsPerSample = OutputFormat.bitsPerSample;
-  wfx.nBlockAlign = static_cast<WORD>(OutputFormat.bytesPerFrame());
-  wfx.nAvgBytesPerSec = OutputFormat.bytesPerSecond();
+  wfx.nBlockAlign = static_cast<WORD>(bytesPerFrame(OutputFormat));
+  wfx.nAvgBytesPerSec = bytesPerSecond(OutputFormat);
   wfx.cbSize = 0;
   return wfx;
 }

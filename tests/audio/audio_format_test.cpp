@@ -22,14 +22,14 @@ TEST(AudioFormat, BytesPerFrameFollowsBitsAndChannels) {
   const AudioFormat mono16{22050, 16, 1};
   const AudioFormat stereo16{44100, 16, 2};
   const AudioFormat mono8{8000, 8, 1};
-  EXPECT_EQ(mono16.bytesPerFrame(), 2U);
-  EXPECT_EQ(stereo16.bytesPerFrame(), 4U);
-  EXPECT_EQ(mono8.bytesPerFrame(), 1U);
+  EXPECT_EQ(bytesPerFrame(mono16), 2U);
+  EXPECT_EQ(bytesPerFrame(stereo16), 4U);
+  EXPECT_EQ(bytesPerFrame(mono8), 1U);
 }
 
 TEST(AudioFormat, BytesPerSecondIsRateTimesFrame) {
   const AudioFormat format{22050, 16, 1};
-  EXPECT_EQ(format.bytesPerSecond(), 44100U);
+  EXPECT_EQ(bytesPerSecond(format), 44100U);
 }
 
 TEST(AudioFormat, EqualityComparesEveryField) {

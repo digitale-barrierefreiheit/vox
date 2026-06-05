@@ -36,7 +36,7 @@ using vox::tts::VoiceSelectionPolicy;
 PcmBuffer synthesizeToBuffer(SapiTtsEngine& engine, std::string_view text) {
   PcmBuffer buffer;
   buffer.format = engine.format();
-  engine.synthesize(text, [&buffer](std::span<const std::byte> chunk) { buffer.append(chunk); });
+  engine.synthesize(text, [&buffer](std::span<const std::byte> chunk) { append(buffer, chunk); });
   return buffer;
 }
 
@@ -85,9 +85,9 @@ TEST_F(SapiTtsEngineTest, ExposesAVoiceAndTheForcedFormat) {
 
 TEST_F(SapiTtsEngineTest, SynthesizesTextToWholeFramePcm) {
   const PcmBuffer pcm = synthesizeToBuffer(*engine_, "Hallo Welt");
-  EXPECT_FALSE(pcm.empty());
-  EXPECT_EQ(pcm.byteCount() % engine_->format().bytesPerFrame(), 0U); // whole frames only
-  EXPECT_GT(pcm.frameCount(), 0U);
+  EXPECT_FALSE(isEmpty(pcm));
+  EXPECT_EQ(byteCount(pcm) % bytesPerFrame(engine_->format()), 0U); // whole frames only
+  EXPECT_GT(frameCount(pcm), 0U);
 }
 
 TEST_F(SapiTtsEngineTest, CancelFromTheSinkStopsEarly) {
@@ -96,16 +96,16 @@ TEST_F(SapiTtsEngineTest, CancelFromTheSinkStopsEarly) {
       "damit ein Abbruch nach dem ersten Block messbar weniger liefert.";
 
   const PcmBuffer full = synthesizeToBuffer(*engine_, LongText);
-  ASSERT_FALSE(full.empty());
+  ASSERT_FALSE(isEmpty(full));
 
   PcmBuffer cancelled;
   cancelled.format = engine_->format();
   engine_->synthesize(LongText, [&cancelled, this](std::span<const std::byte> chunk) {
-    cancelled.append(chunk);
+    append(cancelled, chunk);
     engine_->cancel(); // barge-in after the first block
   });
 
-  EXPECT_LT(cancelled.byteCount(), full.byteCount());
+  EXPECT_LT(byteCount(cancelled), byteCount(full));
 }
 
 TEST_F(SapiTtsEngineTest, SetRateDoesNotThrow) {
@@ -128,7 +128,7 @@ TEST_F(SapiTtsEngineTest, RequireGermanSelectsAGermanVoiceWhereAvailable) {
   }
   EXPECT_TRUE(german->selectedVoice().isGerman);
   const PcmBuffer pcm = synthesizeToBuffer(*german, "Guten Tag, dies ist ein Test.");
-  EXPECT_FALSE(pcm.empty());
+  EXPECT_FALSE(isEmpty(pcm));
 }
 
 } // namespace

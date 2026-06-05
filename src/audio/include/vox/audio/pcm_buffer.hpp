@@ -24,30 +24,30 @@ struct PcmBuffer {
   AudioFormat format;             ///< How to interpret @ref samples.
   std::vector<std::byte> samples; ///< Interleaved PCM, `format`-encoded.
 
-  /// @brief True when no samples are held.
-  [[nodiscard]] bool empty() const noexcept {
-    return samples.empty();
-  }
-
-  /// @brief Size of the PCM payload in bytes.
-  [[nodiscard]] std::size_t byteCount() const noexcept {
-    return samples.size();
-  }
-
-  /// @brief Number of whole frames held, or 0 when the format has no frame size.
-  [[nodiscard]] std::size_t frameCount() const noexcept {
-    const std::size_t frameBytes = format.bytesPerFrame();
-    return frameBytes == 0U ? 0U : samples.size() / frameBytes;
-  }
-
-  /// @brief Appends a chunk of PCM bytes (e.g. from a streaming sink).
-  void append(std::span<const std::byte> chunk) {
-    samples.insert(samples.end(), chunk.begin(), chunk.end());
-  }
-
   /// Two buffers are equal iff their format and samples match.
   [[nodiscard]] friend bool operator==(const PcmBuffer&, const PcmBuffer&) = default;
 };
+
+/// @brief True when @p buffer holds no samples.
+[[nodiscard]] inline bool isEmpty(const PcmBuffer& buffer) noexcept {
+  return buffer.samples.empty();
+}
+
+/// @brief Size of @p buffer's PCM payload in bytes.
+[[nodiscard]] inline std::size_t byteCount(const PcmBuffer& buffer) noexcept {
+  return buffer.samples.size();
+}
+
+/// @brief Whole frames held by @p buffer, or 0 when the format has no frame size.
+[[nodiscard]] inline std::size_t frameCount(const PcmBuffer& buffer) noexcept {
+  const std::size_t frameBytes = bytesPerFrame(buffer.format);
+  return frameBytes == 0U ? 0U : buffer.samples.size() / frameBytes;
+}
+
+/// @brief Appends a chunk of PCM bytes to @p buffer (e.g. from a streaming sink).
+inline void append(PcmBuffer& buffer, std::span<const std::byte> chunk) {
+  buffer.samples.insert(buffer.samples.end(), chunk.begin(), chunk.end());
+}
 
 } // namespace vox::audio
 

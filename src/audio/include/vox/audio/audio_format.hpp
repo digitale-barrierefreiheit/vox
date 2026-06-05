@@ -26,20 +26,21 @@ struct AudioFormat {
   std::uint16_t bitsPerSample{16}; ///< Bits per sample (8, 16, …).
   std::uint16_t channels{1};       ///< Interleaved channel count (1 = mono).
 
-  /// @brief Bytes occupied by one frame (one sample across all channels).
-  [[nodiscard]] constexpr std::uint32_t bytesPerFrame() const noexcept {
-    return static_cast<std::uint32_t>(channels) * (static_cast<std::uint32_t>(bitsPerSample) / 8U);
-  }
-
-  /// @brief Bytes streamed per second at this format.
-  [[nodiscard]] constexpr std::uint32_t bytesPerSecond() const noexcept {
-    return sampleRate * bytesPerFrame();
-  }
-
   /// Two formats are equal iff every field matches.
   [[nodiscard]] friend constexpr bool operator==(const AudioFormat&,
                                                  const AudioFormat&) noexcept = default;
 };
+
+/// @brief Bytes occupied by one frame of @p format (one sample across all channels).
+[[nodiscard]] constexpr std::uint32_t bytesPerFrame(const AudioFormat& format) noexcept {
+  return static_cast<std::uint32_t>(format.channels) *
+         (static_cast<std::uint32_t>(format.bitsPerSample) / 8U);
+}
+
+/// @brief Bytes streamed per second at @p format.
+[[nodiscard]] constexpr std::uint32_t bytesPerSecond(const AudioFormat& format) noexcept {
+  return format.sampleRate * bytesPerFrame(format);
+}
 
 /// @brief Returns a stable diagnostic description, e.g. "22050 Hz, 16-bit, mono".
 /// @return A string for logging and test output — not a user-facing announcement.

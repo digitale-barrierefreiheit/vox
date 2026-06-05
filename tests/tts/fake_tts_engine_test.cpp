@@ -29,12 +29,12 @@ TEST(FakeTtsEngine, StreamsOneChunkPerByteIntoTheSink) {
   collected.format = engine.format();
 
   engine.synthesize("abc",
-                    [&collected](std::span<const std::byte> chunk) { collected.append(chunk); });
+                    [&collected](std::span<const std::byte> chunk) { append(collected, chunk); });
 
   EXPECT_EQ(engine.chunksEmitted(), 3U);
   EXPECT_EQ(engine.bytesEmitted(), 6U);
-  EXPECT_EQ(collected.byteCount(), 6U);
-  EXPECT_EQ(collected.frameCount(), 3U);
+  EXPECT_EQ(byteCount(collected), 6U);
+  EXPECT_EQ(frameCount(collected), 3U);
 }
 
 TEST(FakeTtsEngine, RecordsTextRateAndCallCounts) {

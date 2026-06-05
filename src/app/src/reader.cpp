@@ -36,6 +36,10 @@ void Reader::start() {
   if (started_) {
     return;
   }
+  {
+    const std::lock_guard<std::mutex> lock(exitMutex_);
+    exitRequested_ = false; // fresh run: a prior Quit must not leak into waitForExit()
+  }
   audio_.start(); // may throw (no device): nothing spawned yet, so nothing to undo
   started_ = true;
   try {

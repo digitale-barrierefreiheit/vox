@@ -84,6 +84,12 @@ public:
       return;
     }
     ::PostThreadMessageW(threadId_.load(std::memory_order_acquire), WM_QUIT, 0, 0);
+    if (std::this_thread::get_id() == thread_.get_id()) {
+      // Called from the hook thread itself (e.g. a Quit handler triggering
+      // shutdown): joining here would self-deadlock. The loop exits on the
+      // posted WM_QUIT; a later stop() from another thread (the destructor) joins.
+      return;
+    }
     thread_.join();
     running_ = false;
   }

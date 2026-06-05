@@ -11,6 +11,7 @@
 /// job), where it fails instead. The command mapping itself is covered by the
 /// portable unit tests; here we only prove the hook plumbing works end to end.
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdlib>
@@ -21,8 +22,8 @@
 #include <gtest/gtest.h>
 
 #include <vox/input/command.hpp>
+#include <vox/input/command_handler.hpp>
 #include <vox/input/keyboard_hook.hpp>
-#include <vox/testing/fake_command_handler.hpp>
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -32,7 +33,29 @@ namespace {
 
 using vox::input::Command;
 using vox::input::KeyboardHook;
-using vox::testing::FakeCommandHandler;
+
+/// A lock-free ICommandHandler. The WH_KEYBOARD_LL callback must return
+/// promptly, so the test inspects atomics rather than making the hot path take a
+/// mutex while another thread polls.
+class AtomicCommandHandler : public vox::input::ICommandHandler {
+public:
+  void onCommand(Command command) override {
+    last_.store(command, std::memory_order_release);
+    count_.fetch_add(1, std::memory_order_acq_rel);
+  }
+
+  [[nodiscard]] std::size_t count() const {
+    return count_.load(std::memory_order_acquire);
+  }
+
+  [[nodiscard]] Command last() const {
+    return last_.load(std::memory_order_acquire);
+  }
+
+private:
+  std::atomic<Command> last_{Command::None};
+  std::atomic<std::size_t> count_{0};
+};
 
 /// True on the CI input job: a hook that cannot run must fail, not skip.
 bool inputHookRequired() {
@@ -60,7 +83,7 @@ bool sendTab() {
 }
 
 TEST(KeyboardHookITest, InjectedTabReachesHandlerAsNavigateNext) {
-  FakeCommandHandler handler;
+  AtomicCommandHandler handler;
   KeyboardHook hook(handler);
   try {
     hook.start();
@@ -91,7 +114,7 @@ TEST(KeyboardHookITest, InjectedTabReachesHandlerAsNavigateNext) {
     }
     GTEST_SKIP() << "Injected key did not reach the hook on this desktop.";
   }
-  EXPECT_EQ(handler.commands().front(), Command::NavigateNext);
+  EXPECT_EQ(handler.last(), Command::NavigateNext);
 }
 
 } // namespace

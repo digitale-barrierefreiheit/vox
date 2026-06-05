@@ -4,15 +4,15 @@
 /// @file
 /// @brief A recording ICommandHandler for input-layer tests.
 ///
-/// Test-support only. It records the commands the keyboard hook / router emits
-/// so tests can assert "this key produced this command". Thread-safe, because
-/// the real hook calls `onCommand` from its hook thread while the test inspects
-/// from another (the integration test, #38).
+/// Test-support only. It records the commands the router emits so tests can
+/// assert "this key produced this command". Intended for single-threaded test
+/// use (like FakeAudioSink); a test that drives the real hook from another
+/// thread should use a lock-free handler so it never contends with the
+/// latency-critical hook callback.
 #ifndef VOX_TESTING_FAKE_COMMAND_HANDLER_HPP
 #define VOX_TESTING_FAKE_COMMAND_HANDLER_HPP
 
 #include <cstddef>
-#include <mutex>
 #include <vector>
 
 #include <vox/input/command.hpp>
@@ -20,28 +20,24 @@
 
 namespace vox::testing {
 
-/// An ICommandHandler that records every command it receives.
+/// An ICommandHandler that records every command it receives, in order.
 class FakeCommandHandler : public vox::input::ICommandHandler {
 public:
   void onCommand(vox::input::Command command) override {
-    const std::lock_guard<std::mutex> lock(mutex_);
     commands_.push_back(command);
   }
 
-  /// @brief A copy of the commands received so far, in order.
-  [[nodiscard]] std::vector<vox::input::Command> commands() const {
-    const std::lock_guard<std::mutex> lock(mutex_);
+  /// @brief The commands received so far, in order.
+  [[nodiscard]] const std::vector<vox::input::Command>& commands() const noexcept {
     return commands_;
   }
 
   /// @brief How many commands have been received.
-  [[nodiscard]] std::size_t count() const {
-    const std::lock_guard<std::mutex> lock(mutex_);
+  [[nodiscard]] std::size_t count() const noexcept {
     return commands_.size();
   }
 
 private:
-  mutable std::mutex mutex_;
   std::vector<vox::input::Command> commands_;
 };
 

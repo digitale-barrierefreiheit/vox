@@ -28,3 +28,6 @@ add_subdirectory(audio)
 
 # vox::tts — text-to-speech seam (ITtsEngine; portable selection, SAPI5 glue).
 add_subdirectory(tts)
+
+# vox::input — input layer (portable command mapping; WH_KEYBOARD_LL hook glue).
+add_subdirectory(input)

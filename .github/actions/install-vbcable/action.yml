@@ -23,10 +23,13 @@ runs:
         Expand-Archive -Path VBCable.zip -DestinationPath VBCable
         # Trust the publisher cert so the signed-driver install is unattended
         # (no Windows Security dialog -> no hang).
-        $cert = (Get-AuthenticodeSignature "VBCable\vbaudio_cable64_win7.cat").SignerCertificate
+        $sig = Get-AuthenticodeSignature "VBCable\vbaudio_cable64_win7.cat"
+        if ($sig.Status -ne 'Valid') { throw "VB-CABLE catalog signature is not Valid: $($sig.Status)" }
+        $cert = $sig.SignerCertificate
         if (-not $cert -or $cert.Thumbprint -ne $expectedThumbprint) { throw "Unexpected VB-CABLE cert: $($cert.Thumbprint)" }
         $store = [System.Security.Cryptography.X509Certificates.X509Store]::new('TrustedPublisher', 'LocalMachine')
-        $store.Open('ReadWrite'); $store.Add($cert); $store.Close()
+        $store.Open('ReadWrite')
+        try { $store.Add($cert) } finally { $store.Close() } # always release the store handle
         Start-Service audiosrv -ErrorAction SilentlyContinue # no-op if already running
         # Silent install (-i -h). Runner steps run elevated, so no UAC prompt is
         # raised; time-box defensively and then verify the endpoint came up.

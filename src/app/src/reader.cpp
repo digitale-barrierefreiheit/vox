@@ -152,6 +152,9 @@ void Reader::workerLoop() {
       node = std::move(*pending_);
       pending_.reset();
     }
+    if (!speechEnabled_.load(std::memory_order_acquire)) {
+      continue; // muted after this node was queued; drop it
+    }
     try {
       const vox::output::Utterance utterance = output_.announce(node);
       tts_.synthesize(utterance.text,

@@ -61,10 +61,13 @@ public:
     flushCount_.fetch_add(1, std::memory_order_relaxed);
   }
 
-  /// @brief Blocks until some PCM has been written, or @p timeout elapses.
+  /// @brief Blocks until more PCM is written than at the call's start, or
+  ///        @p timeout elapses. Waiting for an increase (not just > 0) keeps
+  ///        repeated waits correct.
   [[nodiscard]] bool waitForWrite(std::chrono::milliseconds timeout) {
     std::unique_lock<std::mutex> lock(mutex_);
-    return cv_.wait_for(lock, timeout, [this] { return bytesWritten_ > 0; });
+    const std::size_t baseline = bytesWritten_;
+    return cv_.wait_for(lock, timeout, [this, baseline] { return bytesWritten_ > baseline; });
   }
 
   [[nodiscard]] int flushCount() const noexcept {

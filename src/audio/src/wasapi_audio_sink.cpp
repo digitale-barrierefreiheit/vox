@@ -17,7 +17,9 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <shared_mutex>
 #include <span>
 #include <stdexcept>
 #include <thread>
@@ -165,6 +167,8 @@ public:
   }
 
   void write(std::span<const std::byte> pcm) {
+    // Shared with flush(); excludes stop()'s teardown of converter_/ring_.
+    const std::shared_lock<std::shared_mutex> lock(stateMutex_);
     if (!running_.load(std::memory_order_acquire)) {
       return;
     }
@@ -194,6 +198,8 @@ public:
   }
 
   void flush() {
+    // Shared with write(); excludes stop() so audioEvent_ cannot be closed here.
+    const std::shared_lock<std::shared_mutex> lock(stateMutex_);
     // Bump the generation first so a blocked producer abandons stale audio, then
     // ask the render thread to drop what is buffered and reset the device.
     flushGeneration_.fetch_add(1, std::memory_order_acq_rel);
@@ -214,6 +220,9 @@ public:
     if (renderThread_.joinable()) {
       renderThread_.join();
     }
+    // The render thread is gone; now exclude any in-flight write()/flush()
+    // before tearing down the converter, ring, and event handle.
+    const std::unique_lock<std::shared_mutex> lock(stateMutex_);
     if (audioClient_) {
       audioClient_->Stop();
     }
@@ -373,6 +382,10 @@ private:
   std::atomic<bool> stopRequested_{false};
   std::atomic<bool> flushRequested_{false};
   std::atomic<std::uint64_t> flushGeneration_{0};
+  // Shared by write()/flush(), exclusive in stop(): lets stop() tear down the
+  // converter/ring/event only once no producer or barge-in call is in flight.
+  // The render thread is joined before the exclusive section, so it never locks.
+  std::shared_mutex stateMutex_;
 };
 
 WasapiAudioSink::WasapiAudioSink(AudioFormat sourceFormat)

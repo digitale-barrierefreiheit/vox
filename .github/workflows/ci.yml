@@ -48,7 +48,7 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Shipping toolchain: MSVC, static CRT, 64-bit and 32-bit (R12 wire layout).
-  # Both arches install the Scream virtual audio device and run the WASAPI render
+  # Both arches install the VB-CABLE virtual audio device and run the WASAPI render
   # integration test with VOX_REQUIRE_AUDIO_DEVICE=1 (ADR-10), so a missing or
   # broken device fails the build rather than silently skipping. This is the
   # English runner — the SAPI German tests skip here; the de-DE path is the
@@ -57,7 +57,7 @@ jobs:
   # ---------------------------------------------------------------------------
   windows:
     name: windows-${{ matrix.arch }}-msvc
-    runs-on: windows-2022
+    runs-on: windows-2025
     strategy:
       fail-fast: false
       matrix:
@@ -75,9 +75,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: lukka/get-cmake@v4.3.3
-      - name: Install the Scream virtual audio device
+      - name: Install the VB-CABLE virtual audio device
         timeout-minutes: 5
-        uses: ./.github/actions/install-scream
+        uses: ./.github/actions/install-vbcable
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
         with:
@@ -100,7 +100,7 @@ jobs:
   # ---------------------------------------------------------------------------
   # German speech integration (ADR-07) + audio. Augments an x64 runner with the
   # de-DE TTS voice (bridged from Speech_OneCore into the classic SAPI hive) and
-  # the Scream virtual audio device, then runs the suite with both
+  # the VB-CABLE virtual audio device, then runs the suite with both
   # VOX_REQUIRE_GERMAN_VOICE=1 and VOX_REQUIRE_AUDIO_DEVICE=1 — so a missing
   # German voice OR render device fails the build. x64 only: the German TTS
   # engine is 64-bit. NOTE: depends on Features-on-Demand, a registry bridge, and
@@ -108,7 +108,7 @@ jobs:
   # ---------------------------------------------------------------------------
   windows-de-DE:
     name: windows-x64-msvc-de-DE
-    runs-on: windows-2022
+    runs-on: windows-2025
     steps:
       - uses: actions/checkout@v6
       - uses: lukka/get-cmake@v4.3.3
@@ -138,9 +138,9 @@ jobs:
           reg copy "$src" "$dst" /s /f
           if ($LASTEXITCODE -ne 0) { throw "reg copy of voice tokens failed ($LASTEXITCODE)" }
           reg query "$dst"
-      - name: Install the Scream virtual audio device
+      - name: Install the VB-CABLE virtual audio device
         timeout-minutes: 5
-        uses: ./.github/actions/install-scream
+        uses: ./.github/actions/install-vbcable
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
         with:

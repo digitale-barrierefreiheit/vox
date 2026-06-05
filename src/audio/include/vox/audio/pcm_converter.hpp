@@ -59,7 +59,7 @@ public:
 private:
   void emitFrame(float sample, std::vector<std::byte>& out) const;
 
-  double step_;               ///< Source samples advanced per output sample.
+  double step_{0.0};          ///< Source samples advanced per output sample.
   double fractionalPos_{0.0}; ///< Position between previous_ and the current sample.
   float previous_{0.0F};      ///< Last source sample (for cross-chunk interpolation).
   std::uint32_t targetRate_;

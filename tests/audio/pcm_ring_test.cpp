@@ -23,6 +23,7 @@ std::byte byteOf(std::size_t value) {
   return std::byte{static_cast<unsigned char>(value & 0xFFU)};
 }
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters) — test helper, order is obvious here
 std::vector<std::byte> sequence(std::size_t count, std::size_t start = 0) {
   std::vector<std::byte> data(count);
   for (std::size_t i = 0; i < count; ++i) {

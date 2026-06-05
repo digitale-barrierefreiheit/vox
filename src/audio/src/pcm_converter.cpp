@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <cstring>
 #include <span>
+#include <stdexcept>
 #include <vector>
 
 #include <vox/audio/audio_format.hpp>
@@ -30,10 +31,18 @@ constexpr float Int16Peak = 32767.0F;  ///< Max magnitude when writing int16.
 
 } // namespace
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters) — rate/channels/format are distinct roles
 PcmConverter::PcmConverter(AudioFormat source, std::uint32_t targetRate,
                            std::uint16_t targetChannels, SampleFormat targetFormat)
-    : step_(static_cast<double>(source.sampleRate) / static_cast<double>(targetRate)),
-      targetRate_(targetRate), targetChannels_(targetChannels), targetFormat_(targetFormat) {}
+    : targetRate_(targetRate), targetChannels_(targetChannels), targetFormat_(targetFormat) {
+  if (source.bitsPerSample != 16U || source.channels != 1U) {
+    throw std::invalid_argument("PcmConverter: source must be 16-bit mono PCM");
+  }
+  if (targetRate == 0U || targetChannels == 0U) {
+    throw std::invalid_argument("PcmConverter: target rate and channel count must be non-zero");
+  }
+  step_ = static_cast<double>(source.sampleRate) / static_cast<double>(targetRate);
+}
 
 void PcmConverter::reset() noexcept {
   fractionalPos_ = 0.0;
@@ -41,20 +50,24 @@ void PcmConverter::reset() noexcept {
 }
 
 void PcmConverter::emitFrame(float sample, std::vector<std::byte>& out) const {
+  // Encode one channel's bytes, then grow the buffer once and replicate across
+  // channels — avoids per-channel vector::insert bookkeeping on this path.
+  std::array<std::byte, sizeof(float)> encoded{};
+  std::size_t channelBytes = 0;
   if (targetFormat_ == SampleFormat::Float32) {
-    std::array<std::byte, sizeof(float)> bytes{};
-    std::memcpy(bytes.data(), &sample, sizeof(float));
-    for (std::uint16_t channel = 0; channel < targetChannels_; ++channel) {
-      out.insert(out.end(), bytes.begin(), bytes.end());
-    }
-    return;
+    std::memcpy(encoded.data(), &sample, sizeof(float));
+    channelBytes = sizeof(float);
+  } else {
+    const float clamped = std::clamp(sample, -1.0F, 1.0F);
+    const auto value = static_cast<std::int16_t>(std::lround(clamped * Int16Peak));
+    std::memcpy(encoded.data(), &value, sizeof(std::int16_t));
+    channelBytes = sizeof(std::int16_t);
   }
-  const float clamped = std::clamp(sample, -1.0F, 1.0F);
-  const auto value = static_cast<std::int16_t>(std::lround(clamped * Int16Peak));
-  std::array<std::byte, sizeof(std::int16_t)> bytes{};
-  std::memcpy(bytes.data(), &value, sizeof(std::int16_t));
+  const std::size_t offset = out.size();
+  out.resize(offset + (channelBytes * targetChannels_));
   for (std::uint16_t channel = 0; channel < targetChannels_; ++channel) {
-    out.insert(out.end(), bytes.begin(), bytes.end());
+    std::memcpy(out.data() + offset + (static_cast<std::size_t>(channel) * channelBytes),
+                encoded.data(), channelBytes);
   }
 }
 

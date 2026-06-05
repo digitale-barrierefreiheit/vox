@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstring>
 #include <initializer_list>
+#include <stdexcept>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -31,6 +32,7 @@ std::vector<std::byte> int16Bytes(std::initializer_list<std::int16_t> samples) {
   return bytes;
 }
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters) — test helper, order is obvious here
 std::vector<std::byte> constantInt16(std::int16_t value, std::size_t count) {
   std::vector<std::byte> bytes(count * sizeof(std::int16_t));
   for (std::size_t i = 0; i < count; ++i) {
@@ -106,6 +108,20 @@ TEST(PcmConverter, ExposesTargetParameters) {
   EXPECT_EQ(converter.targetSampleRate(), 48000U);
   EXPECT_EQ(converter.targetChannels(), 2U);
   EXPECT_EQ(converter.targetFormat(), SampleFormat::Float32);
+}
+
+TEST(PcmConverter, RejectsUnsupportedSourceFormat) {
+  EXPECT_THROW((PcmConverter{AudioFormat{22050, 8, 1}, 48000, 2, SampleFormat::Float32}),
+               std::invalid_argument); // not 16-bit
+  EXPECT_THROW((PcmConverter{AudioFormat{22050, 16, 2}, 48000, 2, SampleFormat::Float32}),
+               std::invalid_argument); // not mono
+}
+
+TEST(PcmConverter, RejectsZeroTargetRateOrChannels) {
+  EXPECT_THROW((PcmConverter{AudioFormat{22050, 16, 1}, 0, 2, SampleFormat::Float32}),
+               std::invalid_argument);
+  EXPECT_THROW((PcmConverter{AudioFormat{22050, 16, 1}, 48000, 0, SampleFormat::Float32}),
+               std::invalid_argument);
 }
 
 } // namespace

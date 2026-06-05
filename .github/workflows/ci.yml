@@ -95,9 +95,13 @@ jobs:
             $store = [System.Security.Cryptography.X509Certificates.X509Store]::new($name, 'LocalMachine')
             $store.Open('ReadWrite'); $store.Add($cert); $store.Close()
           }
+          # Start the audio service and pre-stage the driver into the store
+          # first, so devcon's device install binds to an already-staged driver
+          # instead of hanging in the PnP "updating drivers" phase.
+          Start-Service audiosrv
+          pnputil /add-driver "Scream\Install\driver\x64\Scream.inf" /install
           & "Scream\Install\helpers\devcon-x64.exe" install "Scream\Install\driver\x64\Scream.inf" *Scream
           if ($LASTEXITCODE -ne 0) { throw "devcon install failed ($LASTEXITCODE)" }
-          Start-Service audiosrv
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
         with:
@@ -178,9 +182,13 @@ jobs:
             $store = [System.Security.Cryptography.X509Certificates.X509Store]::new($name, 'LocalMachine')
             $store.Open('ReadWrite'); $store.Add($cert); $store.Close()
           }
+          # Start the audio service and pre-stage the driver into the store
+          # first, so devcon's device install binds to an already-staged driver
+          # instead of hanging in the PnP "updating drivers" phase.
+          Start-Service audiosrv
+          pnputil /add-driver "Scream\Install\driver\x64\Scream.inf" /install
           & "Scream\Install\helpers\devcon-x64.exe" install "Scream\Install\driver\x64\Scream.inf" *Scream
           if ($LASTEXITCODE -ne 0) { throw "devcon install failed ($LASTEXITCODE)" }
-          Start-Service audiosrv
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
         with:

@@ -69,12 +69,16 @@ public:
   ComApartment() {
     const HRESULT hr = ::CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     if (hr == RPC_E_CHANGED_MODE) {
-      initialized_ = false; // already initialized elsewhere; we do not own it
-    } else if (FAILED(hr)) {
-      throw std::runtime_error("WasapiAudioSink: COM initialization failed");
-    } else {
-      initialized_ = true;
+      // The thread is already an STA. WASAPI interfaces created here would be
+      // STA-bound yet called from the MTA render thread without marshaling
+      // (undefined), so we require an MTA or COM-uninitialized thread instead.
+      throw std::runtime_error(
+          "WasapiAudioSink: requires an MTA or COM-uninitialized thread (current is STA)");
     }
+    if (FAILED(hr)) {
+      throw std::runtime_error("WasapiAudioSink: COM initialization failed");
+    }
+    initialized_ = true;
   }
 
   ~ComApartment() {
@@ -181,6 +185,9 @@ public:
     // ask the render thread to drop what is buffered and reset the device.
     flushGeneration_.fetch_add(1, std::memory_order_acq_rel);
     flushRequested_.store(true, std::memory_order_release);
+    if (audioEvent_ != nullptr) {
+      ::SetEvent(audioEvent_); // wake the render thread now, even if the stream is silent
+    }
   }
 
   // Idempotent: also releases a partially-acquired device (e.g. after a failed

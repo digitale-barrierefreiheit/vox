@@ -263,6 +263,11 @@ private:
                                                                               &::CoTaskMemFree);
 
     const SampleFormat sampleFormat = detectSampleFormat(*mixFormat);
+    if (mixFormat->nSamplesPerSec == 0U || mixFormat->nChannels == 0U) {
+      // Guard the converter's preconditions so start() only ever throws
+      // std::runtime_error, never std::invalid_argument from the converter.
+      throw std::runtime_error("WasapiAudioSink: invalid device mix format");
+    }
     frameBytes_ = mixFormat->nBlockAlign;
     converter_.emplace(sourceFormat_, mixFormat->nSamplesPerSec, mixFormat->nChannels,
                        sampleFormat);
@@ -326,11 +331,14 @@ private:
       if (waited != WAIT_OBJECT_0) {
         continue; // timed out — loop back and re-check the stop flag
       }
-      if (flushRequested_.exchange(false, std::memory_order_acq_rel)) {
+      if (flushRequested_.load(std::memory_order_acquire)) {
         audioClient_->Stop();
         audioClient_->Reset();
         ring_->clear();
         audioClient_->Start();
+        // Clear the flag only after the ring is emptied, so a producer waiting
+        // on it cannot push fresh audio that this clear would then drop.
+        flushRequested_.store(false, std::memory_order_release);
       }
       renderAvailable();
     }

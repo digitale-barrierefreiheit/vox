@@ -28,6 +28,9 @@ public:
   }
 
   void write(std::span<const std::byte> pcm) override {
+    if (!started_) {
+      return; // the real sink ignores writes before start()
+    }
     buffered_.insert(buffered_.end(), pcm.begin(), pcm.end());
     bytesWritten_ += pcm.size();
     ++writeCount_;

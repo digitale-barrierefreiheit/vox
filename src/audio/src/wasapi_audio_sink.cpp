@@ -263,9 +263,10 @@ private:
                                                                               &::CoTaskMemFree);
 
     const SampleFormat sampleFormat = detectSampleFormat(*mixFormat);
-    if (mixFormat->nSamplesPerSec == 0U || mixFormat->nChannels == 0U) {
-      // Guard the converter's preconditions so start() only ever throws
-      // std::runtime_error, never std::invalid_argument from the converter.
+    if (mixFormat->nSamplesPerSec == 0U || mixFormat->nChannels == 0U ||
+        mixFormat->nBlockAlign == 0U) {
+      // Guard the converter's and ring's preconditions so start() only ever
+      // throws std::runtime_error, never std::invalid_argument from them.
       throw std::runtime_error("WasapiAudioSink: invalid device mix format");
     }
     frameBytes_ = mixFormat->nBlockAlign;

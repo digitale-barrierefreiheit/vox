@@ -25,6 +25,14 @@ TEST(FakeAudioSink, StartAndStopTrackState) {
   EXPECT_FALSE(sink.started());
 }
 
+TEST(FakeAudioSink, IgnoresWritesBeforeStart) {
+  FakeAudioSink sink;
+  sink.write(Chunk); // not started yet
+  EXPECT_EQ(sink.writeCount(), 0);
+  EXPECT_EQ(sink.bytesWritten(), 0U);
+  EXPECT_TRUE(sink.buffered().empty());
+}
+
 TEST(FakeAudioSink, WriteBuffersAndCounts) {
   FakeAudioSink sink;
   sink.start();

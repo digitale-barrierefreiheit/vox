@@ -115,6 +115,20 @@ TEST(PcmConverter, RejectsUnsupportedSourceFormat) {
                std::invalid_argument); // not 16-bit
   EXPECT_THROW((PcmConverter{AudioFormat{22050, 16, 2}, 48000, 2, SampleFormat::Float32}),
                std::invalid_argument); // not mono
+  EXPECT_THROW((PcmConverter{AudioFormat{0, 16, 1}, 48000, 1, SampleFormat::Int16}),
+               std::invalid_argument); // zero source rate (would make step_ == 0)
+}
+
+TEST(PcmConverter, SameRateInt16RoundTripsExtremesExactly) {
+  PcmConverter converter{AudioFormat{48000, 16, 1}, 48000, 1, SampleFormat::Int16};
+  std::vector<std::byte> out;
+  // At equal rates the stream passes through with a one-sample priming delay, so
+  // input[i] appears at output[i+1]: the int16 extremes must survive exactly.
+  converter.convert(int16Bytes({1000, -1000, 32767, -32768, 0}), out);
+
+  ASSERT_GE(out.size() / sizeof(std::int16_t), 5U);
+  EXPECT_EQ(int16At(out, 3), 32767);
+  EXPECT_EQ(int16At(out, 4), -32768);
 }
 
 TEST(PcmConverter, RejectsZeroTargetRateOrChannels) {

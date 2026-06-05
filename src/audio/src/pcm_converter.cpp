@@ -26,8 +26,9 @@ namespace vox::audio {
 
 namespace {
 
-constexpr float Int16Scale = 32768.0F; ///< Divisor mapping int16 -> [-1, 1).
-constexpr float Int16Peak = 32767.0F;  ///< Max magnitude when writing int16.
+constexpr float Int16Scale = 32768.0F; ///< Scale between int16 and [-1, 1].
+constexpr long Int16Min = -32768;      ///< Lowest int16 value.
+constexpr long Int16Max = 32767;       ///< Highest int16 value.
 
 } // namespace
 
@@ -35,8 +36,8 @@ constexpr float Int16Peak = 32767.0F;  ///< Max magnitude when writing int16.
 PcmConverter::PcmConverter(AudioFormat source, std::uint32_t targetRate,
                            std::uint16_t targetChannels, SampleFormat targetFormat)
     : targetRate_(targetRate), targetChannels_(targetChannels), targetFormat_(targetFormat) {
-  if (source.bitsPerSample != 16U || source.channels != 1U) {
-    throw std::invalid_argument("PcmConverter: source must be 16-bit mono PCM");
+  if (source.bitsPerSample != 16U || source.channels != 1U || source.sampleRate == 0U) {
+    throw std::invalid_argument("PcmConverter: source must be 16-bit mono PCM at a non-zero rate");
   }
   if (targetRate == 0U || targetChannels == 0U) {
     throw std::invalid_argument("PcmConverter: target rate and channel count must be non-zero");
@@ -58,8 +59,10 @@ void PcmConverter::emitFrame(float sample, std::vector<std::byte>& out) const {
     std::memcpy(encoded.data(), &sample, sizeof(float));
     channelBytes = sizeof(float);
   } else {
-    const float clamped = std::clamp(sample, -1.0F, 1.0F);
-    const auto value = static_cast<std::int16_t>(std::lround(clamped * Int16Peak));
+    // Scale by 32768 (symmetric with the input) and clamp into the int16 range,
+    // so same-rate/same-format conversion round-trips exactly.
+    const long scaled = std::lround(sample * Int16Scale);
+    const auto value = static_cast<std::int16_t>(std::clamp(scaled, Int16Min, Int16Max));
     std::memcpy(encoded.data(), &value, sizeof(std::int16_t));
     channelBytes = sizeof(std::int16_t);
   }

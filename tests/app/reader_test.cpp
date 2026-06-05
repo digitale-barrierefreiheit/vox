@@ -15,12 +15,12 @@
 #include <cstddef>
 #include <mutex>
 #include <span>
+#include <string>
 #include <utility>
 
 #include <gtest/gtest.h>
 
 #include <vox/app/reader.hpp>
-#include <vox/audio/audio_format.hpp>
 #include <vox/audio/iaudio_sink.hpp>
 #include <vox/german/de_lex_data.hpp>
 #include <vox/german/lexicon.hpp>

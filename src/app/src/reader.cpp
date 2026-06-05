@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
 
+#include <atomic>
 #include <cstddef>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <span>
@@ -25,8 +27,8 @@ Reader::Reader(vox::provider::IProvider& provider, vox::tts::ITtsEngine& tts,
 Reader::~Reader() {
   try {
     stop();
+    // NOLINTNEXTLINE(bugprone-empty-catch) — dtor firewall: must never throw.
   } catch (...) {
-    // Destructors are noexcept; never let a teardown failure terminate.
   }
 }
 
@@ -42,7 +44,16 @@ void Reader::start() {
       running_ = true;
     }
     worker_ = std::thread([this] { workerLoop(); });
-    provider_.start([this](const vox::model::AccessibleNode& node) { onFocusChanged(node); });
+    // Route the focus callback through a shared guard so it is safe even if the
+    // provider invokes it after this Reader is destroyed (stop() detaches it).
+    guard_ = std::make_shared<detail::ReaderFocusGuard>();
+    guard_->reader = this;
+    provider_.start([guard = guard_](const vox::model::AccessibleNode& node) {
+      const std::lock_guard<std::mutex> lock(guard->mutex);
+      if (guard->reader != nullptr) {
+        guard->reader->onFocusChanged(node);
+      }
+    });
     // Announce whatever already has focus, so launching over a dialog speaks now.
     if (const std::optional<vox::model::AccessibleNode> focused = provider_.focusedElement()) {
       onFocusChanged(*focused);
@@ -58,7 +69,12 @@ void Reader::stop() {
     return;
   }
   started_ = false;
-  provider_.stop(); // no further focus callbacks
+  if (guard_) {
+    // Detach first: after this, no provider callback will touch this Reader.
+    const std::lock_guard<std::mutex> lock(guard_->mutex);
+    guard_->reader = nullptr;
+  }
+  provider_.stop(); // ask the provider to unregister (it may not, hence the guard)
   {
     const std::lock_guard<std::mutex> lock(mutex_);
     running_ = false;
@@ -130,6 +146,9 @@ void Reader::workerLoop() {
       if (!running_) {
         return;
       }
+      if (!pending_.has_value()) {
+        continue; // spurious wake-up
+      }
       node = std::move(*pending_);
       pending_.reset();
     }
@@ -137,9 +156,10 @@ void Reader::workerLoop() {
       const vox::output::Utterance utterance = output_.announce(node);
       tts_.synthesize(utterance.text,
                       [this](std::span<const std::byte> pcm) { audio_.write(pcm); });
+      // A failed announcement (e.g. a SAPI error) must not escape the worker
+      // thread; drop this utterance and keep going.
+      // NOLINTNEXTLINE(bugprone-empty-catch)
     } catch (...) {
-      // A failed announcement (e.g. SAPI error) must not crash the reader or
-      // escape the worker thread; drop this utterance and keep going.
     }
   }
 }

@@ -19,6 +19,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <thread>
@@ -32,6 +33,20 @@
 #include <vox/tts/itts_engine.hpp>
 
 namespace vox::app {
+
+class Reader;
+
+namespace detail {
+/// Keeps the provider's focus callback safe if it fires after the Reader is
+/// gone. The UIA provider may keep invoking the handler when it fails to
+/// unregister (see UiaProvider::stop()); the callback holds a shared_ptr to this
+/// guard and only touches `reader` while it is non-null under the lock, and
+/// Reader::stop() detaches it (sets `reader` to null) before teardown.
+struct ReaderFocusGuard {
+  std::mutex mutex;
+  Reader* reader{nullptr};
+};
+} // namespace detail
 
 /// Orchestrates the focus -> speech pipeline and barge-in for the MVP reader.
 class Reader : public vox::input::ICommandHandler {
@@ -83,6 +98,8 @@ private:
   std::mutex exitMutex_;
   std::condition_variable exitCv_;
   bool exitRequested_{false};
+
+  std::shared_ptr<detail::ReaderFocusGuard> guard_; ///< Outlives a late provider callback.
 };
 
 } // namespace vox::app

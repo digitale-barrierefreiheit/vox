@@ -28,18 +28,9 @@ enum class KeyModifiers : std::uint8_t {
   return static_cast<KeyModifiers>(static_cast<std::uint8_t>(lhs) | static_cast<std::uint8_t>(rhs));
 }
 
-[[nodiscard]] constexpr KeyModifiers operator&(KeyModifiers lhs, KeyModifiers rhs) noexcept {
-  return static_cast<KeyModifiers>(static_cast<std::uint8_t>(lhs) & static_cast<std::uint8_t>(rhs));
-}
-
 constexpr KeyModifiers& operator|=(KeyModifiers& lhs, KeyModifiers rhs) noexcept {
   lhs = lhs | rhs;
   return lhs;
-}
-
-/// @brief True if @p set contains every bit of @p query (with @p query != None).
-[[nodiscard]] constexpr bool contains(KeyModifiers set, KeyModifiers query) noexcept {
-  return (set & query) == query;
 }
 
 /// One keyboard event, OS-independent. `virtualKey` uses the Windows virtual-key

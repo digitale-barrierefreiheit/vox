@@ -89,37 +89,56 @@ public:
   }
 
 private:
-  void run(std::promise<void>& ready) {
-    threadId_.store(::GetCurrentThreadId(), std::memory_order_release);
-    // Force the message queue to exist before we signal ready, so a stop() that
-    // races right after start() can always post WM_QUIT to it.
-    MSG queuePrimer{};
-    ::PeekMessageW(&queuePrimer, nullptr, WM_USER, WM_USER, PM_NOREMOVE);
+  // The std::thread entrypoint. noexcept + catch-all so an exception can never
+  // escape the thread (which would terminate the process), and the ready promise
+  // is always fulfilled so start() is never left blocked.
+  void run(std::promise<void>& ready) noexcept {
+    bool readySignaled = false;
+    const auto signalReady = [&ready, &readySignaled] {
+      if (!readySignaled) {
+        readySignaled = true;
+        ready.set_value();
+      }
+    };
+    try {
+      threadId_.store(::GetCurrentThreadId(), std::memory_order_release);
+      // Force the message queue to exist before we signal ready, so a stop()
+      // that races right after start() can always post WM_QUIT to it.
+      MSG queuePrimer{};
+      ::PeekMessageW(&queuePrimer, nullptr, WM_USER, WM_USER, PM_NOREMOVE);
 
-    Impl* expected = nullptr;
-    if (!active_.compare_exchange_strong(expected, this, std::memory_order_acq_rel)) {
-      error_ = "KeyboardHook: another keyboard hook is already active";
-      ready.set_value();
-      return;
-    }
-    hook_ = ::SetWindowsHookExW(WH_KEYBOARD_LL, &Impl::hookProc, ::GetModuleHandleW(nullptr), 0);
-    if (hook_ == nullptr) {
-      active_.store(nullptr, std::memory_order_release);
-      error_ = "KeyboardHook: SetWindowsHookEx failed";
-      ready.set_value();
-      return;
-    }
-    ready.set_value();
+      Impl* expected = nullptr;
+      if (!active_.compare_exchange_strong(expected, this, std::memory_order_acq_rel)) {
+        error_ = "KeyboardHook: another keyboard hook is already active";
+        signalReady();
+        return; // not ours — leave active_ and skip teardown below
+      }
+      hook_ = ::SetWindowsHookExW(WH_KEYBOARD_LL, &Impl::hookProc, ::GetModuleHandleW(nullptr), 0);
+      if (hook_ == nullptr) {
+        error_ = "KeyboardHook: SetWindowsHookEx failed";
+      }
+      signalReady();
 
-    MSG message{};
-    while (::GetMessageW(&message, nullptr, 0, 0) > 0) {
-      ::TranslateMessage(&message);
-      ::DispatchMessageW(&message);
+      if (hook_ != nullptr) {
+        MSG message{};
+        while (::GetMessageW(&message, nullptr, 0, 0) > 0) {
+          ::TranslateMessage(&message);
+          ::DispatchMessageW(&message);
+        }
+      }
+    } catch (...) {
+      if (error_.empty()) {
+        error_ = "KeyboardHook: the hook thread failed";
+      }
+      signalReady();
     }
-
-    ::UnhookWindowsHookEx(hook_);
-    hook_ = nullptr;
-    active_.store(nullptr, std::memory_order_release);
+    // Tear down only what this thread owns (active_ == this only after our CAS).
+    if (hook_ != nullptr) {
+      ::UnhookWindowsHookEx(hook_);
+      hook_ = nullptr;
+    }
+    Impl* owned = this;
+    active_.compare_exchange_strong(owned, nullptr, std::memory_order_acq_rel);
   }
 
   static LRESULT CALLBACK hookProc(int code, WPARAM wParam, LPARAM lParam) {
@@ -136,7 +155,13 @@ private:
                              .modifiers = currentModifiers(),
                              .pressed = true,
                              .injected = (info->flags & LLKHF_INJECTED) != 0U};
-        if (routeKeyEvent(event, self->map_, self->handler_)) {
+        bool consume = false;
+        try {
+          consume = routeKeyEvent(event, self->map_, self->handler_);
+        } catch (...) {
+          consume = false; // a throwing handler must not cross the Win32 boundary
+        }
+        if (consume) {
           self->consumed_[vk] = true; // remember so we also swallow this key's key-up
           return 1;                   // consumed (reader-control key) — hide it from the app
         }

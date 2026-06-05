@@ -365,8 +365,13 @@ private:
     const std::size_t needed = static_cast<std::size_t>(frames) * frameBytes_;
     auto* bytes = reinterpret_cast<std::byte*>(deviceBuffer);
     const std::size_t got = ring_->read(std::span<std::byte>(bytes, needed));
+    if (got == 0U) {
+      // Nothing to play: let WASAPI fill silence instead of memset-ing here.
+      renderClient_->ReleaseBuffer(frames, AUDCLNT_BUFFERFLAGS_SILENT);
+      return;
+    }
     if (got < needed) {
-      std::memset(deviceBuffer + got, 0, needed - got); // underrun -> silence
+      std::memset(deviceBuffer + got, 0, needed - got); // partial underrun -> pad with silence
     }
     renderClient_->ReleaseBuffer(frames, 0);
   }

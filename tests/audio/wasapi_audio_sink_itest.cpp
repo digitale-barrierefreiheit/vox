@@ -64,12 +64,12 @@ protected:
     sink_ = std::make_unique<WasapiAudioSink>(AudioFormat{22050, 16, 1});
     try {
       sink_->start();
-    } catch (const std::runtime_error&) {
+    } catch (const std::runtime_error& error) {
       sink_.reset();
       if (audioRequired()) {
-        FAIL() << "VOX_REQUIRE_AUDIO_DEVICE is set but no usable render device was found.";
+        FAIL() << "VOX_REQUIRE_AUDIO_DEVICE is set but start() failed: " << error.what();
       }
-      GTEST_SKIP() << "No audio render device on this machine.";
+      GTEST_SKIP() << "No usable audio render device (start() failed: " << error.what() << ").";
     }
   }
 

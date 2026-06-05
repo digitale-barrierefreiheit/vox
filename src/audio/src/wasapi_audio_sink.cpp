@@ -156,8 +156,10 @@ public:
     try {
       renderThread_ = std::thread([this] { renderLoopGuarded(); });
     } catch (...) {
-      stop(); // thread creation failed — release the device we just acquired
-      throw;
+      // Translate a std::thread failure (e.g. std::system_error) so start()
+      // honours its documented std::runtime_error contract; release the device.
+      stop();
+      throw std::runtime_error("WasapiAudioSink: failed to create the render thread");
     }
 
     if (FAILED(audioClient_->Start())) {

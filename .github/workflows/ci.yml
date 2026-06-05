@@ -76,18 +76,27 @@ jobs:
       - uses: actions/checkout@v6
       - uses: lukka/get-cmake@v4.3.3
       - name: Install the Scream virtual audio device
+        timeout-minutes: 5
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          # Pin the exact release asset and signing certificate we trust.
+          $expectedZipHash = 'FA33E25F9A46C61E4E0CD83362C51C3D2A45C6FE4091AAD7507E240E40F1A520'
+          $expectedThumbprint = 'B2353603B4837C7A86A01D12A2B34DA7B5F2D368'
           Invoke-WebRequest -Uri https://github.com/duncanthrax/scream/releases/download/4.0/Scream4.0.zip -OutFile Scream.zip
+          if ((Get-FileHash Scream.zip -Algorithm SHA256).Hash -ne $expectedZipHash) { throw "Scream.zip SHA256 mismatch" }
           Expand-Archive -Path Scream.zip -DestinationPath Scream
-          # Trust the driver's signing certificate so the test-signed driver
-          # loads, then install it with devcon. The Scream endpoint becomes the
-          # only (hence default) render device on the runner.
+          # Scream is self-signed, so x64 Driver Signature Enforcement loads it
+          # only when the (pinned) signing cert is a trusted Root; TrustedPublisher
+          # additionally makes the install unattended (no prompt -> no hang).
           $cert = (Get-AuthenticodeSignature "Scream\Install\driver\x64\Scream.sys").SignerCertificate
-          $store = [System.Security.Cryptography.X509Certificates.X509Store]::new('TrustedPublisher', 'LocalMachine')
-          $store.Open('ReadWrite'); $store.Add($cert); $store.Close()
+          if (-not $cert -or $cert.Thumbprint -ne $expectedThumbprint) { throw "Unexpected Scream cert: $($cert.Thumbprint)" }
+          foreach ($name in 'Root', 'TrustedPublisher') {
+            $store = [System.Security.Cryptography.X509Certificates.X509Store]::new($name, 'LocalMachine')
+            $store.Open('ReadWrite'); $store.Add($cert); $store.Close()
+          }
           & "Scream\Install\helpers\devcon-x64.exe" install "Scream\Install\driver\x64\Scream.inf" *Scream
+          if ($LASTEXITCODE -ne 0) { throw "devcon install failed ($LASTEXITCODE)" }
           Start-Service audiosrv
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
@@ -150,15 +159,27 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "reg copy of voice tokens failed ($LASTEXITCODE)" }
           reg query "$dst"
       - name: Install the Scream virtual audio device
+        timeout-minutes: 5
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          # Pin the exact release asset and signing certificate we trust.
+          $expectedZipHash = 'FA33E25F9A46C61E4E0CD83362C51C3D2A45C6FE4091AAD7507E240E40F1A520'
+          $expectedThumbprint = 'B2353603B4837C7A86A01D12A2B34DA7B5F2D368'
           Invoke-WebRequest -Uri https://github.com/duncanthrax/scream/releases/download/4.0/Scream4.0.zip -OutFile Scream.zip
+          if ((Get-FileHash Scream.zip -Algorithm SHA256).Hash -ne $expectedZipHash) { throw "Scream.zip SHA256 mismatch" }
           Expand-Archive -Path Scream.zip -DestinationPath Scream
+          # Scream is self-signed, so x64 Driver Signature Enforcement loads it
+          # only when the (pinned) signing cert is a trusted Root; TrustedPublisher
+          # additionally makes the install unattended (no prompt -> no hang).
           $cert = (Get-AuthenticodeSignature "Scream\Install\driver\x64\Scream.sys").SignerCertificate
-          $store = [System.Security.Cryptography.X509Certificates.X509Store]::new('TrustedPublisher', 'LocalMachine')
-          $store.Open('ReadWrite'); $store.Add($cert); $store.Close()
+          if (-not $cert -or $cert.Thumbprint -ne $expectedThumbprint) { throw "Unexpected Scream cert: $($cert.Thumbprint)" }
+          foreach ($name in 'Root', 'TrustedPublisher') {
+            $store = [System.Security.Cryptography.X509Certificates.X509Store]::new($name, 'LocalMachine')
+            $store.Open('ReadWrite'); $store.Add($cert); $store.Close()
+          }
           & "Scream\Install\helpers\devcon-x64.exe" install "Scream\Install\driver\x64\Scream.inf" *Scream
+          if ($LASTEXITCODE -ne 0) { throw "devcon install failed ($LASTEXITCODE)" }
           Start-Service audiosrv
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1

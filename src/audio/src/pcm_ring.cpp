@@ -14,12 +14,19 @@
 #include <cstddef>
 #include <cstring>
 #include <span>
+#include <stdexcept>
 
 #include <vox/audio/pcm_ring.hpp>
 
 namespace vox::audio {
 
-PcmRing::PcmRing(std::size_t capacityBytes) : buffer_(capacityBytes) {}
+PcmRing::PcmRing(std::size_t capacityBytes) : buffer_(capacityBytes) {
+  if (capacityBytes == 0U) {
+    // write()/read() index the buffer modulo its capacity; a zero capacity
+    // would be a division by zero, so reject it up front.
+    throw std::invalid_argument("PcmRing capacity must be non-zero");
+  }
+}
 
 std::size_t PcmRing::write(std::span<const std::byte> data) noexcept {
   const std::size_t capacity = buffer_.size();

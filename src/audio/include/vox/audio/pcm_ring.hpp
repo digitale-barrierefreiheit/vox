@@ -28,6 +28,10 @@ namespace vox::audio {
 #endif
 
 /// A fixed-capacity, lock-free SPSC ring of raw PCM bytes.
+// The cursors are deliberately on separate cache lines (false-sharing
+// avoidance, §8.3); the resulting padding is intentional, so the padding
+// analyzer is silenced for this class.
+// NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 class PcmRing {
 public:
   /// Constructs a ring that can hold @p capacityBytes bytes. Allocates once.

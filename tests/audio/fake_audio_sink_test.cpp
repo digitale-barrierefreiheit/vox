@@ -14,7 +14,7 @@ namespace {
 
 using vox::testing::FakeAudioSink;
 
-constexpr std::array<std::byte, 4> kChunk{std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}};
+constexpr std::array<std::byte, 4> Chunk{std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}};
 
 TEST(FakeAudioSink, StartAndStopTrackState) {
   FakeAudioSink sink;
@@ -28,8 +28,8 @@ TEST(FakeAudioSink, StartAndStopTrackState) {
 TEST(FakeAudioSink, WriteBuffersAndCounts) {
   FakeAudioSink sink;
   sink.start();
-  sink.write(kChunk);
-  sink.write(kChunk);
+  sink.write(Chunk);
+  sink.write(Chunk);
 
   EXPECT_EQ(sink.writeCount(), 2);
   EXPECT_EQ(sink.bytesWritten(), 8U);
@@ -39,14 +39,14 @@ TEST(FakeAudioSink, WriteBuffersAndCounts) {
 TEST(FakeAudioSink, FlushDropsBufferedButKeepsCumulativeCount) {
   FakeAudioSink sink;
   sink.start();
-  sink.write(kChunk);
+  sink.write(Chunk);
   sink.flush();
 
   EXPECT_EQ(sink.flushCount(), 1);
   EXPECT_TRUE(sink.buffered().empty());
   EXPECT_EQ(sink.bytesWritten(), 4U); // cumulative survives flush
 
-  sink.write(kChunk);
+  sink.write(Chunk);
   EXPECT_EQ(sink.buffered().size(), 4U);
   EXPECT_EQ(sink.bytesWritten(), 8U);
 }

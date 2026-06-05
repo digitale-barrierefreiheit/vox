@@ -129,10 +129,15 @@ public:
     if (running_.load(std::memory_order_acquire)) {
       return;
     }
-    acquireDevice();
-
     stopRequested_.store(false, std::memory_order_relaxed);
     flushRequested_.store(false, std::memory_order_relaxed);
+    try {
+      acquireDevice();
+    } catch (...) {
+      stop(); // release whatever acquireDevice() created, so a retry starts clean
+      throw;
+    }
+
     running_.store(true, std::memory_order_release);
     renderThread_ = std::thread([this] { renderLoopGuarded(); });
 
@@ -178,10 +183,10 @@ public:
     flushRequested_.store(true, std::memory_order_release);
   }
 
+  // Idempotent: also releases a partially-acquired device (e.g. after a failed
+  // start()), so it must not early-return on `running_ == false`.
   void stop() {
-    if (!running_.exchange(false, std::memory_order_acq_rel)) {
-      return;
-    }
+    running_.store(false, std::memory_order_release);
     stopRequested_.store(true, std::memory_order_release);
     if (audioEvent_ != nullptr) {
       ::SetEvent(audioEvent_); // wake the render thread out of its wait
@@ -270,6 +275,11 @@ private:
   }
 
   void renderLoop() {
+    // The render thread issues WASAPI COM calls, and COM must be initialized
+    // per-thread. The interfaces were created on the MTA, so this thread joins
+    // the MTA too (no marshaling needed).
+    const ComApartment renderThreadCom;
+
     // Real-time scheduling for the render thread (avoids priority inversion,
     // ADR-10). Best-effort: if MMCSS is unavailable we still render.
     DWORD taskIndex = 0;

@@ -7,6 +7,7 @@
 #include <array>
 #include <cstddef>
 #include <span>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
@@ -35,6 +36,10 @@ TEST(PcmRing, StartsEmpty) {
   EXPECT_EQ(ring.capacity(), 16U);
   EXPECT_EQ(ring.readableBytes(), 0U);
   EXPECT_EQ(ring.writableBytes(), 16U);
+}
+
+TEST(PcmRing, RejectsZeroCapacity) {
+  EXPECT_THROW(PcmRing{0}, std::invalid_argument);
 }
 
 TEST(PcmRing, WriteThenReadRoundTrips) {

@@ -18,6 +18,7 @@
 #include <span>
 #include <vector>
 
+#include <vox/audio/audio_format.hpp>
 #include <vox/audio/pcm_converter.hpp>
 
 namespace vox::audio {

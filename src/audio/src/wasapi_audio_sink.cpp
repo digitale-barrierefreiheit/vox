@@ -189,6 +189,9 @@ public:
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
         continue;
       }
+      // `remaining` (whole frames from the converter) and the ring's free space
+      // (frame-aligned capacity, frame-aligned in-flight) are both frame
+      // multiples, so `written` is too — a frame is never split mid-write.
       const std::size_t written = ring_->write(remaining);
       remaining = remaining.subspan(written);
       if (written == 0U) {
@@ -294,14 +297,18 @@ private:
   /// crash), and synthesis runs faster than real-time so the ring stays full.
   /// We use ~RingSeconds of audio but floor it at a few device periods, so the
   /// render thread can never outrun a momentarily-behind producer regardless of
-  /// the device's period.
+  /// the device's period. The result is a whole number of frames: with a
+  /// frame-aligned capacity, and the converter emitting whole frames and the
+  /// render thread consuming whole frames, the in-flight count and free space
+  /// stay frame-aligned, so a ring write can never split a frame.
   [[nodiscard]] std::size_t ringCapacityBytes() const {
     const std::size_t bytesPerSecond =
         static_cast<std::size_t>(converter_->targetSampleRate()) * frameBytes_;
     const auto bySeconds =
         static_cast<std::size_t>(static_cast<double>(bytesPerSecond) * RingSeconds);
     const std::size_t byPeriods = std::size_t{MinBufferPeriods} * bufferFrameCount_ * frameBytes_;
-    return std::max(bySeconds, byPeriods);
+    const std::size_t capacity = std::max(bySeconds, byPeriods);
+    return (capacity / frameBytes_) * frameBytes_; // round down to whole frames
   }
 
   void renderLoopGuarded() noexcept {

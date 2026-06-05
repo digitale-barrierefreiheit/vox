@@ -87,6 +87,64 @@ jobs:
         run: ctest --preset ${{ matrix.test_preset }}
 
   # ---------------------------------------------------------------------------
+  # German speech integration (ADR-07). GitHub Windows runners ship English-only,
+  # so the default windows job only exercises the SAPI fallback path. Here we
+  # provision the de-DE text-to-speech voice and bridge its OneCore token into
+  # the classic SAPI5 registry that ISpVoice enumerates, then run the suite with
+  # VOX_REQUIRE_GERMAN_VOICE=1 so a missing or SAPI-invisible German voice fails
+  # the build instead of silently falling back to English. x64 only: the German
+  # TTS engine is 64-bit. NOTE: this depends on Features-on-Demand and the
+  # registry bridge; if it proves flaky, downgrade to a non-gating job.
+  windows-de-DE:
+    name: windows-x64-msvc-de-DE
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v6
+      - uses: lukka/get-cmake@v4.3.3
+      - name: Install the German text-to-speech voice
+        shell: pwsh
+        run: |
+          # Discover the capability by prefix so we don't pin a version that may
+          # differ across runner images. Log all de-DE capabilities for triage.
+          $deDE = Get-WindowsCapability -Online | Where-Object { $_.Name -like '*de-DE*' }
+          Write-Host "de-DE capabilities on this image:"
+          $deDE | ForEach-Object { Write-Host "  - $($_.Name) [$($_.State)]" }
+          $tts = $deDE | Where-Object { $_.Name -like 'Language.TextToSpeech~~~de-DE~*' } | Select-Object -First 1
+          if (-not $tts) { throw "No de-DE TextToSpeech capability is available on this runner image." }
+          if ($tts.State -ne 'Installed') {
+            Add-WindowsCapability -Online -Name $tts.Name -ErrorAction Stop | Out-Null
+          }
+          Write-Host "Installed voice capability: $($tts.Name)"
+      - name: Bridge the OneCore voice token into the classic SAPI registry
+        shell: pwsh
+        run: |
+          # Language-pack voices register under Speech_OneCore, which classic
+          # SAPI5 (ISpVoice / SPCAT_VOICES) does not enumerate. Copy the tokens
+          # into the classic hive so the engine can find the German voice. (The
+          # broader fix — enumerating OneCore directly — is tracked separately.)
+          $src = 'HKLM\SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens'
+          $dst = 'HKLM\SOFTWARE\Microsoft\Speech\Voices\Tokens'
+          reg copy "$src" "$dst" /s /f
+          if ($LASTEXITCODE -ne 0) { throw "reg copy of voice tokens failed ($LASTEXITCODE)" }
+          reg query "$dst"
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
+      - name: Set up vcpkg (pinned to the manifest baseline)
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_BASELINE }}
+      - name: Configure
+        run: cmake --preset x64-msvc
+      - name: Build
+        run: cmake --build --preset x64-msvc-release
+      - name: Test (German voice required)
+        env:
+          VOX_REQUIRE_GERMAN_VOICE: "1"
+        run: ctest --preset x64-msvc-release
+
+  # ---------------------------------------------------------------------------
   # Static analysis: clang-tidy over the compile database (incl. Core Guidelines).
   # ---------------------------------------------------------------------------
   clang-tidy:

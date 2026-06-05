@@ -11,4 +11,4 @@ target_include_directories(vox_testing
   INTERFACE
     "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
-target_link_libraries(vox_testing INTERFACE vox::provider)
+target_link_libraries(vox_testing INTERFACE vox::provider vox::tts vox::audio)

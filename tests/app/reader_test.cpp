@@ -61,13 +61,17 @@ public:
     flushCount_.fetch_add(1, std::memory_order_relaxed);
   }
 
-  /// @brief Blocks until more PCM is written than at the call's start, or
-  ///        @p timeout elapses. Waiting for an increase (not just > 0) keeps
-  ///        repeated waits correct.
+  /// @brief Blocks until PCM is written beyond what a previous waitForWrite()
+  ///        already observed, or @p timeout elapses. Tracking the observed count
+  ///        as state (not a per-call baseline) means a write that lands before
+  ///        the call is not missed, and repeated waits still require new audio.
   [[nodiscard]] bool waitForWrite(std::chrono::milliseconds timeout) {
     std::unique_lock<std::mutex> lock(mutex_);
-    const std::size_t baseline = bytesWritten_;
-    return cv_.wait_for(lock, timeout, [this, baseline] { return bytesWritten_ > baseline; });
+    const bool produced = cv_.wait_for(lock, timeout, [this] { return bytesWritten_ > observed_; });
+    if (produced) {
+      observed_ = bytesWritten_;
+    }
+    return produced;
   }
 
   [[nodiscard]] int flushCount() const noexcept {
@@ -78,6 +82,7 @@ private:
   mutable std::mutex mutex_;
   std::condition_variable cv_;
   std::size_t bytesWritten_{0};
+  std::size_t observed_{0}; ///< Bytes already returned by a prior waitForWrite().
   std::atomic<int> flushCount_{0};
 };
 

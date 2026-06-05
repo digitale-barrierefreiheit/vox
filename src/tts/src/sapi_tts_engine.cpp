@@ -332,9 +332,14 @@ public:
 
   void synthesize(std::string_view utf8Text, const ITtsEngine::PcmSink& sink) {
     cancelled_.store(false, std::memory_order_relaxed);
+    if (utf8Text.empty()) {
+      return; // nothing to say
+    }
     const std::wstring wide = toWide(utf8Text);
     if (wide.empty()) {
-      return; // nothing to say (or unconvertible) — not an error
+      // Non-empty input that did not convert is invalid UTF-8 — surface it
+      // rather than silently producing no audio.
+      throw std::runtime_error("SapiTtsEngine: input text is not valid UTF-8");
     }
 
     const WAVEFORMATEX format = makeWaveFormat();

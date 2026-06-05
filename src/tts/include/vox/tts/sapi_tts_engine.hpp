@@ -46,7 +46,10 @@ public:
   /// @brief The fixed PCM format SAPI output is converted to (22050/16/mono).
   [[nodiscard]] vox::audio::AudioFormat format() const override;
 
-  /// @brief Synthesizes @p utf8Text, streaming PCM chunks to @p sink.
+  /// @brief Synthesizes @p utf8Text, streaming PCM chunks to @p sink. Empty
+  ///        input is a no-op.
+  /// @throws std::runtime_error if @p utf8Text is non-empty but not valid UTF-8,
+  ///         or if SAPI synthesis fails.
   void synthesize(std::string_view utf8Text, const PcmSink& sink) override;
 
   /// @brief Aborts the in-flight synthesis at the next chunk boundary.

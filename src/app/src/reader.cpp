@@ -156,6 +156,15 @@ void Reader::workerLoop() {
       node = std::move(*pending_);
       pending_.reset();
     }
+    {
+      // stop() may have set running_ false after we dequeued but before this
+      // blocking synthesis begins; cancel() alone can be lost if it lands before
+      // synthesize() starts (engines reset their cancel flag there).
+      const std::lock_guard<std::mutex> lock(mutex_);
+      if (!running_) {
+        return;
+      }
+    }
     if (!speechEnabled_.load(std::memory_order_acquire)) {
       continue; // muted after this node was queued; drop it
     }

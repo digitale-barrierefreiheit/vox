@@ -104,8 +104,17 @@ jobs:
       - name: Install the German text-to-speech voice
         shell: pwsh
         run: |
-          DISM /Online /NoRestart /Add-Capability /CapabilityName:Language.TextToSpeech~~~de-DE~~~0.0.1.0
-          if ($LASTEXITCODE -ne 0) { throw "DISM failed to add the de-DE TTS capability ($LASTEXITCODE)" }
+          # Discover the capability by prefix so we don't pin a version that may
+          # differ across runner images. Log all de-DE capabilities for triage.
+          $deDE = Get-WindowsCapability -Online | Where-Object { $_.Name -like '*de-DE*' }
+          Write-Host "de-DE capabilities on this image:"
+          $deDE | ForEach-Object { Write-Host "  - $($_.Name) [$($_.State)]" }
+          $tts = $deDE | Where-Object { $_.Name -like 'Language.TextToSpeech~~~de-DE~*' } | Select-Object -First 1
+          if (-not $tts) { throw "No de-DE TextToSpeech capability is available on this runner image." }
+          if ($tts.State -ne 'Installed') {
+            Add-WindowsCapability -Online -Name $tts.Name -ErrorAction Stop | Out-Null
+          }
+          Write-Host "Installed voice capability: $($tts.Name)"
       - name: Bridge the OneCore voice token into the classic SAPI registry
         shell: pwsh
         run: |

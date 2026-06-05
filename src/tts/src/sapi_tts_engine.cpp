@@ -129,7 +129,7 @@ bool languageIsGerman(const std::wstring& languageAttribute) {
   return false;
 }
 
-/// Reads one string value under a token's "Attributes" key (nullopt if absent).
+/// Reads one string value under a token's "Attributes" key (empty if absent).
 std::wstring readAttribute(ISpObjectToken* token, const wchar_t* valueName) {
   ComPtr<ISpDataKey> attributes;
   if (FAILED(token->OpenKey(L"Attributes", &attributes)) || !attributes) {

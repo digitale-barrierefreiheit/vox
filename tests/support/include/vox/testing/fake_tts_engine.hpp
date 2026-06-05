@@ -11,6 +11,7 @@
 #ifndef VOX_TESTING_FAKE_TTS_ENGINE_HPP
 #define VOX_TESTING_FAKE_TTS_ENGINE_HPP
 
+#include <atomic>
 #include <cstddef>
 #include <span>
 #include <string>
@@ -19,6 +20,7 @@
 
 #include <vox/audio/audio_format.hpp>
 #include <vox/tts/itts_engine.hpp>
+#include <vox/tts/rate.hpp>
 
 namespace vox::testing {
 
@@ -40,13 +42,13 @@ public:
   void synthesize(std::string_view utf8Text, const PcmSink& sink) override {
     ++synthesizeCount_;
     lastText_ = std::string(utf8Text);
-    cancelled_ = false;
+    cancelled_.store(false);
     chunksEmitted_ = 0;
     bytesEmitted_ = 0;
 
     const std::vector<std::byte> chunk(bytesPerByte_, std::byte{0});
     for (std::size_t i = 0; i < utf8Text.size(); ++i) {
-      if (cancelled_) {
+      if (cancelled_.load()) {
         break;
       }
       if (sink) {
@@ -58,12 +60,12 @@ public:
   }
 
   void cancel() override {
-    cancelled_ = true;
+    cancelled_.store(true);
     ++cancelCount_;
   }
 
   void setRate(int rate) override {
-    rate_ = rate;
+    rate_ = vox::tts::clampRate(rate); // mirror the interface's clamping contract
   }
 
   /// @brief The text passed to the most recent `synthesize()` call.
@@ -105,7 +107,7 @@ private:
   int cancelCount_{0};
   std::size_t chunksEmitted_{0};
   std::size_t bytesEmitted_{0};
-  bool cancelled_{false};
+  std::atomic<bool> cancelled_{false};
 };
 
 } // namespace vox::testing

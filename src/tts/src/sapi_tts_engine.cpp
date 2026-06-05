@@ -73,12 +73,14 @@ std::wstring toWide(std::string_view utf8) {
     return {};
   }
   const int length = static_cast<int>(utf8.size());
-  const int chars = ::MultiByteToWideChar(CP_UTF8, 0, utf8.data(), length, nullptr, 0);
+  const int chars =
+      ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(), length, nullptr, 0);
   if (chars <= 0) {
     return {};
   }
   std::wstring out(static_cast<std::size_t>(chars), L'\0');
-  const int written = ::MultiByteToWideChar(CP_UTF8, 0, utf8.data(), length, out.data(), chars);
+  const int written =
+      ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(), length, out.data(), chars);
   if (written != chars) {
     return {};
   }
@@ -94,13 +96,14 @@ std::string toUtf8(const wchar_t* text) {
   if (length == 0) {
     return {};
   }
-  const int bytes = ::WideCharToMultiByte(CP_UTF8, 0, text, length, nullptr, 0, nullptr, nullptr);
+  const int bytes = ::WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, text, length, nullptr, 0,
+                                          nullptr, nullptr);
   if (bytes <= 0) {
     return {};
   }
   std::string out(static_cast<std::size_t>(bytes), '\0');
-  const int written =
-      ::WideCharToMultiByte(CP_UTF8, 0, text, length, out.data(), bytes, nullptr, nullptr);
+  const int written = ::WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, text, length, out.data(),
+                                            bytes, nullptr, nullptr);
   if (written != bytes) {
     return {};
   }

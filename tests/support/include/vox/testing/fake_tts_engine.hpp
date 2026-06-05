@@ -61,7 +61,7 @@ public:
 
   void cancel() override {
     cancelled_.store(true);
-    ++cancelCount_;
+    cancelCount_.fetch_add(1, std::memory_order_relaxed);
   }
 
   void setRate(int rate) override {
@@ -85,7 +85,7 @@ public:
 
   /// @brief How many times `cancel()` has been called.
   [[nodiscard]] int cancelCount() const noexcept {
-    return cancelCount_;
+    return cancelCount_.load(std::memory_order_relaxed);
   }
 
   /// @brief Chunks emitted by the most recent `synthesize()` call.
@@ -104,7 +104,7 @@ private:
   std::string lastText_;
   int rate_{0};
   int synthesizeCount_{0};
-  int cancelCount_{0};
+  std::atomic<int> cancelCount_{0}; // cancel() is thread-safe per the interface
   std::size_t chunksEmitted_{0};
   std::size_t bytesEmitted_{0};
   std::atomic<bool> cancelled_{false};

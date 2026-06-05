@@ -121,7 +121,7 @@ TEST_F(SapiTtsEngineTest, RequireGermanSelectsAGermanVoiceWhereAvailable) {
   const std::unique_ptr<SapiTtsEngine> german = makeEngine(VoiceSelectionPolicy::RequireGerman);
   if (!german) {
     if (germanRequired()) {
-      FAIL() << "VOX_REQUIRE_GERMAN_VOICE is set but RequireGerman found no de-DE voice "
+      FAIL() << "VOX_REQUIRE_GERMAN_VOICE is set but RequireGerman found no German voice "
                 "(language provisioning or the OneCore->SAPI registry bridge failed).";
     }
     GTEST_SKIP() << "No German SAPI voice installed on this machine.";

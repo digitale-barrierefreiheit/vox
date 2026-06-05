@@ -30,13 +30,14 @@ PcmRing::PcmRing(std::size_t capacityBytes) : buffer_(capacityBytes) {
 
 std::size_t PcmRing::write(std::span<const std::byte> data) noexcept {
   const std::size_t capacity = buffer_.size();
-  const std::size_t writePos = writeCursor_.load(std::memory_order_relaxed);
-  const std::size_t inFlight = writePos - readCursor_.load(std::memory_order_acquire);
+  const std::uint64_t writePos = writeCursor_.load(std::memory_order_relaxed);
+  const auto inFlight =
+      static_cast<std::size_t>(writePos - readCursor_.load(std::memory_order_acquire));
   const std::size_t count = std::min(data.size(), capacity - inFlight);
   if (count == 0U) {
     return 0U;
   }
-  const std::size_t head = writePos % capacity;
+  const auto head = static_cast<std::size_t>(writePos % capacity);
   const std::size_t firstChunk = std::min(count, capacity - head);
   std::memcpy(buffer_.data() + head, data.data(), firstChunk);
   if (count > firstChunk) {
@@ -48,13 +49,14 @@ std::size_t PcmRing::write(std::span<const std::byte> data) noexcept {
 
 std::size_t PcmRing::read(std::span<std::byte> out) noexcept {
   const std::size_t capacity = buffer_.size();
-  const std::size_t readPos = readCursor_.load(std::memory_order_relaxed);
-  const std::size_t available = writeCursor_.load(std::memory_order_acquire) - readPos;
+  const std::uint64_t readPos = readCursor_.load(std::memory_order_relaxed);
+  const auto available =
+      static_cast<std::size_t>(writeCursor_.load(std::memory_order_acquire) - readPos);
   const std::size_t count = std::min(out.size(), available);
   if (count == 0U) {
     return 0U;
   }
-  const std::size_t head = readPos % capacity;
+  const auto head = static_cast<std::size_t>(readPos % capacity);
   const std::size_t firstChunk = std::min(count, capacity - head);
   std::memcpy(out.data(), buffer_.data() + head, firstChunk);
   if (count > firstChunk) {
@@ -70,13 +72,14 @@ void PcmRing::clear() noexcept {
 }
 
 std::size_t PcmRing::writableBytes() const noexcept {
-  const std::size_t inFlight =
-      writeCursor_.load(std::memory_order_relaxed) - readCursor_.load(std::memory_order_acquire);
+  const auto inFlight = static_cast<std::size_t>(writeCursor_.load(std::memory_order_relaxed) -
+                                                 readCursor_.load(std::memory_order_acquire));
   return buffer_.size() - inFlight;
 }
 
 std::size_t PcmRing::readableBytes() const noexcept {
-  return writeCursor_.load(std::memory_order_acquire) - readCursor_.load(std::memory_order_relaxed);
+  return static_cast<std::size_t>(writeCursor_.load(std::memory_order_acquire) -
+                                  readCursor_.load(std::memory_order_relaxed));
 }
 
 } // namespace vox::audio

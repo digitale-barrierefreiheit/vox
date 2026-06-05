@@ -30,10 +30,14 @@ namespace vox::audio {
 
 /// WASAPI shared-mode audio sink. Source PCM is resampled to the device mix
 /// format and rendered with instant barge-in.
+///
+/// @note Create, start, stop, and destroy the sink on a single MTA (or
+///       COM-uninitialized) thread: COM is initialized in `start()` and
+///       uninitialized in `stop()` on that thread.
 class WasapiAudioSink : public IAudioSink {
 public:
   /// @brief Creates a sink that will play @p sourceFormat PCM (16-bit mono).
-  ///        The device is acquired in `start()`, not here.
+  ///        Does no COM or device work — that happens in `start()`.
   explicit WasapiAudioSink(AudioFormat sourceFormat);
   ~WasapiAudioSink() override;
 
@@ -42,8 +46,10 @@ public:
   WasapiAudioSink(WasapiAudioSink&&) = delete;
   WasapiAudioSink& operator=(WasapiAudioSink&&) = delete;
 
-  /// @brief Acquires the default render device and starts the render thread.
-  /// @throws std::runtime_error if no render device exists or WASAPI init fails.
+  /// @brief Initializes COM, acquires the default render device, and starts the
+  ///        render thread.
+  /// @throws std::runtime_error if the calling thread is STA, no render device
+  ///         exists, or WASAPI initialization fails.
   void start() override;
 
   /// @brief Converts @p pcm to the device format and queues it for playback.

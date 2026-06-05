@@ -14,6 +14,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <vector>
 
@@ -71,8 +72,11 @@ private:
   static constexpr std::size_t CacheLineSize = 64;
 
   std::vector<std::byte> buffer_;
-  alignas(CacheLineSize) std::atomic<std::size_t> writeCursor_{0};
-  alignas(CacheLineSize) std::atomic<std::size_t> readCursor_{0};
+  // 64-bit free-running counters so they do not wrap (a 32-bit counter would
+  // wrap after ~4 GiB, corrupting the position at the boundary on x86 builds);
+  // 64-bit atomics are still lock-free on the x86/x64 targets.
+  alignas(CacheLineSize) std::atomic<std::uint64_t> writeCursor_{0};
+  alignas(CacheLineSize) std::atomic<std::uint64_t> readCursor_{0};
 };
 
 #if defined(_MSC_VER)

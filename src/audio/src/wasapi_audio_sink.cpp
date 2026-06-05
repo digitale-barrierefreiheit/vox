@@ -141,9 +141,12 @@ public:
     stopRequested_.store(false, std::memory_order_relaxed);
     flushRequested_.store(false, std::memory_order_relaxed);
     try {
+      // Initialize COM on this (the caller's) thread, where the device
+      // interfaces are created and later released — not at construction.
+      apartment_.emplace();
       acquireDevice();
     } catch (...) {
-      stop(); // release whatever acquireDevice() created, so a retry starts clean
+      stop(); // release whatever was created, so a retry starts clean
       throw;
     }
 
@@ -224,6 +227,7 @@ public:
       ::CloseHandle(audioEvent_);
       audioEvent_ = nullptr;
     }
+    apartment_.reset(); // CoUninitialize last, after every COM object is released
   }
 
 private:
@@ -350,7 +354,7 @@ private:
   }
 
   AudioFormat sourceFormat_;
-  ComApartment com_; // declared early: initialized first, uninitialized last
+  std::optional<ComApartment> apartment_; // COM for the start()/stop() thread
 
   ComPtr<IMMDeviceEnumerator> enumerator_;
   ComPtr<IMMDevice> device_;

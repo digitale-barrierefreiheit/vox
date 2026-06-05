@@ -124,4 +124,11 @@ TEST(PcmConverter, RejectsZeroTargetRateOrChannels) {
                std::invalid_argument);
 }
 
+TEST(PcmConverter, RejectsNonSampleAlignedInput) {
+  PcmConverter converter{AudioFormat{48000, 16, 1}, 48000, 1, SampleFormat::Int16};
+  std::vector<std::byte> out;
+  const std::vector<std::byte> oddBytes(3); // not a whole number of 16-bit samples
+  EXPECT_THROW(converter.convert(oddBytes, out), std::invalid_argument);
+}
+
 } // namespace

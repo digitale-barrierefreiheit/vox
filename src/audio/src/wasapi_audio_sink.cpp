@@ -100,6 +100,11 @@ private:
 SampleFormat detectSampleFormat(const WAVEFORMATEX& format) {
   WORD tag = format.wFormatTag;
   if (tag == WAVE_FORMAT_EXTENSIBLE) {
+    // Only read the extensible fields if the struct is actually that large; a
+    // malformed mix format would otherwise be an out-of-bounds read.
+    if (format.cbSize < sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX)) {
+      throw std::runtime_error("WasapiAudioSink: malformed extensible mix format");
+    }
     // The extensible SubFormat's Data1 carries the underlying tag (1 = PCM,
     // 3 = IEEE float), so we avoid depending on the KSDATAFORMAT GUID symbols.
     const auto& extensible = reinterpret_cast<const WAVEFORMATEXTENSIBLE&>(format);
@@ -230,19 +235,22 @@ private:
       throw std::runtime_error("WasapiAudioSink: cannot activate the audio client");
     }
 
-    WAVEFORMATEX* mixFormat = nullptr;
-    if (FAILED(audioClient_->GetMixFormat(&mixFormat)) || mixFormat == nullptr) {
+    WAVEFORMATEX* rawMixFormat = nullptr;
+    if (FAILED(audioClient_->GetMixFormat(&rawMixFormat)) || rawMixFormat == nullptr) {
       throw std::runtime_error("WasapiAudioSink: cannot read the device mix format");
     }
+    // Own the CoTaskMem allocation so it is freed on every path, including the
+    // throwing ones below (detectSampleFormat / converter construction).
+    const std::unique_ptr<WAVEFORMATEX, decltype(&::CoTaskMemFree)> mixFormat(rawMixFormat,
+                                                                              &::CoTaskMemFree);
+
     const SampleFormat sampleFormat = detectSampleFormat(*mixFormat);
     frameBytes_ = mixFormat->nBlockAlign;
     converter_.emplace(sourceFormat_, mixFormat->nSamplesPerSec, mixFormat->nChannels,
                        sampleFormat);
 
-    const HRESULT initialized = audioClient_->Initialize(
-        AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK, 0, 0, mixFormat, nullptr);
-    ::CoTaskMemFree(mixFormat);
-    if (FAILED(initialized)) {
+    if (FAILED(audioClient_->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
+                                        0, 0, mixFormat.get(), nullptr))) {
       throw std::runtime_error("WasapiAudioSink: IAudioClient::Initialize failed");
     }
 

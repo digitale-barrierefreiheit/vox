@@ -72,6 +72,11 @@ void PcmConverter::emitFrame(float sample, std::vector<std::byte>& out) const {
 }
 
 void PcmConverter::convert(std::span<const std::byte> sourcePcm, std::vector<std::byte>& out) {
+  if (sourcePcm.size() % sizeof(std::int16_t) != 0U) {
+    // A 16-bit stream must arrive in whole samples; a stray byte signals an
+    // upstream framing bug, so reject it rather than silently truncate.
+    throw std::invalid_argument("PcmConverter: source size must be a multiple of 2 bytes");
+  }
   const std::size_t sampleCount = sourcePcm.size() / sizeof(std::int16_t);
   for (std::size_t i = 0; i < sampleCount; ++i) {
     std::int16_t raw = 0;

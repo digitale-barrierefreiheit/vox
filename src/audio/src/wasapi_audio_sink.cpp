@@ -1,0 +1,365 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
+
+/// @file
+/// @brief Windows WASAPI implementation of vox::audio::WasapiAudioSink.
+///
+/// `write()` (producer thread) resamples to the device mix format and pushes
+/// bytes into the lock-free PcmRing. A dedicated event-driven render thread
+/// copies ring -> device buffer and zero-fills on underrun — no allocation, no
+/// lock, no exception escaping. `flush()` bumps a generation (so a blocked
+/// producer abandons stale audio) and signals the render thread to Reset the
+/// device and clear the ring, giving barge-in within one buffer period.
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <memory>
+#include <optional>
+#include <span>
+#include <stdexcept>
+#include <thread>
+#include <vector>
+
+#include <vox/audio/audio_format.hpp>
+#include <vox/audio/pcm_converter.hpp>
+#include <vox/audio/pcm_ring.hpp>
+#include <vox/audio/wasapi_audio_sink.hpp>
+
+// The Windows audio headers are include-order sensitive (windows.h must lead),
+// so this block is exempt from clang-format's include sorting. NOMINMAX keeps
+// the min/max macros from clobbering std::min/std::max.
+// clang-format off
+#define NOMINMAX
+#include <windows.h>
+#include <objbase.h>
+#include <mmreg.h>
+#include <mmdeviceapi.h>
+#include <audioclient.h>
+#include <avrt.h>
+#pragma warning(push)
+#pragma warning(disable : 4265)  // WRL: non-virtual dtor in a system header
+#include <wrl/client.h>
+#pragma warning(pop)
+// clang-format on
+
+namespace vox::audio {
+
+namespace {
+
+using Microsoft::WRL::ComPtr;
+
+/// Ring capacity as a fraction of a second of device audio — enough to absorb
+/// synthesis bursts without adding noticeable latency.
+constexpr double RingSeconds = 0.5;
+
+/// Floor on the ring capacity, in device buffer periods, so it is never sized
+/// below what bridges normal render-thread scheduling jitter.
+constexpr std::size_t MinBufferPeriods = 4;
+
+/// How long the render thread waits on the audio event before re-checking stop.
+constexpr DWORD RenderWaitMs = 200;
+
+/// RAII for the COM apartment: CoUninitialize iff this object initialized it.
+/// (Mirrors the one in the SAPI backend; each OS-glue TU stays self-contained.)
+class ComApartment {
+public:
+  ComApartment() {
+    const HRESULT hr = ::CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    if (hr == RPC_E_CHANGED_MODE) {
+      initialized_ = false; // already initialized elsewhere; we do not own it
+    } else if (FAILED(hr)) {
+      throw std::runtime_error("WasapiAudioSink: COM initialization failed");
+    } else {
+      initialized_ = true;
+    }
+  }
+
+  ~ComApartment() {
+    if (initialized_) {
+      ::CoUninitialize();
+    }
+  }
+
+  ComApartment(const ComApartment&) = delete;
+  ComApartment& operator=(const ComApartment&) = delete;
+  ComApartment(ComApartment&&) = delete;
+  ComApartment& operator=(ComApartment&&) = delete;
+
+private:
+  bool initialized_{false};
+};
+
+/// Maps a device mix format to the sample encoding we must produce for it.
+SampleFormat detectSampleFormat(const WAVEFORMATEX& format) {
+  WORD tag = format.wFormatTag;
+  if (tag == WAVE_FORMAT_EXTENSIBLE) {
+    // The extensible SubFormat's Data1 carries the underlying tag (1 = PCM,
+    // 3 = IEEE float), so we avoid depending on the KSDATAFORMAT GUID symbols.
+    const auto& extensible = reinterpret_cast<const WAVEFORMATEXTENSIBLE&>(format);
+    tag = static_cast<WORD>(extensible.SubFormat.Data1);
+  }
+  if (tag == WAVE_FORMAT_IEEE_FLOAT && format.wBitsPerSample == 32U) {
+    return SampleFormat::Float32;
+  }
+  if (tag == WAVE_FORMAT_PCM && format.wBitsPerSample == 16U) {
+    return SampleFormat::Int16;
+  }
+  throw std::runtime_error("WasapiAudioSink: unsupported device mix format");
+}
+
+} // namespace
+
+class WasapiAudioSink::Impl {
+public:
+  explicit Impl(AudioFormat sourceFormat) : sourceFormat_(sourceFormat) {}
+
+  ~Impl() {
+    stop();
+  }
+
+  Impl(const Impl&) = delete;
+  Impl& operator=(const Impl&) = delete;
+  Impl(Impl&&) = delete;
+  Impl& operator=(Impl&&) = delete;
+
+  void start() {
+    if (running_.load(std::memory_order_acquire)) {
+      return;
+    }
+    acquireDevice();
+
+    stopRequested_.store(false, std::memory_order_relaxed);
+    flushRequested_.store(false, std::memory_order_relaxed);
+    running_.store(true, std::memory_order_release);
+    renderThread_ = std::thread([this] { renderLoopGuarded(); });
+
+    if (FAILED(audioClient_->Start())) {
+      stop();
+      throw std::runtime_error("WasapiAudioSink: IAudioClient::Start failed");
+    }
+  }
+
+  void write(std::span<const std::byte> pcm) {
+    if (!running_.load(std::memory_order_acquire)) {
+      return;
+    }
+    const std::uint64_t generation = flushGeneration_.load(std::memory_order_acquire);
+
+    scratch_.clear();
+    converter_->convert(pcm, scratch_);
+
+    std::span<const std::byte> remaining{scratch_};
+    while (!remaining.empty()) {
+      if (stopRequested_.load(std::memory_order_acquire) ||
+          flushGeneration_.load(std::memory_order_acquire) != generation) {
+        return; // stopped or barged-in: abandon this (now stale) audio
+      }
+      if (flushRequested_.load(std::memory_order_acquire)) {
+        // A flush is pending; wait for the render thread to clear the ring so
+        // this fresh audio is not discarded along with the stale data.
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        continue;
+      }
+      const std::size_t written = ring_->write(remaining);
+      remaining = remaining.subspan(written);
+      if (written == 0U) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1)); // full; let it drain
+      }
+    }
+  }
+
+  void flush() {
+    // Bump the generation first so a blocked producer abandons stale audio, then
+    // ask the render thread to drop what is buffered and reset the device.
+    flushGeneration_.fetch_add(1, std::memory_order_acq_rel);
+    flushRequested_.store(true, std::memory_order_release);
+  }
+
+  void stop() {
+    if (!running_.exchange(false, std::memory_order_acq_rel)) {
+      return;
+    }
+    stopRequested_.store(true, std::memory_order_release);
+    if (audioEvent_ != nullptr) {
+      ::SetEvent(audioEvent_); // wake the render thread out of its wait
+    }
+    if (renderThread_.joinable()) {
+      renderThread_.join();
+    }
+    if (audioClient_) {
+      audioClient_->Stop();
+    }
+    renderClient_.Reset();
+    audioClient_.Reset();
+    device_.Reset();
+    enumerator_.Reset();
+    converter_.reset();
+    ring_.reset();
+    if (audioEvent_ != nullptr) {
+      ::CloseHandle(audioEvent_);
+      audioEvent_ = nullptr;
+    }
+  }
+
+private:
+  void acquireDevice() {
+    if (FAILED(::CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+                                  IID_PPV_ARGS(&enumerator_)))) {
+      throw std::runtime_error("WasapiAudioSink: cannot create device enumerator");
+    }
+    if (FAILED(enumerator_->GetDefaultAudioEndpoint(eRender, eConsole, &device_)) || !device_) {
+      throw std::runtime_error("WasapiAudioSink: no default render device");
+    }
+    if (FAILED(device_->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
+                                 reinterpret_cast<void**>(audioClient_.GetAddressOf())))) {
+      throw std::runtime_error("WasapiAudioSink: cannot activate the audio client");
+    }
+
+    WAVEFORMATEX* mixFormat = nullptr;
+    if (FAILED(audioClient_->GetMixFormat(&mixFormat)) || mixFormat == nullptr) {
+      throw std::runtime_error("WasapiAudioSink: cannot read the device mix format");
+    }
+    const SampleFormat sampleFormat = detectSampleFormat(*mixFormat);
+    frameBytes_ = mixFormat->nBlockAlign;
+    converter_.emplace(sourceFormat_, mixFormat->nSamplesPerSec, mixFormat->nChannels,
+                       sampleFormat);
+
+    const HRESULT initialized = audioClient_->Initialize(
+        AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK, 0, 0, mixFormat, nullptr);
+    ::CoTaskMemFree(mixFormat);
+    if (FAILED(initialized)) {
+      throw std::runtime_error("WasapiAudioSink: IAudioClient::Initialize failed");
+    }
+
+    audioEvent_ = ::CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    if (audioEvent_ == nullptr || FAILED(audioClient_->SetEventHandle(audioEvent_))) {
+      throw std::runtime_error("WasapiAudioSink: cannot set the render event handle");
+    }
+    if (FAILED(audioClient_->GetBufferSize(&bufferFrameCount_)) ||
+        FAILED(audioClient_->GetService(IID_PPV_ARGS(&renderClient_)))) {
+      throw std::runtime_error("WasapiAudioSink: cannot get the render client");
+    }
+    ring_ = std::make_unique<PcmRing>(ringCapacityBytes());
+  }
+
+  /// Ring capacity in bytes. Sizing is a smoothness knob, not a correctness one:
+  /// overflow back-pressures write() (no loss) and underflow zero-fills (no
+  /// crash), and synthesis runs faster than real-time so the ring stays full.
+  /// We use ~RingSeconds of audio but floor it at a few device periods, so the
+  /// render thread can never outrun a momentarily-behind producer regardless of
+  /// the device's period.
+  [[nodiscard]] std::size_t ringCapacityBytes() const {
+    const std::size_t bytesPerSecond =
+        static_cast<std::size_t>(converter_->targetSampleRate()) * frameBytes_;
+    const auto bySeconds =
+        static_cast<std::size_t>(static_cast<double>(bytesPerSecond) * RingSeconds);
+    const std::size_t byPeriods = std::size_t{MinBufferPeriods} * bufferFrameCount_ * frameBytes_;
+    return std::max(bySeconds, byPeriods);
+  }
+
+  void renderLoopGuarded() noexcept {
+    // An exception must never escape a std::thread (it would terminate the
+    // process), so the whole loop runs inside a catch-all.
+    try {
+      renderLoop();
+    } catch (...) { // NOLINT(bugprone-empty-catch) — intentional thread firewall
+    }
+  }
+
+  void renderLoop() {
+    // Real-time scheduling for the render thread (avoids priority inversion,
+    // ADR-10). Best-effort: if MMCSS is unavailable we still render.
+    DWORD taskIndex = 0;
+    HANDLE mmcss = ::AvSetMmThreadCharacteristicsW(L"Pro Audio", &taskIndex);
+
+    while (!stopRequested_.load(std::memory_order_acquire)) {
+      const DWORD waited = ::WaitForSingleObject(audioEvent_, RenderWaitMs);
+      if (stopRequested_.load(std::memory_order_acquire)) {
+        break;
+      }
+      if (waited != WAIT_OBJECT_0) {
+        continue; // timed out — loop back and re-check the stop flag
+      }
+      if (flushRequested_.exchange(false, std::memory_order_acq_rel)) {
+        audioClient_->Stop();
+        audioClient_->Reset();
+        ring_->clear();
+        audioClient_->Start();
+      }
+      renderAvailable();
+    }
+
+    if (mmcss != nullptr) {
+      ::AvRevertMmThreadCharacteristics(mmcss);
+    }
+  }
+
+  void renderAvailable() {
+    UINT32 padding = 0;
+    if (FAILED(audioClient_->GetCurrentPadding(&padding))) {
+      return;
+    }
+    const UINT32 frames = bufferFrameCount_ - padding;
+    if (frames == 0U) {
+      return;
+    }
+    BYTE* deviceBuffer = nullptr;
+    if (FAILED(renderClient_->GetBuffer(frames, &deviceBuffer))) {
+      return;
+    }
+    const std::size_t needed = static_cast<std::size_t>(frames) * frameBytes_;
+    auto* bytes = reinterpret_cast<std::byte*>(deviceBuffer);
+    const std::size_t got = ring_->read(std::span<std::byte>(bytes, needed));
+    if (got < needed) {
+      std::memset(deviceBuffer + got, 0, needed - got); // underrun -> silence
+    }
+    renderClient_->ReleaseBuffer(frames, 0);
+  }
+
+  AudioFormat sourceFormat_;
+  ComApartment com_; // declared early: initialized first, uninitialized last
+
+  ComPtr<IMMDeviceEnumerator> enumerator_;
+  ComPtr<IMMDevice> device_;
+  ComPtr<IAudioClient> audioClient_;
+  ComPtr<IAudioRenderClient> renderClient_;
+  HANDLE audioEvent_{nullptr};
+  UINT32 bufferFrameCount_{0};
+  std::size_t frameBytes_{0};
+
+  std::optional<PcmConverter> converter_;
+  std::unique_ptr<PcmRing> ring_;
+  std::vector<std::byte> scratch_; // reused by write() on the producer thread
+
+  std::thread renderThread_;
+  std::atomic<bool> running_{false};
+  std::atomic<bool> stopRequested_{false};
+  std::atomic<bool> flushRequested_{false};
+  std::atomic<std::uint64_t> flushGeneration_{0};
+};
+
+WasapiAudioSink::WasapiAudioSink(AudioFormat sourceFormat)
+    : impl_(std::make_unique<Impl>(sourceFormat)) {}
+
+WasapiAudioSink::~WasapiAudioSink() = default;
+
+void WasapiAudioSink::start() {
+  impl_->start();
+}
+
+void WasapiAudioSink::write(std::span<const std::byte> pcm) {
+  impl_->write(pcm);
+}
+
+void WasapiAudioSink::flush() {
+  impl_->flush();
+}
+
+void WasapiAudioSink::stop() {
+  impl_->stop();
+}
+
+} // namespace vox::audio

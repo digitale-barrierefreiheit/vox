@@ -48,6 +48,12 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Shipping toolchain: MSVC, static CRT, 64-bit and 32-bit (R12 wire layout).
+  # Both arches install the Scream virtual audio device and run the WASAPI render
+  # integration test with VOX_REQUIRE_AUDIO_DEVICE=1 (ADR-10), so a missing or
+  # broken device fails the build rather than silently skipping. This is the
+  # English runner — the SAPI German tests skip here; the de-DE path is the
+  # separate job below. NOTE: the audio device is a third-party signed-driver
+  # install; if it proves flaky, drop the require flag (the test then skips).
   # ---------------------------------------------------------------------------
   windows:
     name: windows-${{ matrix.arch }}-msvc
@@ -69,6 +75,20 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: lukka/get-cmake@v4.3.3
+      - name: Install the Scream virtual audio device
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Invoke-WebRequest -Uri https://github.com/duncanthrax/scream/releases/download/4.0/Scream4.0.zip -OutFile Scream.zip
+          Expand-Archive -Path Scream.zip -DestinationPath Scream
+          # Trust the driver's signing certificate so the test-signed driver
+          # loads, then install it with devcon. The Scream endpoint becomes the
+          # only (hence default) render device on the runner.
+          $cert = (Get-AuthenticodeSignature "Scream\Install\driver\x64\Scream.sys").SignerCertificate
+          $store = [System.Security.Cryptography.X509Certificates.X509Store]::new('TrustedPublisher', 'LocalMachine')
+          $store.Open('ReadWrite'); $store.Add($cert); $store.Close()
+          & "Scream\Install\helpers\devcon-x64.exe" install "Scream\Install\driver\x64\Scream.inf" *Scream
+          Start-Service audiosrv
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
         with:
@@ -83,18 +103,20 @@ jobs:
         run: cmake --preset ${{ matrix.configure_preset }}
       - name: Build
         run: cmake --build --preset ${{ matrix.build_preset }}
-      - name: Test
+      - name: Test (audio device required)
+        env:
+          VOX_REQUIRE_AUDIO_DEVICE: "1"
         run: ctest --preset ${{ matrix.test_preset }}
 
   # ---------------------------------------------------------------------------
-  # German speech integration (ADR-07). GitHub Windows runners ship English-only,
-  # so the default windows job only exercises the SAPI fallback path. Here we
-  # provision the de-DE text-to-speech voice and bridge its OneCore token into
-  # the classic SAPI5 registry that ISpVoice enumerates, then run the suite with
-  # VOX_REQUIRE_GERMAN_VOICE=1 so a missing or SAPI-invisible German voice fails
-  # the build instead of silently falling back to English. x64 only: the German
-  # TTS engine is 64-bit. NOTE: this depends on Features-on-Demand and the
-  # registry bridge; if it proves flaky, downgrade to a non-gating job.
+  # German speech integration (ADR-07) + audio. Augments an x64 runner with the
+  # de-DE TTS voice (bridged from Speech_OneCore into the classic SAPI hive) and
+  # the Scream virtual audio device, then runs the suite with both
+  # VOX_REQUIRE_GERMAN_VOICE=1 and VOX_REQUIRE_AUDIO_DEVICE=1 — so a missing
+  # German voice OR render device fails the build. x64 only: the German TTS
+  # engine is 64-bit. NOTE: depends on Features-on-Demand, a registry bridge, and
+  # a third-party signed driver; if it proves flaky, drop the require flags.
+  # ---------------------------------------------------------------------------
   windows-de-DE:
     name: windows-x64-msvc-de-DE
     runs-on: windows-2025
@@ -121,12 +143,23 @@ jobs:
           # Language-pack voices register under Speech_OneCore, which classic
           # SAPI5 (ISpVoice / SPCAT_VOICES) does not enumerate. Copy the tokens
           # into the classic hive so the engine can find the German voice. (The
-          # broader fix — enumerating OneCore directly — is tracked separately.)
+          # broader fix — enumerating OneCore directly — is tracked in #52.)
           $src = 'HKLM\SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens'
           $dst = 'HKLM\SOFTWARE\Microsoft\Speech\Voices\Tokens'
           reg copy "$src" "$dst" /s /f
           if ($LASTEXITCODE -ne 0) { throw "reg copy of voice tokens failed ($LASTEXITCODE)" }
           reg query "$dst"
+      - name: Install the Scream virtual audio device
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Invoke-WebRequest -Uri https://github.com/duncanthrax/scream/releases/download/4.0/Scream4.0.zip -OutFile Scream.zip
+          Expand-Archive -Path Scream.zip -DestinationPath Scream
+          $cert = (Get-AuthenticodeSignature "Scream\Install\driver\x64\Scream.sys").SignerCertificate
+          $store = [System.Security.Cryptography.X509Certificates.X509Store]::new('TrustedPublisher', 'LocalMachine')
+          $store.Open('ReadWrite'); $store.Add($cert); $store.Close()
+          & "Scream\Install\helpers\devcon-x64.exe" install "Scream\Install\driver\x64\Scream.inf" *Scream
+          Start-Service audiosrv
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
         with:
@@ -139,9 +172,10 @@ jobs:
         run: cmake --preset x64-msvc
       - name: Build
         run: cmake --build --preset x64-msvc-release
-      - name: Test (German voice required)
+      - name: Test (German voice + audio device required)
         env:
           VOX_REQUIRE_GERMAN_VOICE: "1"
+          VOX_REQUIRE_AUDIO_DEVICE: "1"
         run: ctest --preset x64-msvc-release
 
   # ---------------------------------------------------------------------------

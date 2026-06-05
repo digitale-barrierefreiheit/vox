@@ -36,6 +36,8 @@ runs:
           Stop-Process -Id $setup.Id -Force -ErrorAction SilentlyContinue
           throw "VB-CABLE setup did not finish in 120s"
         }
+        Write-Host "VB-CABLE setup exit code: $($setup.ExitCode)"
+        if ($setup.ExitCode -ne 0) { throw "VB-CABLE setup failed (exit code $($setup.ExitCode))" }
         Start-Sleep -Seconds 10
         $cable = Get-PnpDevice -ErrorAction SilentlyContinue |
           Where-Object { $_.FriendlyName -like '*CABLE*' -or $_.InstanceId -like '*VBAUDIO*' }

@@ -333,13 +333,20 @@ private:
         continue; // timed out — loop back and re-check the stop flag
       }
       if (flushRequested_.load(std::memory_order_acquire)) {
-        audioClient_->Stop();
-        audioClient_->Reset();
+        const HRESULT stopped = audioClient_->Stop();
+        const HRESULT reset = audioClient_->Reset();
         ring_->clear();
-        audioClient_->Start();
+        const HRESULT restarted = audioClient_->Start();
         // Clear the flag only after the ring is emptied, so a producer waiting
         // on it cannot push fresh audio that this clear would then drop.
         flushRequested_.store(false, std::memory_order_release);
+        if (FAILED(stopped) || FAILED(reset) || FAILED(restarted)) {
+          // The stream is wedged; ask the loop to exit so stop() can tear it
+          // down. The flag is already cleared, so any blocked producer (which
+          // also checks stopRequested_) is released rather than left hanging.
+          stopRequested_.store(true, std::memory_order_release);
+          break;
+        }
       }
       renderAvailable();
     }

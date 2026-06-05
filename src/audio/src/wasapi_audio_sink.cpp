@@ -148,7 +148,12 @@ public:
     }
 
     running_.store(true, std::memory_order_release);
-    renderThread_ = std::thread([this] { renderLoopGuarded(); });
+    try {
+      renderThread_ = std::thread([this] { renderLoopGuarded(); });
+    } catch (...) {
+      stop(); // thread creation failed — release the device we just acquired
+      throw;
+    }
 
     if (FAILED(audioClient_->Start())) {
       stop();

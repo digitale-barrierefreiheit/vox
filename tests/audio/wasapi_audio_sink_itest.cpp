@@ -83,26 +83,31 @@ protected:
 };
 
 TEST_F(WasapiAudioSinkTest, PlaysAToneWithoutError) {
+  const std::vector<std::byte> tone = sineTone(440.0, 0.15, 22050);
   EXPECT_NO_THROW({
-    sink_->write(sineTone(440.0, 0.15, 22050));
+    sink_->write(tone);
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
   });
 }
 
 TEST_F(WasapiAudioSinkTest, FlushAfterWriteIsBargeIn) {
+  const std::vector<std::byte> longTone = sineTone(440.0, 0.5, 22050);
+  const std::vector<std::byte> higherTone = sineTone(880.0, 0.1, 22050);
   EXPECT_NO_THROW({
-    sink_->write(sineTone(440.0, 0.5, 22050)); // queue a longer tone
-    sink_->flush();                            // barge-in
-    sink_->write(sineTone(880.0, 0.1, 22050)); // a fresh, higher tone plays
+    sink_->write(longTone);   // queue a longer tone
+    sink_->flush();           // barge-in
+    sink_->write(higherTone); // a fresh, higher tone plays
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
   });
 }
 
 TEST_F(WasapiAudioSinkTest, StopThenRestart) {
-  sink_->write(sineTone(440.0, 0.05, 22050));
+  const std::vector<std::byte> first = sineTone(440.0, 0.05, 22050);
+  const std::vector<std::byte> second = sineTone(660.0, 0.05, 22050);
+  sink_->write(first);
   sink_->stop();
   EXPECT_NO_THROW(sink_->start()); // re-acquire the device
-  sink_->write(sineTone(660.0, 0.05, 22050));
+  sink_->write(second);
 }
 
 } // namespace

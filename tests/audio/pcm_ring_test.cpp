@@ -114,6 +114,10 @@ TEST(PcmRing, ConcurrentProducerConsumerPreservesOrder) {
     std::array<std::byte, 32> buf{};
     while (received.size() < Total) {
       const std::size_t n = ring.read(buf);
+      if (n == 0) {
+        std::this_thread::yield(); // empty: back off instead of busy-spinning
+        continue;
+      }
       received.insert(received.end(), buf.begin(), buf.begin() + static_cast<std::ptrdiff_t>(n));
     }
   });
@@ -121,7 +125,11 @@ TEST(PcmRing, ConcurrentProducerConsumerPreservesOrder) {
   const std::vector<std::byte> all = sequence(Total);
   std::size_t offset = 0;
   while (offset < Total) {
-    offset += ring.write(std::span<const std::byte>(all).subspan(offset));
+    const std::size_t n = ring.write(std::span<const std::byte>(all).subspan(offset));
+    if (n == 0) {
+      std::this_thread::yield(); // full: let the consumer drain
+    }
+    offset += n;
   }
   consumer.join();
 

@@ -25,13 +25,14 @@ runs:
           $store = [System.Security.Cryptography.X509Certificates.X509Store]::new($name, 'LocalMachine')
           $store.Open('ReadWrite'); $store.Add($cert); $store.Close()
         }
-        # Stage the driver, then create the root device node. devcon's post-create
-        # "updating drivers" phase hangs on a headless runner even though the
-        # device node is created first (it prints "Device node created"), so
-        # time-box devcon and verify the endpoint actually came up — PnP binds the
-        # staged driver asynchronously.
+        # Stage the driver into the store WITHOUT /install: /install triggers a
+        # PnP device install that hangs headless. Then create the root device
+        # node with devcon, which also hangs in its post-create "updating drivers"
+        # phase even though the node is created — so time-box devcon and verify
+        # the endpoint actually came up (PnP binds the staged driver in the
+        # background).
         Start-Service audiosrv
-        pnputil /add-driver "Scream\Install\driver\x64\Scream.inf" /install
+        pnputil /add-driver "Scream\Install\driver\x64\Scream.inf"
         $devcon = Start-Process -FilePath "Scream\Install\helpers\devcon-x64.exe" `
           -ArgumentList 'install','Scream\Install\driver\x64\Scream.inf','*Scream' -PassThru -NoNewWindow
         if (-not $devcon.WaitForExit(60000)) {

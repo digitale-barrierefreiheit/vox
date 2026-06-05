@@ -31,3 +31,6 @@ add_subdirectory(tts)
 
 # vox::input — input layer (portable command mapping; WH_KEYBOARD_LL hook glue).
 add_subdirectory(input)
+
+# vox::app — the MVP reader: portable Reader orchestrator + the `vox` executable.
+add_subdirectory(app)

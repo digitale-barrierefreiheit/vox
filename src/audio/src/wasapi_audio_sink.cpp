@@ -309,7 +309,12 @@ private:
     // process), so the whole loop runs inside a catch-all.
     try {
       renderLoop();
-    } catch (...) { // NOLINT(bugprone-empty-catch) — intentional thread firewall
+    } catch (...) {
+      // The render thread is dying (e.g. COM init failure). Signal it so the
+      // producer stops enqueueing — write() checks stopRequested_ — and any
+      // blocked writer is released, rather than hanging once the ring fills.
+      stopRequested_.store(true, std::memory_order_release);
+      flushRequested_.store(false, std::memory_order_release);
     }
   }
 

@@ -23,7 +23,11 @@ Reader::Reader(vox::provider::IProvider& provider, vox::tts::ITtsEngine& tts,
     : provider_(provider), tts_(tts), audio_(audio), output_(std::move(output)) {}
 
 Reader::~Reader() {
-  stop();
+  try {
+    stop();
+  } catch (...) {
+    // Destructors are noexcept; never let a teardown failure terminate.
+  }
 }
 
 void Reader::start() {
@@ -32,15 +36,20 @@ void Reader::start() {
   }
   audio_.start(); // may throw (no device): nothing spawned yet, so nothing to undo
   started_ = true;
-  {
-    const std::lock_guard<std::mutex> lock(mutex_);
-    running_ = true;
-  }
-  worker_ = std::thread([this] { workerLoop(); });
-  provider_.start([this](const vox::model::AccessibleNode& node) { onFocusChanged(node); });
-  // Announce whatever already has focus, so launching over a dialog speaks now.
-  if (const std::optional<vox::model::AccessibleNode> focused = provider_.focusedElement()) {
-    onFocusChanged(*focused);
+  try {
+    {
+      const std::lock_guard<std::mutex> lock(mutex_);
+      running_ = true;
+    }
+    worker_ = std::thread([this] { workerLoop(); });
+    provider_.start([this](const vox::model::AccessibleNode& node) { onFocusChanged(node); });
+    // Announce whatever already has focus, so launching over a dialog speaks now.
+    if (const std::optional<vox::model::AccessibleNode> focused = provider_.focusedElement()) {
+      onFocusChanged(*focused);
+    }
+  } catch (...) {
+    stop(); // release the worker/provider/audio we partially brought up
+    throw;
   }
 }
 
@@ -124,8 +133,14 @@ void Reader::workerLoop() {
       node = std::move(*pending_);
       pending_.reset();
     }
-    const vox::output::Utterance utterance = output_.announce(node);
-    tts_.synthesize(utterance.text, [this](std::span<const std::byte> pcm) { audio_.write(pcm); });
+    try {
+      const vox::output::Utterance utterance = output_.announce(node);
+      tts_.synthesize(utterance.text,
+                      [this](std::span<const std::byte> pcm) { audio_.write(pcm); });
+    } catch (...) {
+      // A failed announcement (e.g. SAPI error) must not crash the reader or
+      // escape the worker thread; drop this utterance and keep going.
+    }
   }
 }
 

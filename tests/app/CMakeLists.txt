@@ -9,6 +9,6 @@ find_package(Threads REQUIRED)
 vox_add_test(
   NAME app_test
   SOURCES reader_test.cpp
-  LINK vox::app vox::testing Threads::Threads)
+  LINK vox::app vox::german vox::testing Threads::Threads)
 
 set_target_properties(app_test PROPERTIES FOLDER "tests")

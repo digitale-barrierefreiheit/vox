@@ -83,7 +83,10 @@ OutputManager germanOutput() {
 }
 
 AccessibleNode button(std::string name) {
-  return AccessibleNode{.role = Role::Button, .name = std::move(name)};
+  AccessibleNode node;
+  node.role = Role::Button;
+  node.name = std::move(name);
+  return node;
 }
 
 TEST(Reader, SpeaksInitialFocusInGerman) {

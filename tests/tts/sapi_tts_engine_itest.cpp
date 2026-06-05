@@ -90,22 +90,20 @@ TEST_F(SapiTtsEngineTest, SynthesizesTextToWholeFramePcm) {
   EXPECT_GT(frameCount(pcm), 0U);
 }
 
-TEST_F(SapiTtsEngineTest, CancelFromTheSinkStopsEarly) {
+TEST_F(SapiTtsEngineTest, CancelFromTheSinkPreventsFurtherChunks) {
   constexpr std::string_view LongText =
       "Dies ist ein deutlich laengerer Satz, der genug Audio erzeugt, "
-      "damit ein Abbruch nach dem ersten Block messbar weniger liefert.";
+      "damit ein Abbruch nach dem ersten Block wirksam werden kann.";
 
-  const PcmBuffer full = synthesizeToBuffer(*engine_, LongText);
-  ASSERT_FALSE(isEmpty(full));
-
-  PcmBuffer cancelled;
-  cancelled.format = engine_->format();
-  engine_->synthesize(LongText, [&cancelled, this](std::span<const std::byte> chunk) {
-    append(cancelled, chunk);
-    engine_->cancel(); // barge-in after the first block
+  int chunks = 0;
+  engine_->synthesize(LongText, [&chunks, this](std::span<const std::byte>) {
+    ++chunks;
+    engine_->cancel(); // barge-in during the first delivered chunk
   });
 
-  EXPECT_LT(byteCount(cancelled), byteCount(full));
+  // Cancelling during the first chunk must prevent any further chunk, regardless
+  // of how SAPI buffers its output (one large Write or several small ones).
+  EXPECT_EQ(chunks, 1);
 }
 
 TEST_F(SapiTtsEngineTest, SetRateDoesNotThrow) {

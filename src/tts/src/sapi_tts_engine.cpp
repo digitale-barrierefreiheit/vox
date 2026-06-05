@@ -282,7 +282,19 @@ private:
 /// RAII for the COM apartment: CoUninitialize iff this object initialized it.
 class ComApartment {
 public:
-  ComApartment() : initialized_(SUCCEEDED(::CoInitializeEx(nullptr, COINIT_MULTITHREADED))) {}
+  ComApartment() {
+    const HRESULT hr = ::CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    if (hr == RPC_E_CHANGED_MODE) {
+      // COM is already initialized on this thread in a different (e.g. STA)
+      // apartment. That is fine for our use, but we do not own the
+      // initialization and must not balance it with CoUninitialize.
+      initialized_ = false;
+    } else if (FAILED(hr)) {
+      throw std::runtime_error("SapiTtsEngine: COM initialization failed");
+    } else {
+      initialized_ = true; // S_OK or S_FALSE — we own a reference to release
+    }
+  }
 
   ~ComApartment() {
     if (initialized_) {
@@ -296,7 +308,7 @@ public:
   ComApartment& operator=(ComApartment&&) = delete;
 
 private:
-  bool initialized_;
+  bool initialized_{false};
 };
 
 } // namespace

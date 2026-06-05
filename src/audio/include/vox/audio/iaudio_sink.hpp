@@ -32,6 +32,9 @@ public:
 
   /// @brief Enqueues PCM (in the sink's source format) for playback. Called on
   ///        the producer thread; may block briefly when the buffer is full.
+  /// @throws std::invalid_argument (or similar) if @p pcm is not valid for the
+  ///         sink's format — e.g. not a whole number of samples. Callers must
+  ///         pass complete frames in the configured source format.
   virtual void write(std::span<const std::byte> pcm) = 0;
 
   /// @brief Drops all queued and in-flight audio within one buffer period.

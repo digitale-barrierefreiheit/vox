@@ -27,7 +27,7 @@ runs:
         if (-not $cert -or $cert.Thumbprint -ne $expectedThumbprint) { throw "Unexpected VB-CABLE cert: $($cert.Thumbprint)" }
         $store = [System.Security.Cryptography.X509Certificates.X509Store]::new('TrustedPublisher', 'LocalMachine')
         $store.Open('ReadWrite'); $store.Add($cert); $store.Close()
-        Start-Service audiosrv
+        Start-Service audiosrv -ErrorAction SilentlyContinue # no-op if already running
         # Silent install (-i -h). Runner steps run elevated, so no UAC prompt is
         # raised; time-box defensively and then verify the endpoint came up.
         $setupExe = (Resolve-Path "VBCable\VBCABLE_Setup_x64.exe").Path

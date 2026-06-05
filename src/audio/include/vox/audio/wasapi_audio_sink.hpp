@@ -53,6 +53,8 @@ public:
   void start() override;
 
   /// @brief Converts @p pcm to the device format and queues it for playback.
+  /// @throws std::invalid_argument if @p pcm is not a whole number of 16-bit
+  ///         samples.
   void write(std::span<const std::byte> pcm) override;
 
   /// @brief Drops queued + in-flight audio within one buffer period (barge-in).

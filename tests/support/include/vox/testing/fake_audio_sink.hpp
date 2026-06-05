@@ -40,6 +40,7 @@ public:
 
   void stop() override {
     started_ = false;
+    buffered_.clear(); // the real sink drops queued audio on stop()
   }
 
   /// @brief Whether the sink is currently started.

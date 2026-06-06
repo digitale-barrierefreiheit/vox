@@ -26,6 +26,7 @@
 #include <vector>
 
 #include <vox/audio/audio_format.hpp>
+#include <vox/audio/errors.hpp>
 #include <vox/audio/pcm_converter.hpp>
 #include <vox/audio/pcm_ring.hpp>
 #include <vox/audio/wasapi_audio_sink.hpp>
@@ -74,11 +75,13 @@ public:
       // The thread is already an STA. WASAPI interfaces created here would be
       // STA-bound yet called from the MTA render thread without marshaling
       // (undefined), so we require an MTA or COM-uninitialized thread instead.
-      throw std::runtime_error(
+      throw DeviceError(
+          static_cast<std::uint32_t>(hr),
           "WasapiAudioSink: requires an MTA or COM-uninitialized thread (current is STA)");
     }
     if (FAILED(hr)) {
-      throw std::runtime_error("WasapiAudioSink: COM initialization failed");
+      throw DeviceError(static_cast<std::uint32_t>(hr),
+                        "WasapiAudioSink: COM initialization failed");
     }
     initialized_ = true;
   }
@@ -105,7 +108,7 @@ SampleFormat detectSampleFormat(const WAVEFORMATEX& format) {
     // Only read the extensible fields if the struct is actually that large; a
     // malformed mix format would otherwise be an out-of-bounds read.
     if (format.cbSize < sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX)) {
-      throw std::runtime_error("WasapiAudioSink: malformed extensible mix format");
+      throw DeviceError("WasapiAudioSink: malformed extensible mix format");
     }
     // The extensible SubFormat's Data1 carries the underlying tag (1 = PCM,
     // 3 = IEEE float), so we avoid depending on the KSDATAFORMAT GUID symbols.
@@ -118,7 +121,7 @@ SampleFormat detectSampleFormat(const WAVEFORMATEX& format) {
   if (tag == WAVE_FORMAT_PCM && format.wBitsPerSample == 16U) {
     return SampleFormat::Int16;
   }
-  throw std::runtime_error("WasapiAudioSink: unsupported device mix format");
+  throw DeviceError("WasapiAudioSink: unsupported device mix format");
 }
 
 } // namespace
@@ -157,14 +160,15 @@ public:
       renderThread_ = std::thread([this] { renderLoopGuarded(); });
     } catch (...) {
       // Translate a std::thread failure (e.g. std::system_error) so start()
-      // honours its documented std::runtime_error contract; release the device.
+      // honours its documented DeviceError contract; release the device.
       stop();
-      throw std::runtime_error("WasapiAudioSink: failed to create the render thread");
+      throw DeviceError("WasapiAudioSink: failed to create the render thread");
     }
 
-    if (FAILED(audioClient_->Start())) {
+    if (const HRESULT hr = audioClient_->Start(); FAILED(hr)) {
       stop();
-      throw std::runtime_error("WasapiAudioSink: IAudioClient::Start failed");
+      throw DeviceError(static_cast<std::uint32_t>(hr),
+                        "WasapiAudioSink: IAudioClient::Start failed");
     }
   }
 
@@ -246,21 +250,29 @@ public:
 
 private:
   void acquireDevice() {
-    if (FAILED(::CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
-                                  IID_PPV_ARGS(&enumerator_)))) {
-      throw std::runtime_error("WasapiAudioSink: cannot create device enumerator");
+    if (const HRESULT hr = ::CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+                                              IID_PPV_ARGS(&enumerator_));
+        FAILED(hr)) {
+      throw DeviceError(static_cast<std::uint32_t>(hr),
+                        "WasapiAudioSink: cannot create device enumerator");
     }
-    if (FAILED(enumerator_->GetDefaultAudioEndpoint(eRender, eConsole, &device_)) || !device_) {
-      throw std::runtime_error("WasapiAudioSink: no default render device");
+    if (const HRESULT hr = enumerator_->GetDefaultAudioEndpoint(eRender, eConsole, &device_);
+        FAILED(hr) || !device_) {
+      throw DeviceError(static_cast<std::uint32_t>(hr),
+                        "WasapiAudioSink: no default render device");
     }
-    if (FAILED(device_->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
-                                 reinterpret_cast<void**>(audioClient_.GetAddressOf())))) {
-      throw std::runtime_error("WasapiAudioSink: cannot activate the audio client");
+    if (const HRESULT hr = device_->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
+                                             reinterpret_cast<void**>(audioClient_.GetAddressOf()));
+        FAILED(hr)) {
+      throw DeviceError(static_cast<std::uint32_t>(hr),
+                        "WasapiAudioSink: cannot activate the audio client");
     }
 
     WAVEFORMATEX* rawMixFormat = nullptr;
-    if (FAILED(audioClient_->GetMixFormat(&rawMixFormat)) || rawMixFormat == nullptr) {
-      throw std::runtime_error("WasapiAudioSink: cannot read the device mix format");
+    if (const HRESULT hr = audioClient_->GetMixFormat(&rawMixFormat);
+        FAILED(hr) || rawMixFormat == nullptr) {
+      throw DeviceError(static_cast<std::uint32_t>(hr),
+                        "WasapiAudioSink: cannot read the device mix format");
     }
     // Own the CoTaskMem allocation so it is freed on every path, including the
     // throwing ones below (detectSampleFormat / converter construction).
@@ -271,25 +283,28 @@ private:
     if (mixFormat->nSamplesPerSec == 0U || mixFormat->nChannels == 0U ||
         mixFormat->nBlockAlign == 0U) {
       // Guard the converter's and ring's preconditions so start() only ever
-      // throws std::runtime_error, never std::invalid_argument from them.
-      throw std::runtime_error("WasapiAudioSink: invalid device mix format");
+      // throws DeviceError, never std::invalid_argument from them.
+      throw DeviceError("WasapiAudioSink: invalid device mix format");
     }
     frameBytes_ = mixFormat->nBlockAlign;
     converter_.emplace(sourceFormat_, mixFormat->nSamplesPerSec, mixFormat->nChannels,
                        sampleFormat);
 
-    if (FAILED(audioClient_->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
-                                        0, 0, mixFormat.get(), nullptr))) {
-      throw std::runtime_error("WasapiAudioSink: IAudioClient::Initialize failed");
+    if (const HRESULT hr =
+            audioClient_->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK, 0,
+                                     0, mixFormat.get(), nullptr);
+        FAILED(hr)) {
+      throw DeviceError(static_cast<std::uint32_t>(hr),
+                        "WasapiAudioSink: IAudioClient::Initialize failed");
     }
 
     audioEvent_ = ::CreateEventW(nullptr, FALSE, FALSE, nullptr);
     if (audioEvent_ == nullptr || FAILED(audioClient_->SetEventHandle(audioEvent_))) {
-      throw std::runtime_error("WasapiAudioSink: cannot set the render event handle");
+      throw DeviceError("WasapiAudioSink: cannot set the render event handle");
     }
     if (FAILED(audioClient_->GetBufferSize(&bufferFrameCount_)) ||
         FAILED(audioClient_->GetService(IID_PPV_ARGS(&renderClient_)))) {
-      throw std::runtime_error("WasapiAudioSink: cannot get the render client");
+      throw DeviceError("WasapiAudioSink: cannot get the render client");
     }
     ring_ = std::make_unique<PcmRing>(ringCapacityBytes());
   }

@@ -16,6 +16,7 @@
 
 #  include <vox/input/command_handler.hpp>
 #  include <vox/input/command_map.hpp>
+#  include <vox/input/errors.hpp>
 #  include <vox/input/key_event.hpp>
 #  include <vox/input/keyboard_hook.hpp>
 
@@ -48,7 +49,7 @@ public:
 
   void start() {
     if (running_) {
-      throw std::runtime_error("KeyboardHook: already started");
+      throw HookError("KeyboardHook: already started");
     }
     // A WH_KEYBOARD_LL callback runs on the thread that installed it, and that
     // thread must pump messages — so install and pump on a dedicated thread, and
@@ -60,13 +61,15 @@ public:
       thread_ = std::thread([this, &ready] { run(ready); });
     } catch (...) {
       // Translate a std::thread failure (e.g. std::system_error) so start()
-      // only ever throws std::runtime_error, as documented.
-      throw std::runtime_error("KeyboardHook: failed to create the hook thread");
+      // only ever throws HookError, as documented.
+      throw HookError("KeyboardHook: failed to create the hook thread");
     }
     readyFuture.wait();
     if (!error_.empty()) {
       thread_.join();
-      throw std::runtime_error(error_);
+      // `error_` already embeds the GetLastError() code for the hook-install
+      // failure (see run()); carry it as a HookError for catch-by-subsystem.
+      throw HookError(error_);
     }
     running_ = true;
   }

@@ -33,7 +33,7 @@ public:
   /// @brief Creates an engine, selecting a voice per @p policy (default: prefer
   ///        German, fall back to the system voice so it still speaks on an
   ///        English-only machine).
-  /// @throws std::runtime_error if COM/SAPI cannot be initialized or no usable
+  /// @throws vox::tts::EngineError if COM/SAPI cannot be initialized or no usable
   ///         voice is available under @p policy.
   explicit SapiTtsEngine(VoiceSelectionPolicy policy = VoiceSelectionPolicy::PreferGerman);
   ~SapiTtsEngine() override;
@@ -48,8 +48,8 @@ public:
 
   /// @brief Synthesizes @p utf8Text, streaming PCM chunks to @p sink. Empty
   ///        input is a no-op.
-  /// @throws std::runtime_error if @p utf8Text is non-empty but not valid UTF-8,
-  ///         or if SAPI synthesis fails.
+  /// @throws vox::tts::EngineError if @p utf8Text is non-empty but not valid
+  ///         UTF-8, or if SAPI synthesis fails.
   void synthesize(std::string_view utf8Text, const PcmSink& sink) override;
 
   /// @brief Aborts the in-flight synthesis at the next chunk boundary.

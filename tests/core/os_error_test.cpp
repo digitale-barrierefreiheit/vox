@@ -7,6 +7,7 @@
 ///        the sanitizer/clang-tidy build too (ADR-12).
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 
 #include <gtest/gtest.h>
 
@@ -38,15 +39,14 @@ TEST(OsError, ContextOnlyConstructorHasZeroCode) {
   EXPECT_STREQ(error.what(), "precondition violated");
 }
 
-TEST(OsError, IsCaughtAsRuntimeError) {
-  bool caught = false;
-  try {
-    throw vox::OsError(1U, "boom");
-  } catch (const std::runtime_error& error) {
-    caught = true;
-    EXPECT_EQ(error.what(), std::string("boom (0x00000001)"));
-  }
-  EXPECT_TRUE(caught) << "OsError should be catchable as std::runtime_error";
+TEST(OsError, DerivesFromRuntimeError) {
+  // Compile-time proof of the is-a relationship, so a `catch (std::runtime_error&)`
+  // (or std::exception) still catches every OsError-derived type.
+  static_assert(std::is_base_of_v<std::runtime_error, vox::OsError>,
+                "OsError must be catchable as std::runtime_error");
+  const vox::OsError error(1U, "boom");
+  const std::runtime_error& asBase = error; // usable through the std base
+  EXPECT_EQ(asBase.what(), std::string("boom (0x00000001)"));
 }
 
 } // namespace

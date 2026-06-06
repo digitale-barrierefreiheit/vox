@@ -23,7 +23,8 @@
 
 #if defined(_WIN32)
 
-#  include <cwchar>
+#  include <algorithm>
+#  include <cstddef>
 
 #  include <gmock/gmock.h>
 
@@ -84,7 +85,7 @@ template<std::size_t N>
 LPWSTR coTaskString(const wchar_t (&text)[N]) {
   auto* copy = static_cast<LPWSTR>(::CoTaskMemAlloc(N * sizeof(wchar_t)));
   if (copy != nullptr) {
-    std::wmemcpy(copy, text, N);
+    std::copy_n(static_cast<const wchar_t*>(text), N, copy); // N elements, incl. terminator
   }
   return copy;
 }

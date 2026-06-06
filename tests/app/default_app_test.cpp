@@ -8,6 +8,8 @@
 ///        whole factory run with no installed voice, device, or UI Automation.
 #if defined(_WIN32)
 
+#  include <cwchar>
+
 #  include <gmock/gmock.h>
 #  include <gtest/gtest.h>
 

@@ -11,6 +11,7 @@
 #  include <array>
 #  include <cstddef>
 #  include <cstring>
+#  include <cwchar>
 #  include <span>
 #  include <string_view>
 #  include <vector>

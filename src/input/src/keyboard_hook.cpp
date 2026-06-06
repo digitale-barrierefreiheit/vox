@@ -58,7 +58,7 @@ public:
     std::future<void> readyFuture = ready.get_future();
     error_.clear();
     try {
-      thread_ = std::thread([this, &ready] { run(ready); });
+      thread_ = std::jthread([this, &ready] { run(ready); });
     } catch (...) {
       // Translate a std::thread failure (e.g. std::system_error) so start()
       // only ever throws HookError, as documented.
@@ -176,7 +176,7 @@ private:
 
   ICommandHandler& handler_;
   CommandMap map_;
-  std::thread thread_;
+  std::jthread thread_;
   std::atomic<DWORD> threadId_{0};
   std::string error_;
   bool running_{false};

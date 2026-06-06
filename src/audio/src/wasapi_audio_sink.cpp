@@ -157,7 +157,7 @@ public:
 
     running_.store(true, std::memory_order_release);
     try {
-      renderThread_ = std::thread([this] { renderLoopGuarded(); });
+      renderThread_ = std::jthread([this] { renderLoopGuarded(); });
     } catch (...) {
       // Translate a std::thread failure (e.g. std::system_error) so start()
       // honours its documented DeviceError contract; release the device.
@@ -370,11 +370,12 @@ private:
         // on it cannot push fresh audio that this clear would then drop.
         flushRequested_.store(false, std::memory_order_release);
         if (FAILED(stopped) || FAILED(reset) || FAILED(restarted)) {
-          // The stream is wedged; ask the loop to exit so stop() can tear it
-          // down. The flag is already cleared, so any blocked producer (which
-          // also checks stopRequested_) is released rather than left hanging.
+          // The stream is wedged; set stop so the loop condition exits on the
+          // next check, skipping renderAvailable() on the wedged stream. The flag
+          // is already cleared, so a blocked producer (which also checks
+          // stopRequested_) is released rather than left hanging.
           stopRequested_.store(true, std::memory_order_release);
-          break;
+          continue;
         }
       }
       renderAvailable();
@@ -427,7 +428,7 @@ private:
   std::unique_ptr<PcmRing> ring_;
   std::vector<std::byte> scratch_; // reused by write() on the producer thread
 
-  std::thread renderThread_;
+  std::jthread renderThread_;
   std::atomic<bool> running_{false};
   std::atomic<bool> stopRequested_{false};
   std::atomic<bool> flushRequested_{false};

@@ -87,7 +87,7 @@ private:
   vox::audio::IAudioSink& audio_;
   vox::output::OutputManager output_;
 
-  std::thread worker_;
+  std::jthread worker_;
   std::mutex mutex_;
   std::condition_variable cv_;
   std::optional<vox::model::AccessibleNode> pending_; ///< Latest node to announce.

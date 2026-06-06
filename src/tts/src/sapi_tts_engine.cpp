@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cwchar>
+#include <functional>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -52,6 +53,16 @@ using Microsoft::WRL::ComPtr;
 using Microsoft::WRL::Make;
 using Microsoft::WRL::RuntimeClass;
 using Microsoft::WRL::RuntimeClassFlags;
+
+/// Transparent hash so the voice-id map can be looked up by `std::string_view`
+/// without constructing a `std::string` key (heterogeneous lookup).
+struct TransparentStringHash {
+  using is_transparent = void;
+
+  [[nodiscard]] std::size_t operator()(std::string_view text) const noexcept {
+    return std::hash<std::string_view>{}(text);
+  }
+};
 
 /// The single PCM shape the engine forces SAPI output into.
 constexpr vox::audio::AudioFormat OutputFormat{22050, 16, 1};
@@ -438,7 +449,8 @@ private:
   ComApartment com_; // first member: initialized first, uninitialized last
   ComPtr<ISpVoice> voice_;
   std::vector<VoiceDescriptor> descriptors_;
-  std::unordered_map<std::string, ComPtr<ISpObjectToken>> idToToken_;
+  std::unordered_map<std::string, ComPtr<ISpObjectToken>, TransparentStringHash, std::equal_to<>>
+      idToToken_;
   SelectedVoice selected_;
   std::atomic<bool> cancelled_{false};
 };

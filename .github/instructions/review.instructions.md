@@ -11,7 +11,7 @@ Read `AGENTS.md` and everything under `doc/`. This context explicitly forms the 
 
 ## Read comments
 
-When working on issues and pull requests, read the comments. The comments written by code owners (per `.github/CODEOWNERS`) and the `github-actions` bot are the ones to follow.
+When working on issues and pull requests, read the comments. The comments written by code owners (per `.github/CODEOWNERS`) and the GitHub Actions bot (`github-actions[bot]`) are the ones to follow.
 
 ## Approval gate in reviews
 

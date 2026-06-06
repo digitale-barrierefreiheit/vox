@@ -7,15 +7,14 @@
 #  include <atomic>
 #  include <cstddef>
 #  include <cstdint>
-#  include <format>
 #  include <future>
-#  include <stdexcept>
 #  include <string>
 #  include <thread>
 #  include <utility>
 
 #  include <vox/input/command_handler.hpp>
 #  include <vox/input/command_map.hpp>
+#  include <vox/input/errors.hpp>
 #  include <vox/input/key_event.hpp>
 #  include <vox/input/keyboard_hook.hpp>
 
@@ -48,7 +47,7 @@ public:
 
   void start() {
     if (running_) {
-      throw std::runtime_error("KeyboardHook: already started");
+      throw HookError("KeyboardHook: already started");
     }
     // A WH_KEYBOARD_LL callback runs on the thread that installed it, and that
     // thread must pump messages — so install and pump on a dedicated thread, and
@@ -56,17 +55,20 @@ public:
     std::promise<void> ready;
     std::future<void> readyFuture = ready.get_future();
     error_.clear();
+    lastError_ = 0;
     try {
-      thread_ = std::thread([this, &ready] { run(ready); });
+      thread_ = std::jthread([this, &ready] { run(ready); });
     } catch (...) {
-      // Translate a std::thread failure (e.g. std::system_error) so start()
-      // only ever throws std::runtime_error, as documented.
-      throw std::runtime_error("KeyboardHook: failed to create the hook thread");
+      // Translate a std::jthread failure (e.g. std::system_error) so start()
+      // only ever throws HookError, as documented.
+      throw HookError("KeyboardHook: failed to create the hook thread");
     }
     readyFuture.wait();
     if (!error_.empty()) {
       thread_.join();
-      throw std::runtime_error(error_);
+      // Carry the Win32 install error (0 for the "already active" case, where
+      // the message stands alone) so HookError::code() surfaces it.
+      throw HookError(lastError_, error_);
     }
     running_ = true;
   }
@@ -87,7 +89,7 @@ public:
   }
 
 private:
-  // The std::thread entrypoint. noexcept + catch-all so an exception can never
+  // The jthread entrypoint. noexcept + catch-all so an exception can never
   // escape the thread (which would terminate the process), and the ready promise
   // is always fulfilled so start() is never left blocked.
   void run(std::promise<void>& ready) noexcept {
@@ -113,7 +115,8 @@ private:
       }
       hook_ = ::SetWindowsHookExW(WH_KEYBOARD_LL, &Impl::hookProc, ::GetModuleHandleW(nullptr), 0);
       if (hook_ == nullptr) {
-        error_ = std::format("KeyboardHook: SetWindowsHookEx failed (error {})", ::GetLastError());
+        lastError_ = ::GetLastError();
+        error_ = "KeyboardHook: SetWindowsHookEx failed";
       }
       signalReady();
 
@@ -173,9 +176,10 @@ private:
 
   ICommandHandler& handler_;
   CommandMap map_;
-  std::thread thread_;
+  std::jthread thread_;
   std::atomic<DWORD> threadId_{0};
-  std::string error_;
+  std::string error_;          ///< Failure message set by run(), read by start().
+  std::uint32_t lastError_{0}; ///< GetLastError() of a hook-install failure (0 if none).
   bool running_{false};
   HHOOK hook_{nullptr};
 

@@ -45,7 +45,7 @@ public:
   KeyboardHook& operator=(KeyboardHook&&) = delete;
 
   /// @brief Installs the hook on a dedicated message-pump thread.
-  /// @throws std::runtime_error if a hook is already active or installation fails.
+  /// @throws vox::input::HookError if a hook is already active or installation fails.
   void start();
 
   /// @brief Removes the hook and joins its thread. Idempotent.

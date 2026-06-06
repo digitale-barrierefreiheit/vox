@@ -47,7 +47,7 @@ void Reader::start() {
       const std::scoped_lock lock(mutex_);
       running_ = true;
     }
-    worker_ = std::thread([this] { workerLoop(); });
+    worker_ = std::jthread([this] { workerLoop(); });
     // Route the focus callback through a shared guard so it is safe even if the
     // provider invokes it after this Reader is destroyed (stop() detaches it).
     {

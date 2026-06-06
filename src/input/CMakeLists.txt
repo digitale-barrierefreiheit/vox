@@ -16,6 +16,9 @@ target_include_directories(vox_input
   PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
+# vox::core for the OS-error base behind vox::input::HookError (errors.hpp).
+target_link_libraries(vox_input PUBLIC vox::core)
+
 if(WIN32)
   # The low-level keyboard hook. Excluded from the Linux/sanitizer build; the
   # routing it delegates to (CommandMap/routeKeyEvent) is tested there. Threads:

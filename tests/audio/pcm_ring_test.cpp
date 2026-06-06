@@ -110,7 +110,7 @@ TEST(PcmRing, ConcurrentProducerConsumerPreservesOrder) {
   std::vector<std::byte> received;
   received.reserve(Total);
 
-  std::thread consumer([&ring, &received] {
+  std::jthread consumer([&ring, &received] {
     std::array<std::byte, 32> buf{};
     while (received.size() < Total) {
       const std::size_t n = ring.read(buf);

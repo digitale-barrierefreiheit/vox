@@ -48,8 +48,8 @@ public:
 
   /// @brief Initializes COM, acquires the default render device, and starts the
   ///        render thread.
-  /// @throws std::runtime_error if the calling thread is STA, no render device
-  ///         exists, or WASAPI initialization fails.
+  /// @throws vox::audio::DeviceError if the calling thread is STA, no render
+  ///         device exists, or WASAPI initialization fails.
   void start() override;
 
   /// @brief Converts @p pcm to the device format and queues it for playback.

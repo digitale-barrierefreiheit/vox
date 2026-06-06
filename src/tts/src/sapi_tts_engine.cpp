@@ -10,10 +10,11 @@
 /// never crosses the COM ABI boundary.
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <cwchar>
+#include <functional>
 #include <optional>
 #include <span>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -21,6 +22,7 @@
 #include <vector>
 
 #include <vox/audio/audio_format.hpp>
+#include <vox/tts/errors.hpp>
 #include <vox/tts/itts_engine.hpp>
 #include <vox/tts/rate.hpp>
 #include <vox/tts/sapi_tts_engine.hpp>
@@ -50,6 +52,16 @@ using Microsoft::WRL::ComPtr;
 using Microsoft::WRL::Make;
 using Microsoft::WRL::RuntimeClass;
 using Microsoft::WRL::RuntimeClassFlags;
+
+/// Transparent hash so the voice-id map can be looked up by `std::string_view`
+/// without constructing a `std::string` key (heterogeneous lookup).
+struct TransparentStringHash {
+  using is_transparent = void;
+
+  [[nodiscard]] std::size_t operator()(std::string_view text) const noexcept {
+    return std::hash<std::string_view>{}(text);
+  }
+};
 
 /// The single PCM shape the engine forces SAPI output into.
 constexpr vox::audio::AudioFormat OutputFormat{22050, 16, 1};
@@ -289,7 +301,7 @@ public:
       // initialization and must not balance it with CoUninitialize.
       initialized_ = false;
     } else if (FAILED(hr)) {
-      throw std::runtime_error("SapiTtsEngine: COM initialization failed");
+      throw EngineError(static_cast<std::uint32_t>(hr), "SapiTtsEngine: COM initialization failed");
     } else {
       initialized_ = true; // S_OK or S_FALSE — we own a reference to release
     }
@@ -315,18 +327,25 @@ private:
 class SapiTtsEngine::Impl {
 public:
   explicit Impl(VoiceSelectionPolicy policy) {
-    if (FAILED(::CoCreateInstance(CLSID_SpVoice, nullptr, CLSCTX_ALL, IID_PPV_ARGS(&voice_)))) {
-      throw std::runtime_error("SapiTtsEngine: failed to create the SAPI voice");
+    if (const HRESULT hr =
+            ::CoCreateInstance(CLSID_SpVoice, nullptr, CLSCTX_ALL, IID_PPV_ARGS(&voice_));
+        FAILED(hr)) {
+      throw EngineError(static_cast<std::uint32_t>(hr),
+                        "SapiTtsEngine: failed to create the SAPI voice");
     }
     enumerateVoices();
     const std::optional<SelectedVoice> chosen = selectVoice(descriptors_, policy);
     if (!chosen) {
-      throw std::runtime_error("SapiTtsEngine: no usable voice for the requested policy");
+      throw EngineError("SapiTtsEngine: no usable voice for the requested policy");
     }
     selected_ = *chosen;
     const auto token = idToToken_.find(selected_.id);
-    if (token == idToToken_.end() || FAILED(voice_->SetVoice(token->second.Get()))) {
-      throw std::runtime_error("SapiTtsEngine: failed to activate the selected voice");
+    if (token == idToToken_.end()) {
+      throw EngineError("SapiTtsEngine: the selected voice token is no longer available");
+    }
+    if (const HRESULT hr = voice_->SetVoice(token->second.Get()); FAILED(hr)) {
+      throw EngineError(static_cast<std::uint32_t>(hr),
+                        "SapiTtsEngine: failed to activate the selected voice");
     }
   }
 
@@ -350,23 +369,24 @@ public:
     if (wide.empty()) {
       // Non-empty input that did not convert is invalid UTF-8 — surface it
       // rather than silently producing no audio.
-      throw std::runtime_error("SapiTtsEngine: input text is not valid UTF-8");
+      throw EngineError("SapiTtsEngine: input text is not valid UTF-8");
     }
 
     const WAVEFORMATEX format = makeWaveFormat();
     const ComPtr<PcmSinkStream> output = Make<PcmSinkStream>(sink, cancelled_, format);
     if (!output) {
-      throw std::runtime_error("SapiTtsEngine: failed to create the output stream");
+      throw EngineError("SapiTtsEngine: failed to create the output stream");
     }
 
-    if (FAILED(voice_->SetOutput(output.Get(), FALSE))) {
-      throw std::runtime_error("SapiTtsEngine: failed to set the SAPI output");
+    if (const HRESULT hr = voice_->SetOutput(output.Get(), FALSE); FAILED(hr)) {
+      throw EngineError(static_cast<std::uint32_t>(hr),
+                        "SapiTtsEngine: failed to set the SAPI output");
     }
     const HRESULT spoken = voice_->Speak(wide.c_str(), static_cast<DWORD>(SPF_IS_NOT_XML), nullptr);
     voice_->SetOutput(nullptr, TRUE); // release our stream; restore the default sink
 
     if (FAILED(spoken) && !cancelled_.load(std::memory_order_relaxed)) {
-      throw std::runtime_error("SapiTtsEngine: synthesis failed");
+      throw EngineError(static_cast<std::uint32_t>(spoken), "SapiTtsEngine: synthesis failed");
     }
   }
 
@@ -432,7 +452,8 @@ private:
   ComApartment com_; // first member: initialized first, uninitialized last
   ComPtr<ISpVoice> voice_;
   std::vector<VoiceDescriptor> descriptors_;
-  std::unordered_map<std::string, ComPtr<ISpObjectToken>> idToToken_;
+  std::unordered_map<std::string, ComPtr<ISpObjectToken>, TransparentStringHash, std::equal_to<>>
+      idToToken_;
   SelectedVoice selected_;
   std::atomic<bool> cancelled_{false};
 };

@@ -15,7 +15,8 @@ target_include_directories(vox_tts
   PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
-target_link_libraries(vox_tts PUBLIC vox::audio)
+# vox::core for the OS-error base behind vox::tts::EngineError (errors.hpp).
+target_link_libraries(vox_tts PUBLIC vox::audio vox::core)
 
 if(WIN32)
   # The Windows SAPI5 backend. Excluded from the Linux/sanitizer build; it

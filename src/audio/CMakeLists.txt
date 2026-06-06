@@ -17,6 +17,9 @@ target_include_directories(vox_audio
   PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
+# vox::core for the OS-error base behind vox::audio::DeviceError (errors.hpp).
+target_link_libraries(vox_audio PUBLIC vox::core)
+
 if(WIN32)
   # The Windows WASAPI render sink. Excluded from the Linux/sanitizer build; it
   # delegates resampling and hand-off to the portable PcmConverter/PcmRing, which

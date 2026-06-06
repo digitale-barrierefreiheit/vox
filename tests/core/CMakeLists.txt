@@ -7,3 +7,10 @@ vox_add_test(
   LINK vox::core)
 
 set_target_properties(core_version_test PROPERTIES FOLDER "tests")
+
+vox_add_test(
+  NAME core_os_error_test
+  SOURCES os_error_test.cpp
+  LINK vox::core)
+
+set_target_properties(core_os_error_test PROPERTIES FOLDER "tests")

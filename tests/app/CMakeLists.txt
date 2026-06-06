@@ -29,6 +29,8 @@ if(WIN32)
   # Reuse the SAPI COM mock chain that backs the tts unit tests.
   target_include_directories(app_default_app_test PRIVATE
     "${CMAKE_SOURCE_DIR}/tests/tts")
-  gtest_discover_tests(app_default_app_test DISCOVERY_MODE PRE_TEST)
+  gtest_discover_tests(app_default_app_test
+    PROPERTIES LABELS "unit"
+    DISCOVERY_MODE PRE_TEST)
   set_target_properties(app_default_app_test PROPERTIES FOLDER "tests")
 endif()

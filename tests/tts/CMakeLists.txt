@@ -25,7 +25,9 @@ if(WIN32)
     GTest::gtest
     GTest::gmock
     GTest::gtest_main)
-  gtest_discover_tests(tts_sapi_test DISCOVERY_MODE PRE_TEST)
+  gtest_discover_tests(tts_sapi_test
+    PROPERTIES LABELS "unit"
+    DISCOVERY_MODE PRE_TEST)
   set_target_properties(tts_sapi_test PROPERTIES FOLDER "tests")
 
   # Integration test driving the real SAPI5 engine to a memory stream (no audio

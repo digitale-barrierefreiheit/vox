@@ -24,6 +24,8 @@ if(WIN32)
     GTest::gtest
     GTest::gmock
     GTest::gtest_main)
-  gtest_discover_tests(provider_uia_test DISCOVERY_MODE PRE_TEST)
+  gtest_discover_tests(provider_uia_test
+    PROPERTIES LABELS "unit"
+    DISCOVERY_MODE PRE_TEST)
   set_target_properties(provider_uia_test PROPERTIES FOLDER "tests")
 endif()

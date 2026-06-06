@@ -58,10 +58,12 @@ HHOOK installLowLevelHook(HOOKPROC proc) {
   return ::SetWindowsHookExW(WH_KEYBOARD_LL, proc, ::GetModuleHandleW(nullptr), 0);
 }
 
-/// Removes a hook from installLowLevelHook. A test-injected handle is not real,
-/// so the real UnhookWindowsHookEx is skipped when an override is installed.
-void uninstallLowLevelHook(HHOOK hook) {
-  if (!installHookOverride()) {
+/// Removes a hook from installLowLevelHook. @p isFake records whether the install
+/// went through the test override (captured at install time, not now): a fake
+/// handle must not be passed to the real UnhookWindowsHookEx even if the override
+/// was cleared in the meantime.
+void uninstallLowLevelHook(HHOOK hook, bool isFake) {
+  if (!isFake) {
     ::UnhookWindowsHookEx(hook);
   }
 }
@@ -186,6 +188,7 @@ private:
         signalReady();
         return; // not ours — leave active_ and skip teardown below
       }
+      hookIsFake_ = static_cast<bool>(installHookOverride()); // capture before installing
       hook_ = installLowLevelHook(&Impl::hookProc);
       if (hook_ == nullptr) {
         lastError_ = ::GetLastError();
@@ -204,7 +207,7 @@ private:
     }
     // Tear down only what this thread owns (active_ == this only after our CAS).
     if (hook_ != nullptr) {
-      uninstallLowLevelHook(hook_);
+      uninstallLowLevelHook(hook_, hookIsFake_);
       hook_ = nullptr;
     }
     Impl* owned = this;
@@ -237,6 +240,7 @@ private:
   std::uint32_t lastError_{0}; ///< GetLastError() of a hook-install failure (0 if none).
   bool running_{false};
   HHOOK hook_{nullptr};
+  bool hookIsFake_{false}; ///< True if hook_ came from the test override, not Win32.
 
   // Virtual keys whose key-down we consumed, so we also swallow their key-up and
   // ignore auto-repeat. Touched only on the (single) hook thread — no locking.

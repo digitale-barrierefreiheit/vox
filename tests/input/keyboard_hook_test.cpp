@@ -155,7 +155,7 @@ void* fakeHandle() {
 }
 
 TEST(KeyboardHookLifecycle, StartsAndStopsWithAFakeHook) {
-  const SeamGuard guard;
+  [[maybe_unused]] const SeamGuard guard;
   vox::input::testing::setInstallHookOverride([] { return fakeHandle(); });
   RecordingHandler handler;
   KeyboardHook hook(handler, CommandMap{});
@@ -164,7 +164,7 @@ TEST(KeyboardHookLifecycle, StartsAndStopsWithAFakeHook) {
 }
 
 TEST(KeyboardHookLifecycle, StartThrowsWhenTheInstallFails) {
-  const SeamGuard guard;
+  [[maybe_unused]] const SeamGuard guard;
   vox::input::testing::setInstallHookOverride([] { return static_cast<void*>(nullptr); });
   RecordingHandler handler;
   KeyboardHook hook(handler, CommandMap{});
@@ -172,7 +172,7 @@ TEST(KeyboardHookLifecycle, StartThrowsWhenTheInstallFails) {
 }
 
 TEST(KeyboardHookLifecycle, StartTwiceThrows) {
-  const SeamGuard guard;
+  [[maybe_unused]] const SeamGuard guard;
   vox::input::testing::setInstallHookOverride([] { return fakeHandle(); });
   RecordingHandler handler;
   KeyboardHook hook(handler, CommandMap{});
@@ -182,7 +182,7 @@ TEST(KeyboardHookLifecycle, StartTwiceThrows) {
 }
 
 TEST(KeyboardHookLifecycle, ASecondHookReportsAnotherIsAlreadyActive) {
-  const SeamGuard guard;
+  [[maybe_unused]] const SeamGuard guard;
   vox::input::testing::setInstallHookOverride([] { return fakeHandle(); });
   RecordingHandler handler;
   KeyboardHook first(handler, CommandMap{});

@@ -21,16 +21,22 @@ int App::run() noexcept {
     reader_.start();
     hook_->start();
     reader_.waitForExit(); // until Ctrl+Shift+Q
-    // Tear down in dependency order: the hook first (off its own thread), then
-    // the reader. The App destructor also stops both, so an exception below
-    // still leaves nothing running.
-    hook_->stop();
-    reader_.stop();
+    teardown();            // hook first (off its own thread), then the reader
     return 0;
   } catch (const std::exception& error) {
     std::cerr << "vox: fatal error: " << error.what() << '\n';
+    teardown(); // stop whatever start() brought up before failing
     return 1;
   }
+}
+
+void App::teardown() noexcept {
+  // In dependency order. stop() is idempotent on both, so the normal and the
+  // failure path can both call this; neither stop() throws.
+  if (hook_) {
+    hook_->stop();
+  }
+  reader_.stop();
 }
 
 } // namespace vox::app

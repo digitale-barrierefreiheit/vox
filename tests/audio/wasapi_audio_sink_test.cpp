@@ -62,7 +62,7 @@ public:
 /// A failing factory (no chain at all) covers the very first link: the sink
 /// cannot even create the device enumerator.
 TEST(WasapiAudioSinkErrors, ThrowsDeviceErrorWhenEnumeratorCreationFails) {
-  const SeamGuard guard;
+  [[maybe_unused]] const SeamGuard guard;
   vox::audio::testing::setEnumeratorFactory([](struct IMMDeviceEnumerator** out) {
     *out = nullptr;
     return ErrorFail;

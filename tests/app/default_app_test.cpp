@@ -52,7 +52,7 @@ public:
 };
 
 TEST(DefaultApp, BuildsTheRealDependenciesWithMockedCom) {
-  const SeamGuard guard;
+  [[maybe_unused]] const SeamGuard guard;
   constexpr wchar_t tokenId[] = L"VOX-DEFAULT-VOICE";
 
   // The SAPI chain the engine's constructor walks: voice + category -> enumerator

@@ -20,7 +20,9 @@ if(WIN32)
     vox::input
     GTest::gtest
     GTest::gtest_main)
-  gtest_discover_tests(input_keyboard_hook_test DISCOVERY_MODE PRE_TEST)
+  gtest_discover_tests(input_keyboard_hook_test
+    PROPERTIES LABELS "unit"
+    DISCOVERY_MODE PRE_TEST)
   set_target_properties(input_keyboard_hook_test PROPERTIES FOLDER "tests")
 
   # Integration test driving the real WH_KEYBOARD_LL hook via SendInput.

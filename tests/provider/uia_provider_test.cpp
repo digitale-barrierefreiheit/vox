@@ -56,7 +56,7 @@ public:
 /// A failing factory: the provider cannot create the automation client and must
 /// degrade to "no focused element" rather than crash.
 TEST(UiaProviderDegraded, FocusedElementIsNulloptWhenAutomationCreationFails) {
-  const SeamGuard guard;
+  [[maybe_unused]] const SeamGuard guard;
   vox::provider::testing::setAutomationFactory([](struct IUIAutomation** out) {
     *out = nullptr;
     return ErrorFail;

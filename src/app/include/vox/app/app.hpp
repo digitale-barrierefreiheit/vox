@@ -66,6 +66,10 @@ public:
   [[nodiscard]] int run() noexcept;
 
 private:
+  /// Stops the hook then the reader (idempotent; never throws). Used by both the
+  /// normal exit and the failure path of run().
+  void teardown() noexcept;
+
   AppDependencies deps_;
   Reader reader_;
   std::unique_ptr<vox::input::IInputHook> hook_;

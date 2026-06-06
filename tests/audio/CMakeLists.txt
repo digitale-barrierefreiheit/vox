@@ -29,7 +29,9 @@ if(WIN32)
     GTest::gtest
     GTest::gmock
     GTest::gtest_main)
-  gtest_discover_tests(audio_wasapi_test DISCOVERY_MODE PRE_TEST)
+  gtest_discover_tests(audio_wasapi_test
+    PROPERTIES LABELS "unit"
+    DISCOVERY_MODE PRE_TEST)
   set_target_properties(audio_wasapi_test PROPERTIES FOLDER "tests")
 
   # Integration test driving the real WASAPI render device. Labelled

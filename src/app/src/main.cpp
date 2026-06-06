@@ -4,17 +4,27 @@
 /// @file
 /// @brief The Vox MVP reader executable: the thin entry point.
 ///
-/// All behaviour lives in the testable `vox::app::App` (the run-loop) and
-/// `makeDefaultDependencies()` (the composition root). `main` only wires them,
-/// so it carries no logic of its own.
+/// Behaviour lives in the testable `vox::app::App` (the run-loop) and
+/// `makeDefaultDependencies()` (the composition root). `main` only builds the
+/// App and runs it, mapping a fatal startup failure (e.g. no SAPI voice) to a
+/// non-zero exit — the one piece App::run() cannot cover, since it catches only
+/// what happens after construction.
 
 #if defined(_WIN32)
+
+#  include <exception>
+#  include <iostream>
 
 #  include <vox/app/app.hpp>
 #  include <vox/app/default_app.hpp>
 
 int main() {
-  return vox::app::App{vox::app::makeDefaultDependencies()}.run();
+  try {
+    return vox::app::App{vox::app::makeDefaultDependencies()}.run();
+  } catch (const std::exception& error) {
+    std::cerr << "vox: fatal error: " << error.what() << '\n';
+    return 1;
+  }
 }
 
 #endif // defined(_WIN32)

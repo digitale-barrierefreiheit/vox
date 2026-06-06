@@ -63,7 +63,7 @@ public:
 
 /// The very first link: the engine cannot even create the SAPI voice.
 TEST(SapiTtsEngineErrors, ThrowsEngineErrorWhenVoiceCreationFails) {
-  const SeamGuard guard;
+  [[maybe_unused]] const SeamGuard guard;
   vox::tts::testing::setVoiceFactory([](struct ISpVoice** out) {
     *out = nullptr;
     return ErrorFail;

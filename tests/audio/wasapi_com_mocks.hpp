@@ -169,6 +169,9 @@ public:
 inline WAVEFORMATEX* makeMixFormat(WORD formatTag = WAVE_FORMAT_PCM, WORD bitsPerSample = 16,
                                    DWORD samplesPerSec = 48000, WORD channels = 2) {
   auto* format = static_cast<WAVEFORMATEX*>(::CoTaskMemAlloc(sizeof(WAVEFORMATEX)));
+  if (format == nullptr) {
+    return nullptr; // COM contract: out-param stays null on allocation failure
+  }
   format->wFormatTag = formatTag;
   format->nChannels = channels;
   format->nSamplesPerSec = samplesPerSec;

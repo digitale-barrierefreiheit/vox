@@ -30,7 +30,7 @@ AppDependencies validated(AppDependencies deps) {
 template<typename Stop>
 void stopQuietly(Stop&& stop, const char* what) noexcept {
   try {
-    stop();
+    std::forward<Stop>(stop)();
   } catch (const std::exception& error) {
     std::cerr << "vox: error stopping " << what << ": " << error.what() << '\n';
   } catch (...) {

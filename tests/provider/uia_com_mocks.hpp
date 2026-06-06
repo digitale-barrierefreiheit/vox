@@ -806,7 +806,7 @@ inline auto patternDispatch(IUIAutomationTogglePattern* toggle,
                             IUIAutomationExpandCollapsePattern* expand,
                             IUIAutomationSelectionItemPattern* selection,
                             IUIAutomationValuePattern* value) {
-  return [toggle, expand, selection, value](PATTERNID id, REFIID, void** out) -> HRESULT {
+  return [toggle, expand, selection, value](PATTERNID id, REFIID, void** out) {
     switch (id) {
     case UIA_TogglePatternId:
       *out = toggle;

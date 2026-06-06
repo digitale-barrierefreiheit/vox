@@ -22,7 +22,8 @@ namespace vox::app {
 
 Reader::Reader(vox::provider::IProvider& provider, vox::tts::ITtsEngine& tts,
                vox::audio::IAudioSink& audio, vox::output::OutputManager output)
-    : provider_(provider), tts_(tts), audio_(audio), output_(std::move(output)) {}
+    : provider_(provider), tts_(tts), audio_(audio), output_(std::move(output)),
+      guard_(std::make_shared<detail::ReaderFocusGuard>()) {}
 
 Reader::~Reader() {
   try {
@@ -50,9 +51,10 @@ void Reader::start() {
     worker_ = std::thread([this] { workerLoop(); });
     // Route the focus callback through a shared guard so it is safe even if the
     // provider invokes it after this Reader is destroyed (stop() detaches it).
-    guard_ = std::make_shared<detail::ReaderFocusGuard>();
     {
-      // Set under the guard's lock too, so every access to reader is consistent.
+      // Re-attach the single, lifetime-long guard (created in the constructor)
+      // under its lock. Reusing it across restarts means a handler the provider
+      // could not unregister still points back at this live Reader.
       const std::lock_guard<std::mutex> lock(guard_->mutex);
       guard_->reader = this;
     }

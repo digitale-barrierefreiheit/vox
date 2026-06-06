@@ -60,7 +60,7 @@ public:
     try {
       thread_ = std::jthread([this, &ready] { run(ready); });
     } catch (...) {
-      // Translate a std::thread failure (e.g. std::system_error) so start()
+      // Translate a std::jthread failure (e.g. std::system_error) so start()
       // only ever throws HookError, as documented.
       throw HookError("KeyboardHook: failed to create the hook thread");
     }
@@ -90,7 +90,7 @@ public:
   }
 
 private:
-  // The std::thread entrypoint. noexcept + catch-all so an exception can never
+  // The jthread entrypoint. noexcept + catch-all so an exception can never
   // escape the thread (which would terminate the process), and the ready promise
   // is always fulfilled so start() is never left blocked.
   void run(std::promise<void>& ready) noexcept {

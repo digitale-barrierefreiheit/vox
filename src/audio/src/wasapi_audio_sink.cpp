@@ -159,7 +159,7 @@ public:
     try {
       renderThread_ = std::jthread([this] { renderLoopGuarded(); });
     } catch (...) {
-      // Translate a std::thread failure (e.g. std::system_error) so start()
+      // Translate a std::jthread failure (e.g. std::system_error) so start()
       // honours its documented DeviceError contract; release the device.
       stop();
       throw DeviceError("WasapiAudioSink: failed to create the render thread");
@@ -337,7 +337,7 @@ private:
   }
 
   void renderLoopGuarded() noexcept {
-    // An exception must never escape a std::thread (it would terminate the
+    // An exception must never escape the render thread (it would terminate the
     // process), so the whole loop runs inside a catch-all.
     try {
       renderLoop();

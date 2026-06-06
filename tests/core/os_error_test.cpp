@@ -7,6 +7,7 @@
 ///        the sanitizer/clang-tidy build too (ADR-12).
 #include <cstdint>
 #include <stdexcept>
+#include <string>
 
 #include <gtest/gtest.h>
 

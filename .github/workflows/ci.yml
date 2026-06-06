@@ -22,7 +22,7 @@ env:
   # commit, so the baseline is always resolvable and port versions are
   # reproducible (architecture §8.6.7). Do not rely on the runner's preinstalled
   # vcpkg — its commit drifts with the image and may not contain the baseline.
-  VCPKG_BASELINE: "059d760472984042e1b4db0d40efd935a1adcbc9"
+  VCPKG_BASELINE: ${{ vars.VCPKG_BASELINE }}
 
 jobs:
   # ---------------------------------------------------------------------------

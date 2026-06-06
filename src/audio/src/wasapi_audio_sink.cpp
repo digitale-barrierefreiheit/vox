@@ -16,12 +16,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <shared_mutex>
 #include <span>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <vox/audio/audio_format.hpp>
@@ -29,6 +31,7 @@
 #include <vox/audio/pcm_converter.hpp>
 #include <vox/audio/pcm_ring.hpp>
 #include <vox/audio/wasapi_audio_sink.hpp>
+#include <vox/audio/wasapi_test_seam.hpp>
 
 // The Windows audio headers are include-order sensitive (windows.h must lead),
 // so this block is exempt from clang-format's include sorting. NOMINMAX keeps
@@ -52,6 +55,23 @@ namespace vox::audio {
 namespace {
 
 using Microsoft::WRL::ComPtr;
+
+/// Test seam (issue #68): the installed factory, if any, replaces CoCreateInstance
+/// for the device enumerator so device acquisition and its error paths are
+/// unit-tested with mock COM objects. Empty in production.
+std::function<long(IMMDeviceEnumerator**)>& enumeratorFactory() {
+  static std::function<long(IMMDeviceEnumerator**)> factory;
+  return factory;
+}
+
+/// Creates the device enumerator — via the test factory when one is installed,
+/// otherwise the real CoCreateInstance.
+HRESULT createDeviceEnumerator(IMMDeviceEnumerator** out) {
+  if (const auto& factory = enumeratorFactory()) {
+    return static_cast<HRESULT>(factory(out));
+  }
+  return ::CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(out));
+}
 
 /// Ring capacity as a fraction of a second of device audio — enough to absorb
 /// synthesis bursts without adding noticeable latency.
@@ -124,6 +144,45 @@ SampleFormat detectSampleFormat(const WAVEFORMATEX& format) {
 }
 
 } // namespace
+
+namespace testing {
+void setEnumeratorFactory(EnumeratorFactory factory) {
+  enumeratorFactory() = std::move(factory);
+}
+} // namespace testing
+
+namespace detail {
+// The render thread's per-tick step, factored out of the loop so its branches
+// (silent / partial-underrun / full-copy) are unit-testable with mock COM and no
+// real device (issue #68). Declared in wasapi_test_seam.hpp.
+void renderDeviceBuffer(IAudioClient& client, IAudioRenderClient& renderClient, PcmRing& ring,
+                        UINT32 bufferFrameCount, std::size_t frameBytes) {
+  UINT32 padding = 0;
+  if (FAILED(client.GetCurrentPadding(&padding))) {
+    return;
+  }
+  const UINT32 frames = bufferFrameCount - padding;
+  if (frames == 0U) {
+    return;
+  }
+  BYTE* deviceBuffer = nullptr;
+  if (FAILED(renderClient.GetBuffer(frames, &deviceBuffer))) {
+    return;
+  }
+  const std::size_t needed = static_cast<std::size_t>(frames) * frameBytes;
+  auto* bytes = reinterpret_cast<std::byte*>(deviceBuffer);
+  const std::size_t got = ring.read(std::span<std::byte>(bytes, needed));
+  if (got == 0U) {
+    // Nothing to play: let WASAPI fill silence instead of memset-ing here.
+    renderClient.ReleaseBuffer(frames, AUDCLNT_BUFFERFLAGS_SILENT);
+    return;
+  }
+  if (got < needed) {
+    std::memset(deviceBuffer + got, 0, needed - got); // partial underrun -> pad with silence
+  }
+  renderClient.ReleaseBuffer(frames, 0);
+}
+} // namespace detail
 
 class WasapiAudioSink::Impl {
 public:
@@ -249,9 +308,7 @@ public:
 
 private:
   void acquireDevice() {
-    if (const HRESULT hr = ::CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
-                                              IID_PPV_ARGS(&enumerator_));
-        FAILED(hr)) {
+    if (const HRESULT hr = createDeviceEnumerator(&enumerator_); FAILED(hr)) {
       throw DeviceError(static_cast<std::uint32_t>(hr),
                         "WasapiAudioSink: cannot create device enumerator");
     }
@@ -394,30 +451,8 @@ private:
   }
 
   void renderAvailable() {
-    UINT32 padding = 0;
-    if (FAILED(audioClient_->GetCurrentPadding(&padding))) {
-      return;
-    }
-    const UINT32 frames = bufferFrameCount_ - padding;
-    if (frames == 0U) {
-      return;
-    }
-    BYTE* deviceBuffer = nullptr;
-    if (FAILED(renderClient_->GetBuffer(frames, &deviceBuffer))) {
-      return;
-    }
-    const std::size_t needed = static_cast<std::size_t>(frames) * frameBytes_;
-    auto* bytes = reinterpret_cast<std::byte*>(deviceBuffer);
-    const std::size_t got = ring_->read(std::span<std::byte>(bytes, needed));
-    if (got == 0U) {
-      // Nothing to play: let WASAPI fill silence instead of memset-ing here.
-      renderClient_->ReleaseBuffer(frames, AUDCLNT_BUFFERFLAGS_SILENT);
-      return;
-    }
-    if (got < needed) {
-      std::memset(deviceBuffer + got, 0, needed - got); // partial underrun -> pad with silence
-    }
-    renderClient_->ReleaseBuffer(frames, 0);
+    detail::renderDeviceBuffer(*audioClient_.Get(), *renderClient_.Get(), *ring_, bufferFrameCount_,
+                               frameBytes_);
   }
 
   AudioFormat sourceFormat_;

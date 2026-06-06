@@ -25,6 +25,7 @@
 #include <vox/tts/errors.hpp>
 #include <vox/tts/itts_engine.hpp>
 #include <vox/tts/rate.hpp>
+#include <vox/tts/sapi_test_seam.hpp>
 #include <vox/tts/sapi_tts_engine.hpp>
 #include <vox/tts/voice_selection.hpp>
 
@@ -52,6 +53,38 @@ using Microsoft::WRL::ComPtr;
 using Microsoft::WRL::Make;
 using Microsoft::WRL::RuntimeClass;
 using Microsoft::WRL::RuntimeClassFlags;
+
+/// Test seams (issue #68): when installed, these factories replace
+/// CoCreateInstance for the SAPI voice and the voice-token category, so the
+/// engine's construction / voice-selection / synthesis paths are unit-tested
+/// with mock COM and no installed voice. Empty in production.
+std::function<long(ISpVoice**)>& voiceFactory() {
+  static std::function<long(ISpVoice**)> factory;
+  return factory;
+}
+
+std::function<long(ISpObjectTokenCategory**)>& tokenCategoryFactory() {
+  static std::function<long(ISpObjectTokenCategory**)> factory;
+  return factory;
+}
+
+/// Creates the SAPI voice — via the test factory when one is installed, else the
+/// real CoCreateInstance.
+HRESULT createVoice(ISpVoice** out) {
+  if (const auto& factory = voiceFactory()) {
+    return static_cast<HRESULT>(factory(out));
+  }
+  return ::CoCreateInstance(CLSID_SpVoice, nullptr, CLSCTX_ALL, IID_PPV_ARGS(out));
+}
+
+/// Creates the voice-token category — via the test factory when installed, else
+/// the real CoCreateInstance.
+HRESULT createTokenCategory(ISpObjectTokenCategory** out) {
+  if (const auto& factory = tokenCategoryFactory()) {
+    return static_cast<HRESULT>(factory(out));
+  }
+  return ::CoCreateInstance(CLSID_SpObjectTokenCategory, nullptr, CLSCTX_ALL, IID_PPV_ARGS(out));
+}
 
 /// Transparent hash so the voice-id map can be looked up by `std::string_view`
 /// without constructing a `std::string` key (heterogeneous lookup).
@@ -324,12 +357,20 @@ private:
 
 } // namespace
 
+namespace testing {
+void setVoiceFactory(VoiceFactory factory) {
+  voiceFactory() = std::move(factory);
+}
+
+void setTokenCategoryFactory(TokenCategoryFactory factory) {
+  tokenCategoryFactory() = std::move(factory);
+}
+} // namespace testing
+
 class SapiTtsEngine::Impl {
 public:
   explicit Impl(VoiceSelectionPolicy policy) {
-    if (const HRESULT hr =
-            ::CoCreateInstance(CLSID_SpVoice, nullptr, CLSCTX_ALL, IID_PPV_ARGS(&voice_));
-        FAILED(hr)) {
+    if (const HRESULT hr = createVoice(&voice_); FAILED(hr) || !voice_) {
       throw EngineError(static_cast<std::uint32_t>(hr),
                         "SapiTtsEngine: failed to create the SAPI voice");
     }
@@ -404,8 +445,7 @@ private:
     // modern language features register under Speech_OneCore and are not seen
     // here; discovering those is tracked in #52.
     ComPtr<ISpObjectTokenCategory> category;
-    if (FAILED(::CoCreateInstance(CLSID_SpObjectTokenCategory, nullptr, CLSCTX_ALL,
-                                  IID_PPV_ARGS(&category))) ||
+    if (FAILED(createTokenCategory(&category)) || !category ||
         FAILED(category->SetId(SPCAT_VOICES, FALSE))) {
       return;
     }

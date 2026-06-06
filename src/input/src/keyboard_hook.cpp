@@ -7,6 +7,7 @@
 #  include <atomic>
 #  include <cstddef>
 #  include <cstdint>
+#  include <functional>
 #  include <future>
 #  include <string>
 #  include <thread>
@@ -17,6 +18,7 @@
 #  include <vox/input/errors.hpp>
 #  include <vox/input/key_event.hpp>
 #  include <vox/input/keyboard_hook.hpp>
+#  include <vox/input/keyboard_test_seam.hpp>
 
 #  define WIN32_LEAN_AND_MEAN
 #  define NOMINMAX
@@ -39,7 +41,60 @@ KeyModifiers currentModifiers() {
                       .win = held(VK_LWIN) || held(VK_RWIN)};
 }
 
+/// Test seam (issue #68): the installed override, if any, replaces the
+/// SetWindowsHookEx call so start()/stop() are unit-tested with no real hook.
+/// Empty in production.
+std::function<void*()>& installHookOverride() {
+  static std::function<void*()> override;
+  return override;
+}
+
+/// Installs the low-level keyboard hook — via the test override when one is set,
+/// otherwise the real SetWindowsHookEx.
+HHOOK installLowLevelHook(HOOKPROC proc) {
+  if (const auto& override = installHookOverride()) {
+    return static_cast<HHOOK>(override());
+  }
+  return ::SetWindowsHookExW(WH_KEYBOARD_LL, proc, ::GetModuleHandleW(nullptr), 0);
+}
+
 } // namespace
+
+namespace detail {
+
+HookAction processKey(bool pressed, std::size_t vk, const KeyEvent& event,
+                      std::array<bool, 256>& consumed, const CommandMap& map,
+                      ICommandHandler& handler) {
+  if (pressed) {
+    if (consumed[vk]) {
+      return HookAction::Consume; // auto-repeat of a key we are consuming: swallow
+    }
+    bool consume = false;
+    try {
+      consume = routeKeyEvent(event, map, handler);
+    } catch (...) {
+      consume = false; // a throwing handler must not cross the Win32 boundary
+    }
+    if (consume) {
+      consumed[vk] = true; // remember so we also swallow this key's key-up
+      return HookAction::Consume;
+    }
+    return HookAction::PassThrough;
+  }
+  if (consumed[vk]) {
+    consumed[vk] = false;
+    return HookAction::Consume; // swallow the key-up of a key whose key-down we consumed
+  }
+  return HookAction::PassThrough;
+}
+
+} // namespace detail
+
+namespace testing {
+void setInstallHookOverride(InstallHookOverride override) {
+  installHookOverride() = std::move(override);
+}
+} // namespace testing
 
 class KeyboardHook::Impl {
 public:
@@ -113,7 +168,7 @@ private:
         signalReady();
         return; // not ours — leave active_ and skip teardown below
       }
-      hook_ = ::SetWindowsHookExW(WH_KEYBOARD_LL, &Impl::hookProc, ::GetModuleHandleW(nullptr), 0);
+      hook_ = installLowLevelHook(&Impl::hookProc);
       if (hook_ == nullptr) {
         lastError_ = ::GetLastError();
         error_ = "KeyboardHook: SetWindowsHookEx failed";
@@ -134,8 +189,11 @@ private:
       signalReady();
     }
     // Tear down only what this thread owns (active_ == this only after our CAS).
+    // A test-injected hook handle is not real, so it must not be unhooked.
     if (hook_ != nullptr) {
-      ::UnhookWindowsHookEx(hook_);
+      if (!installHookOverride()) {
+        ::UnhookWindowsHookEx(hook_);
+      }
       hook_ = nullptr;
     }
     Impl* owned = this;
@@ -148,27 +206,13 @@ private:
       const auto* info = reinterpret_cast<const KBDLLHOOKSTRUCT*>(lParam);
       const bool pressed = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
       const std::size_t vk = info->vkCode & 0xFFU; // vkCode is 1..254
-      if (pressed) {
-        if (self->consumed_[vk]) {
-          return 1; // auto-repeat of a key we are consuming: swallow, do not re-dispatch
-        }
-        const KeyEvent event{.virtualKey = static_cast<std::uint32_t>(info->vkCode),
-                             .modifiers = currentModifiers(),
-                             .pressed = true,
-                             .injected = (info->flags & LLKHF_INJECTED) != 0U};
-        bool consume = false;
-        try {
-          consume = routeKeyEvent(event, self->map_, self->handler_);
-        } catch (...) {
-          consume = false; // a throwing handler must not cross the Win32 boundary
-        }
-        if (consume) {
-          self->consumed_[vk] = true; // remember so we also swallow this key's key-up
-          return 1;                   // consumed (reader-control key) — hide it from the app
-        }
-      } else if (self->consumed_[vk]) {
-        self->consumed_[vk] = false;
-        return 1; // swallow the key-up of a key whose key-down we consumed
+      const KeyEvent event{.virtualKey = static_cast<std::uint32_t>(info->vkCode),
+                           .modifiers = currentModifiers(),
+                           .pressed = pressed,
+                           .injected = (info->flags & LLKHF_INJECTED) != 0U};
+      if (detail::processKey(pressed, vk, event, self->consumed_, self->map_, self->handler_) ==
+          HookAction::Consume) {
+        return 1; // hide the key from the foreground app
       }
     }
     return ::CallNextHookEx(nullptr, code, wParam, lParam);

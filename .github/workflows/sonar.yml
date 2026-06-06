@@ -33,7 +33,7 @@ jobs:
       - name: Build
         run: cmake --build --preset x64-msvc-debug
       - name: Install OpenCppCoverage
-        run: choco install OpenCppCoverage -y --no-progress
+        run: choco install OpenCppCoverage --version=0.9.9.0 -y --no-progress
       # Run the suite under coverage and export Cobertura for Sonar. --sources
       # limits measurement to our own src/ (not vcpkg/STL); --modules to our build
       # output; --cover_children so the test executables ctest spawns are covered.

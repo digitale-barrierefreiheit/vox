@@ -128,12 +128,11 @@ protected:
     ON_CALL(element_, get_CachedIsEnabled(_)).WillByDefault(setBool(TRUE));
     ON_CALL(element_, get_CachedHasKeyboardFocus(_)).WillByDefault(setBool(TRUE));
     ON_CALL(element_, get_CachedIsKeyboardFocusable(_)).WillByDefault(setBool(TRUE));
-    // Register the per-pattern mocks; the element's GetCachedPatternAs looks them
-    // up by id (the COM void** stays inside the mock, not here).
-    element_.setCachedPattern(UIA_TogglePatternId, &toggle_);
-    element_.setCachedPattern(UIA_ExpandCollapsePatternId, &expand_);
-    element_.setCachedPattern(UIA_SelectionItemPatternId, &selection_);
-    element_.setCachedPattern(UIA_ValuePatternId, &value_);
+    // The dispatch helper (in the mock header) maps each id to its pattern mock,
+    // keeping the COM void** out-param out of this test.
+    ON_CALL(element_, GetCachedPatternAs(_, _, _))
+        .WillByDefault(
+            vox::provider::testing::patternDispatch(&toggle_, &expand_, &selection_, &value_));
   }
 
   /// The four supported patterns: toggled-on, expanded, selected, value "hello".

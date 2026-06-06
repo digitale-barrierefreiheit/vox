@@ -197,7 +197,7 @@ class UiaProvider::Impl {
 public:
   Impl() {
     comInitialized_ = SUCCEEDED(::CoInitializeEx(nullptr, COINIT_MULTITHREADED));
-    if (FAILED(createAutomation(&automation_)) || !automation_) {
+    if (FAILED(createAutomation(automation_.ReleaseAndGetAddressOf())) || !automation_) {
       automation_.Reset();
       return;
     }

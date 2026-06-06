@@ -19,9 +19,6 @@
 
 #if defined(_WIN32)
 
-#  include <utility>
-#  include <vector>
-
 #  include <gmock/gmock.h>
 
 // The Windows UIA headers are include-order sensitive (windows.h must lead), so
@@ -505,25 +502,10 @@ public:
     return E_NOTIMPL;
   }
 
-  // GetCachedPatternAs is hand-implemented (not gmock'd) so the void** out-param
-  // mandated by the UIA ABI stays confined to this generated mock header instead
-  // of leaking into the test. Register the per-pattern mocks with
-  // setCachedPattern(); the provider then looks them up by PATTERNID.
-  void setCachedPattern(PATTERNID patternId, IUnknown* pattern) {
-    cachedPatterns_.emplace_back(patternId, pattern);
-  }
-
-  HRESULT STDMETHODCALLTYPE GetCachedPatternAs(PATTERNID patternId, __RPC__in REFIID /*riid*/,
-                                               __RPC__deref_out_opt void** patternObject) override {
-    for (const auto& [id, pattern] : cachedPatterns_) {
-      if (id == patternId && pattern != nullptr) {
-        *patternObject = pattern;
-        return S_OK;
-      }
-    }
-    *patternObject = nullptr;
-    return S_FALSE;
-  }
+  MOCK_METHOD(HRESULT, GetCachedPatternAs,
+              (PATTERNID patternId, __RPC__in REFIID riid,
+               __RPC__deref_out_opt void** patternObject),
+              (override, Calltype(STDMETHODCALLTYPE)));
 
   HRESULT STDMETHODCALLTYPE
   GetCurrentPattern(PATTERNID patternId, __RPC__deref_out_opt IUnknown** patternObject) override {
@@ -814,10 +796,37 @@ public:
                                               __RPC__out BOOL* gotClickable) override {
     return E_NOTIMPL;
   }
-
-private:
-  std::vector<std::pair<PATTERNID, IUnknown*>> cachedPatterns_; // for GetCachedPatternAs
 };
+
+/// A default action for `MockUiElement::GetCachedPatternAs` that hands back the
+/// per-pattern mock matching the requested id. Defined here so the COM `void**`
+/// out-param stays in the mock header, not the test. Pass nullptr for a pattern
+/// the element should report as absent.
+inline auto patternDispatch(IUIAutomationTogglePattern* toggle,
+                            IUIAutomationExpandCollapsePattern* expand,
+                            IUIAutomationSelectionItemPattern* selection,
+                            IUIAutomationValuePattern* value) {
+  return [toggle, expand, selection, value](PATTERNID id, REFIID, void** out) -> HRESULT {
+    switch (id) {
+    case UIA_TogglePatternId:
+      *out = toggle;
+      break;
+    case UIA_ExpandCollapsePatternId:
+      *out = expand;
+      break;
+    case UIA_SelectionItemPatternId:
+      *out = selection;
+      break;
+    case UIA_ValuePatternId:
+      *out = value;
+      break;
+    default:
+      *out = nullptr;
+      break;
+    }
+    return *out != nullptr ? S_OK : S_FALSE;
+  };
+}
 
 /// Mock `IUIAutomationTogglePattern`.
 class MockUiTogglePattern : public ComMockBase<IUIAutomationTogglePattern> {

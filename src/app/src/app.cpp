@@ -17,11 +17,25 @@ namespace {
 /// Enforces App's documented non-null preconditions before any of the
 /// dependencies are dereferenced in the member initializer list.
 AppDependencies validated(AppDependencies deps) {
-  const bool seamsPresent = deps.provider && deps.tts && deps.audio;
-  if (!seamsPresent || !deps.makeHook) {
+  if (const bool seamsPresent = deps.provider && deps.tts && deps.audio;
+      !seamsPresent || !deps.makeHook) {
     throw std::invalid_argument("App: provider, tts, audio, and makeHook must all be non-null");
   }
   return deps;
+}
+
+/// Runs @p stop, swallowing any failure: teardown is best-effort and runs on
+/// run()'s noexcept process boundary, so one component's failure must neither
+/// terminate nor skip the others.
+template<typename Stop>
+void stopQuietly(Stop&& stop, const char* what) noexcept {
+  try {
+    stop();
+  } catch (const std::exception& error) {
+    std::cerr << "vox: error stopping " << what << ": " << error.what() << '\n';
+  } catch (...) {
+    std::cerr << "vox: error stopping " << what << ": unknown exception\n";
+  }
 }
 
 } // namespace
@@ -55,19 +69,16 @@ int App::run() noexcept {
 }
 
 void App::teardown() noexcept {
-  // Best-effort, in dependency order; stop() is idempotent on both. stop() is not
-  // declared noexcept, and teardown() runs on run()'s failure path (the process
-  // boundary), so a throw here must be swallowed rather than terminate.
-  try {
-    if (hook_) {
-      hook_->stop();
-    }
-    reader_.stop();
-  } catch (const std::exception& error) {
-    std::cerr << "vox: error during teardown: " << error.what() << '\n';
-  } catch (...) {
-    std::cerr << "vox: error during teardown: unknown exception\n";
-  }
+  // In dependency order; stop() is idempotent on both. Each is isolated so a
+  // failure stopping one does not skip the other.
+  stopQuietly(
+      [this] {
+        if (hook_) {
+          hook_->stop();
+        }
+      },
+      "the input hook");
+  stopQuietly([this] { reader_.stop(); }, "the reader");
 }
 
 } // namespace vox::app

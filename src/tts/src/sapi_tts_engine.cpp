@@ -370,7 +370,7 @@ void setTokenCategoryFactory(TokenCategoryFactory factory) {
 class SapiTtsEngine::Impl {
 public:
   explicit Impl(VoiceSelectionPolicy policy) {
-    if (const HRESULT hr = createVoice(&voice_); FAILED(hr) || !voice_) {
+    if (const HRESULT hr = createVoice(voice_.ReleaseAndGetAddressOf()); FAILED(hr) || !voice_) {
       throw EngineError(static_cast<std::uint32_t>(hr),
                         "SapiTtsEngine: failed to create the SAPI voice");
     }
@@ -445,7 +445,7 @@ private:
     // modern language features register under Speech_OneCore and are not seen
     // here; discovering those is tracked in #52.
     ComPtr<ISpObjectTokenCategory> category;
-    if (FAILED(createTokenCategory(&category)) || !category ||
+    if (FAILED(createTokenCategory(category.ReleaseAndGetAddressOf())) || !category ||
         FAILED(category->SetId(SPCAT_VOICES, FALSE))) {
       return;
     }

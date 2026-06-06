@@ -308,7 +308,8 @@ public:
 
 private:
   void acquireDevice() {
-    if (const HRESULT hr = createDeviceEnumerator(&enumerator_); FAILED(hr) || !enumerator_) {
+    if (const HRESULT hr = createDeviceEnumerator(enumerator_.ReleaseAndGetAddressOf());
+        FAILED(hr) || !enumerator_) {
       throw DeviceError(static_cast<std::uint32_t>(hr),
                         "WasapiAudioSink: cannot create device enumerator");
     }

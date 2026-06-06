@@ -5,7 +5,7 @@ applyTo: '**/*'
 
 # Copilot working instructions
 
-## Include agents instructions and documentation
+## Include agent instructions and documentation
 
 Read `AGENTS.md` and everything under `doc/`. This context explicitly forms the basis for your actions and reviews.
 

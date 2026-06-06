@@ -25,3 +25,4 @@ Please review pull requests very strictly:
 **State your verdict on the very first line of the review, verbatim, with no heading, quoting, or preamble before it:**
 - If nothing critical blocks a release, the first line must be exactly: OK, I APPROVE
 - Otherwise, the first line must be exactly: STOP (and the rest of the review must explain what to fix.)
+- Also **set the GitHub review state appropriately (Approve / Request changes).**

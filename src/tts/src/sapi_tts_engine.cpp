@@ -374,7 +374,7 @@ public:
     cancelled_.store(true, std::memory_order_relaxed);
   }
 
-  void setRate(int rate) const {
+  void setRate(int rate) {
     voice_->SetRate(clampRate(rate)); // best effort; rate is non-critical
   }
 

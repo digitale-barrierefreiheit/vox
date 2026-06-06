@@ -12,7 +12,7 @@ namespace {
 using vox::model::State;
 using vox::model::StateSet;
 using vox::model::toString;
-using enum vox::model::State;
+using enum State;
 
 // The flag helpers are usable in constant expressions.
 static_assert(StateSet{}.none());

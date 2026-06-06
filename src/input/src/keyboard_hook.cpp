@@ -12,6 +12,7 @@
 #  include <stdexcept>
 #  include <string>
 #  include <thread>
+#  include <utility>
 
 #  include <vox/input/command_handler.hpp>
 #  include <vox/input/command_map.hpp>
@@ -43,7 +44,7 @@ KeyModifiers currentModifiers() {
 
 class KeyboardHook::Impl {
 public:
-  Impl(ICommandHandler& handler, const CommandMap& map) : handler_(handler), map_(map) {}
+  Impl(ICommandHandler& handler, CommandMap map) : handler_(handler), map_(std::move(map)) {}
 
   void start() {
     if (running_) {
@@ -188,7 +189,7 @@ private:
 };
 
 KeyboardHook::KeyboardHook(ICommandHandler& handler, CommandMap map)
-    : impl_(std::make_unique<Impl>(handler, map)) {}
+    : impl_(std::make_unique<Impl>(handler, std::move(map))) {}
 
 KeyboardHook::~KeyboardHook() {
   impl_->stop();

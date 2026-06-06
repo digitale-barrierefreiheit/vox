@@ -1,5 +1,17 @@
 # Vox — Open-Source Accessibility Tool
 
+[![CI](https://github.com/digitale-barrierefreiheit/vox/actions/workflows/ci.yml/badge.svg)](https://github.com/digitale-barrierefreiheit/vox/actions/workflows/ci.yml)
+[![SonarQube](https://github.com/digitale-barrierefreiheit/vox/actions/workflows/sonar.yml/badge.svg)](https://github.com/digitale-barrierefreiheit/vox/actions/workflows/sonar.yml)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=vox&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=vox)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=vox&metric=coverage)](https://sonarcloud.io/summary/new_code?id=vox)
+[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=vox&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=vox)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=vox&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=vox)
+[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=vox&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=vox)
+[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=vox&metric=bugs)](https://sonarcloud.io/summary/new_code?id=vox)
+[![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=vox&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=vox)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![C++26](https://img.shields.io/badge/C%2B%2B-26-blue.svg)](CMakePresets.json)
+
 Vox is a high-efficiency, low-latency **screen reader**, targeting Windows 11+
 first (Linux and macOS later). Its priorities are responsiveness, low system
 overhead, and natural **German** speech — areas where existing readers fall

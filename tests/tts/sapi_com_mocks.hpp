@@ -67,12 +67,16 @@ public:
     return 1;
   }
 
-  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID /*riid*/, void** ppv) override {
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
     if (ppv == nullptr) {
       return E_POINTER;
     }
-    *ppv = this;
-    return S_OK;
+    if (riid == __uuidof(IUnknown) || riid == __uuidof(Interface)) {
+      *ppv = this;
+      return S_OK;
+    }
+    *ppv = nullptr;
+    return E_NOINTERFACE; // unsupported IID, like a real COM object
   }
 };
 

@@ -24,6 +24,11 @@ int main() {
   } catch (const std::exception& error) {
     std::cerr << "vox: fatal error: " << error.what() << '\n';
     return 1;
+  } catch (...) {
+    // Top-level boundary for construction failures (before App::run()'s own
+    // firewall); a non-std exception must map to exit 1, not terminate.
+    std::cerr << "vox: fatal error: unknown exception\n";
+    return 1;
   }
 }
 

@@ -86,6 +86,13 @@ HRESULT createTokenCategory(ISpObjectTokenCategory** out) {
   return ::CoCreateInstance(CLSID_SpObjectTokenCategory, nullptr, CLSCTX_ALL, IID_PPV_ARGS(out));
 }
 
+/// The HRESULT to report when a COM call "succeeded" but left its out-param null:
+/// keep a genuine failure code, but turn a deceptive S_OK into E_POINTER so the
+/// thrown EngineError carries a meaningful native code.
+HRESULT effectiveError(HRESULT hr) {
+  return FAILED(hr) ? hr : E_POINTER;
+}
+
 /// Transparent hash so the voice-id map can be looked up by `std::string_view`
 /// without constructing a `std::string` key (heterogeneous lookup).
 struct TransparentStringHash {
@@ -371,7 +378,7 @@ class SapiTtsEngine::Impl {
 public:
   explicit Impl(VoiceSelectionPolicy policy) {
     if (const HRESULT hr = createVoice(voice_.ReleaseAndGetAddressOf()); FAILED(hr) || !voice_) {
-      throw EngineError(static_cast<std::uint32_t>(hr),
+      throw EngineError(static_cast<std::uint32_t>(effectiveError(hr)),
                         "SapiTtsEngine: failed to create the SAPI voice");
     }
     enumerateVoices();

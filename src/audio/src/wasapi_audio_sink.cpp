@@ -73,6 +73,13 @@ HRESULT createDeviceEnumerator(IMMDeviceEnumerator** out) {
   return ::CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(out));
 }
 
+/// The HRESULT to report when a COM call "succeeded" but left its out-param null:
+/// keep a genuine failure code, but turn a deceptive S_OK into E_POINTER so the
+/// thrown DeviceError carries a meaningful native code.
+HRESULT effectiveError(HRESULT hr) {
+  return FAILED(hr) ? hr : E_POINTER;
+}
+
 /// Ring capacity as a fraction of a second of device audio — enough to absorb
 /// synthesis bursts without adding noticeable latency.
 constexpr double RingSeconds = 0.5;
@@ -310,12 +317,12 @@ private:
   void acquireDevice() {
     if (const HRESULT hr = createDeviceEnumerator(enumerator_.ReleaseAndGetAddressOf());
         FAILED(hr) || !enumerator_) {
-      throw DeviceError(static_cast<std::uint32_t>(hr),
+      throw DeviceError(static_cast<std::uint32_t>(effectiveError(hr)),
                         "WasapiAudioSink: cannot create device enumerator");
     }
     if (const HRESULT hr = enumerator_->GetDefaultAudioEndpoint(eRender, eConsole, &device_);
         FAILED(hr) || !device_) {
-      throw DeviceError(static_cast<std::uint32_t>(hr),
+      throw DeviceError(static_cast<std::uint32_t>(effectiveError(hr)),
                         "WasapiAudioSink: no default render device");
     }
     if (const HRESULT hr = device_->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
@@ -328,7 +335,7 @@ private:
     WAVEFORMATEX* rawMixFormat = nullptr;
     if (const HRESULT hr = audioClient_->GetMixFormat(&rawMixFormat);
         FAILED(hr) || rawMixFormat == nullptr) {
-      throw DeviceError(static_cast<std::uint32_t>(hr),
+      throw DeviceError(static_cast<std::uint32_t>(effectiveError(hr)),
                         "WasapiAudioSink: cannot read the device mix format");
     }
     // Own the CoTaskMem allocation so it is freed on every path, including the

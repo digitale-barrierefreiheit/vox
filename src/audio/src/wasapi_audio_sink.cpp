@@ -299,12 +299,20 @@ private:
     }
 
     audioEvent_ = ::CreateEventW(nullptr, FALSE, FALSE, nullptr);
-    if (audioEvent_ == nullptr || FAILED(audioClient_->SetEventHandle(audioEvent_))) {
-      throw DeviceError("WasapiAudioSink: cannot set the render event handle");
+    if (audioEvent_ == nullptr) {
+      throw DeviceError(::GetLastError(), "WasapiAudioSink: cannot create the render event");
     }
-    if (FAILED(audioClient_->GetBufferSize(&bufferFrameCount_)) ||
-        FAILED(audioClient_->GetService(IID_PPV_ARGS(&renderClient_)))) {
-      throw DeviceError("WasapiAudioSink: cannot get the render client");
+    if (const HRESULT hr = audioClient_->SetEventHandle(audioEvent_); FAILED(hr)) {
+      throw DeviceError(static_cast<std::uint32_t>(hr),
+                        "WasapiAudioSink: cannot set the render event handle");
+    }
+    if (const HRESULT hr = audioClient_->GetBufferSize(&bufferFrameCount_); FAILED(hr)) {
+      throw DeviceError(static_cast<std::uint32_t>(hr),
+                        "WasapiAudioSink: cannot get the buffer size");
+    }
+    if (const HRESULT hr = audioClient_->GetService(IID_PPV_ARGS(&renderClient_)); FAILED(hr)) {
+      throw DeviceError(static_cast<std::uint32_t>(hr),
+                        "WasapiAudioSink: cannot get the render client");
     }
     ring_ = std::make_unique<PcmRing>(ringCapacityBytes());
   }

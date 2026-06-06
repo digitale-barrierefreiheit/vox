@@ -341,8 +341,12 @@ public:
     }
     selected_ = *chosen;
     const auto token = idToToken_.find(selected_.id);
-    if (token == idToToken_.end() || FAILED(voice_->SetVoice(token->second.Get()))) {
-      throw EngineError("SapiTtsEngine: failed to activate the selected voice");
+    if (token == idToToken_.end()) {
+      throw EngineError("SapiTtsEngine: the selected voice token is no longer available");
+    }
+    if (const HRESULT hr = voice_->SetVoice(token->second.Get()); FAILED(hr)) {
+      throw EngineError(static_cast<std::uint32_t>(hr),
+                        "SapiTtsEngine: failed to activate the selected voice");
     }
   }
 

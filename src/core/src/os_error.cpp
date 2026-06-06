@@ -3,12 +3,12 @@
 
 /// @file
 /// @brief Implementation of vox::formatOsError.
-#include <vox/core/os_error.hpp>
-
 #include <cstdint>
 #include <format>
 #include <string>
 #include <string_view>
+
+#include <vox/core/os_error.hpp>
 
 namespace vox {
 

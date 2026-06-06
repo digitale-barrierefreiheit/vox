@@ -7,7 +7,6 @@
 #  include <atomic>
 #  include <cstddef>
 #  include <cstdint>
-#  include <format>
 #  include <future>
 #  include <stdexcept>
 #  include <string>
@@ -57,6 +56,7 @@ public:
     std::promise<void> ready;
     std::future<void> readyFuture = ready.get_future();
     error_.clear();
+    lastError_ = 0;
     try {
       thread_ = std::jthread([this, &ready] { run(ready); });
     } catch (...) {
@@ -67,9 +67,9 @@ public:
     readyFuture.wait();
     if (!error_.empty()) {
       thread_.join();
-      // `error_` already embeds the GetLastError() code for the hook-install
-      // failure (see run()); carry it as a HookError for catch-by-subsystem.
-      throw HookError(error_);
+      // Carry the Win32 install error (0 for the "already active" case, where
+      // the message stands alone) so HookError::code() surfaces it.
+      throw HookError(lastError_, error_);
     }
     running_ = true;
   }
@@ -116,7 +116,8 @@ private:
       }
       hook_ = ::SetWindowsHookExW(WH_KEYBOARD_LL, &Impl::hookProc, ::GetModuleHandleW(nullptr), 0);
       if (hook_ == nullptr) {
-        error_ = std::format("KeyboardHook: SetWindowsHookEx failed (error {})", ::GetLastError());
+        lastError_ = ::GetLastError();
+        error_ = "KeyboardHook: SetWindowsHookEx failed";
       }
       signalReady();
 
@@ -178,7 +179,8 @@ private:
   CommandMap map_;
   std::jthread thread_;
   std::atomic<DWORD> threadId_{0};
-  std::string error_;
+  std::string error_;          ///< Failure message set by run(), read by start().
+  std::uint32_t lastError_{0}; ///< GetLastError() of a hook-install failure (0 if none).
   bool running_{false};
   HHOOK hook_{nullptr};
 

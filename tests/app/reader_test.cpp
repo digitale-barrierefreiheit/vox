@@ -47,9 +47,9 @@ constexpr auto WaitTimeout = std::chrono::seconds(2);
 /// until the Reader's worker thread produces audio.
 class SyncAudioSink : public vox::audio::IAudioSink {
 public:
-  void start() override {} // the sink is always ready; nothing to set up
+  void start() override { /* the sink is always ready; nothing to set up */ }
 
-  void stop() override {} // nothing to tear down
+  void stop() override { /* nothing to tear down */ }
 
   void write(std::span<const std::byte> pcm) override {
     const std::scoped_lock lock(mutex_);

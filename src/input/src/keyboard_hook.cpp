@@ -56,6 +56,7 @@ std::function<bool()>& installHookOverride() {
 struct HookInstall {
   HHOOK handle{nullptr};
   bool installed{false};
+  DWORD error{0}; ///< GetLastError() from a real install failure; 0 for a fake.
 };
 
 /// Installs the low-level keyboard hook — via the test override when one is set,
@@ -64,10 +65,12 @@ struct HookInstall {
 template<typename HookProc>
 HookInstall installLowLevelHook(HookProc proc) {
   if (const auto& installer = installHookOverride()) {
-    return {nullptr, installer()}; // fake: no real handle; success is the override's word
+    // Fake install: no Win32 call, so there is no GetLastError to report.
+    return {nullptr, installer(), 0};
   }
   HHOOK handle = ::SetWindowsHookExW(WH_KEYBOARD_LL, proc, ::GetModuleHandleW(nullptr), 0);
-  return {handle, handle != nullptr};
+  const DWORD error = handle != nullptr ? 0U : ::GetLastError(); // capture before it is clobbered
+  return {handle, handle != nullptr, error};
 }
 
 /// Runs the calling thread's message loop until it receives WM_QUIT. A
@@ -194,7 +197,7 @@ private:
       const HookInstall install = installLowLevelHook(&Impl::hookProc);
       hook_ = install.handle; // null for a test override
       if (!install.installed) {
-        lastError_ = ::GetLastError();
+        lastError_ = install.error; // 0 for a fake failure, GetLastError() for a real one
         error_ = "KeyboardHook: SetWindowsHookEx failed";
       }
       signalReady();

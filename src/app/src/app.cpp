@@ -17,7 +17,8 @@ namespace {
 /// Enforces App's documented non-null preconditions before any of the
 /// dependencies are dereferenced in the member initializer list.
 AppDependencies validated(AppDependencies deps) {
-  if (!deps.provider || !deps.tts || !deps.audio || !deps.makeHook) {
+  const bool seamsPresent = deps.provider && deps.tts && deps.audio;
+  if (!seamsPresent || !deps.makeHook) {
     throw std::invalid_argument("App: provider, tts, audio, and makeHook must all be non-null");
   }
   return deps;
@@ -54,12 +55,19 @@ int App::run() noexcept {
 }
 
 void App::teardown() noexcept {
-  // In dependency order. stop() is idempotent on both, so the normal and the
-  // failure path can both call this; neither stop() throws.
-  if (hook_) {
-    hook_->stop();
+  // Best-effort, in dependency order; stop() is idempotent on both. stop() is not
+  // declared noexcept, and teardown() runs on run()'s failure path (the process
+  // boundary), so a throw here must be swallowed rather than terminate.
+  try {
+    if (hook_) {
+      hook_->stop();
+    }
+    reader_.stop();
+  } catch (const std::exception& error) {
+    std::cerr << "vox: error during teardown: " << error.what() << '\n';
+  } catch (...) {
+    std::cerr << "vox: error during teardown: unknown exception\n";
   }
-  reader_.stop();
 }
 
 } // namespace vox::app

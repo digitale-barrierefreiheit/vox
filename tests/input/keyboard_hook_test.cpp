@@ -50,11 +50,18 @@ public:
   std::vector<Command> commands;
 };
 
+/// A dedicated exception a misbehaving handler might raise (S112: not a generic
+/// std::runtime_error).
+class HandlerError : public std::runtime_error {
+public:
+  HandlerError() : std::runtime_error("handler boom") {}
+};
+
 /// Throws from onCommand, to prove the hook never lets that cross the boundary.
 class ThrowingHandler : public ICommandHandler {
 public:
-  void onCommand(Command) override {
-    throw std::runtime_error("handler boom");
+  void onCommand(Command /*command*/) override {
+    throw HandlerError{};
   }
 };
 
@@ -150,13 +157,9 @@ public:
   SeamGuard& operator=(SeamGuard&&) = delete;
 };
 
-void* fakeHandle() {
-  return reinterpret_cast<void*>(static_cast<std::uintptr_t>(1)); // non-null = install OK
-}
-
 TEST(KeyboardHookLifecycle, StartsAndStopsWithAFakeHook) {
   [[maybe_unused]] const SeamGuard guard;
-  vox::input::testing::setInstallHookOverride([] { return fakeHandle(); });
+  vox::input::testing::setInstallHookOverride([] { return true; }); // fake install succeeds
   RecordingHandler handler;
   KeyboardHook hook(handler, CommandMap{});
   EXPECT_NO_THROW(hook.start());
@@ -165,7 +168,7 @@ TEST(KeyboardHookLifecycle, StartsAndStopsWithAFakeHook) {
 
 TEST(KeyboardHookLifecycle, StartThrowsWhenTheInstallFails) {
   [[maybe_unused]] const SeamGuard guard;
-  vox::input::testing::setInstallHookOverride([] { return static_cast<void*>(nullptr); });
+  vox::input::testing::setInstallHookOverride([] { return false; }); // fake install fails
   RecordingHandler handler;
   KeyboardHook hook(handler, CommandMap{});
   EXPECT_THROW(hook.start(), HookError);
@@ -173,7 +176,7 @@ TEST(KeyboardHookLifecycle, StartThrowsWhenTheInstallFails) {
 
 TEST(KeyboardHookLifecycle, StartTwiceThrows) {
   [[maybe_unused]] const SeamGuard guard;
-  vox::input::testing::setInstallHookOverride([] { return fakeHandle(); });
+  vox::input::testing::setInstallHookOverride([] { return true; });
   RecordingHandler handler;
   KeyboardHook hook(handler, CommandMap{});
   hook.start();
@@ -183,7 +186,7 @@ TEST(KeyboardHookLifecycle, StartTwiceThrows) {
 
 TEST(KeyboardHookLifecycle, ASecondHookReportsAnotherIsAlreadyActive) {
   [[maybe_unused]] const SeamGuard guard;
-  vox::input::testing::setInstallHookOverride([] { return fakeHandle(); });
+  vox::input::testing::setInstallHookOverride([] { return true; });
   RecordingHandler handler;
   KeyboardHook first(handler, CommandMap{});
   first.start();

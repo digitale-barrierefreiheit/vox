@@ -53,7 +53,6 @@ public:
 
 TEST(DefaultApp, BuildsTheRealDependenciesWithMockedCom) {
   [[maybe_unused]] const SeamGuard guard;
-  constexpr wchar_t tokenId[] = L"VOX-DEFAULT-VOICE";
 
   // The SAPI chain the engine's constructor walks: voice + category -> enumerator
   // -> one German token -> its "Attributes" data key. Declared before any deps so
@@ -66,17 +65,17 @@ TEST(DefaultApp, BuildsTheRealDependenciesWithMockedCom) {
   bool tokenServed = false;
 
   ON_CALL(category, SetId(_, _)).WillByDefault(Return(S_OK));
-  ON_CALL(category, GetDefaultTokenId(_)).WillByDefault([&](LPWSTR* out) {
-    *out = coTaskString(tokenId);
+  ON_CALL(category, GetDefaultTokenId(_)).WillByDefault([](LPWSTR* out) {
+    *out = coTaskString(L"VOX-DEFAULT-VOICE");
     return S_OK;
   });
   ON_CALL(category, EnumTokens(_, _, _))
-      .WillByDefault([&](LPCWSTR, LPCWSTR, IEnumSpObjectTokens** out) {
+      .WillByDefault([&enumTokens](LPCWSTR, LPCWSTR, IEnumSpObjectTokens** out) {
         *out = &enumTokens;
         return S_OK;
       });
   ON_CALL(enumTokens, Next(_, _, _))
-      .WillByDefault([&](ULONG, ISpObjectToken** pelt, ULONG* fetched) {
+      .WillByDefault([&tokenServed, &token](ULONG, ISpObjectToken** pelt, ULONG* fetched) {
         if (tokenServed) {
           if (fetched != nullptr) {
             *fetched = 0;
@@ -90,11 +89,11 @@ TEST(DefaultApp, BuildsTheRealDependenciesWithMockedCom) {
         }
         return S_OK;
       });
-  ON_CALL(token, GetId(_)).WillByDefault([&](LPWSTR* out) {
-    *out = coTaskString(tokenId);
+  ON_CALL(token, GetId(_)).WillByDefault([](LPWSTR* out) {
+    *out = coTaskString(L"VOX-DEFAULT-VOICE");
     return S_OK;
   });
-  ON_CALL(token, OpenKey(_, _)).WillByDefault([&](LPCWSTR, ISpDataKey** out) {
+  ON_CALL(token, OpenKey(_, _)).WillByDefault([&dataKey](LPCWSTR, ISpDataKey** out) {
     *out = &dataKey;
     return S_OK;
   });
@@ -105,11 +104,11 @@ TEST(DefaultApp, BuildsTheRealDependenciesWithMockedCom) {
   });
   ON_CALL(voice, SetVoice(_)).WillByDefault(Return(S_OK));
 
-  vox::tts::testing::setVoiceFactory([&](ISpVoice** out) {
+  vox::tts::testing::setVoiceFactory([&voice](ISpVoice** out) {
     *out = &voice;
     return 0L;
   });
-  vox::tts::testing::setTokenCategoryFactory([&](ISpObjectTokenCategory** out) {
+  vox::tts::testing::setTokenCategoryFactory([&category](ISpObjectTokenCategory** out) {
     *out = &category;
     return 0L;
   });

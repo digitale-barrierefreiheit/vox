@@ -128,11 +128,12 @@ protected:
     ON_CALL(element_, get_CachedIsEnabled(_)).WillByDefault(setBool(TRUE));
     ON_CALL(element_, get_CachedHasKeyboardFocus(_)).WillByDefault(setBool(TRUE));
     ON_CALL(element_, get_CachedIsKeyboardFocusable(_)).WillByDefault(setBool(TRUE));
-    ON_CALL(element_, GetCachedPatternAs(_, _, _))
-        .WillByDefault([this](PATTERNID id, REFIID, void** out) {
-          *out = patternFor(id);
-          return *out != nullptr ? S_OK : S_FALSE;
-        });
+    // Register the per-pattern mocks; the element's GetCachedPatternAs looks them
+    // up by id (the COM void** stays inside the mock, not here).
+    element_.setCachedPattern(UIA_TogglePatternId, &toggle_);
+    element_.setCachedPattern(UIA_ExpandCollapsePatternId, &expand_);
+    element_.setCachedPattern(UIA_SelectionItemPatternId, &selection_);
+    element_.setCachedPattern(UIA_ValuePatternId, &value_);
   }
 
   /// The four supported patterns: toggled-on, expanded, selected, value "hello".
@@ -151,23 +152,6 @@ protected:
       return S_OK;
     });
     ON_CALL(value_, get_CachedIsReadOnly(_)).WillByDefault(setBool(FALSE));
-  }
-
-  /// The AddRef'd pattern interface the element exposes for @p id (null if none).
-  [[nodiscard]] void* patternFor(PATTERNID id) {
-    if (id == UIA_TogglePatternId) {
-      return static_cast<IUIAutomationTogglePattern*>(&toggle_);
-    }
-    if (id == UIA_ExpandCollapsePatternId) {
-      return static_cast<IUIAutomationExpandCollapsePattern*>(&expand_);
-    }
-    if (id == UIA_SelectionItemPatternId) {
-      return static_cast<IUIAutomationSelectionItemPattern*>(&selection_);
-    }
-    if (id == UIA_ValuePatternId) {
-      return static_cast<IUIAutomationValuePattern*>(&value_);
-    }
-    return nullptr;
   }
 
   /// A default action that writes @p value into a `BOOL*` out-param and succeeds.
@@ -227,7 +211,7 @@ TEST_F(UiaProviderTest, StartForwardsFocusEventsToTheCallback) {
   UiaProvider provider;
   AccessibleNode received;
   bool called = false;
-  provider.start([&](const AccessibleNode& node) {
+  provider.start([&received, &called](const AccessibleNode& node) {
     received = node;
     called = true;
   });
@@ -240,7 +224,7 @@ TEST_F(UiaProviderTest, StartForwardsFocusEventsToTheCallback) {
 
 TEST_F(UiaProviderTest, StopRemovesTheRegisteredHandler) {
   UiaProvider provider;
-  provider.start([](const AccessibleNode&) {});
+  provider.start([](const AccessibleNode&) { /* no-op: this test only checks stop() */ });
   EXPECT_CALL(automation_, RemoveFocusChangedEventHandler(_)).WillOnce(Return(S_OK));
   provider.stop();
 }

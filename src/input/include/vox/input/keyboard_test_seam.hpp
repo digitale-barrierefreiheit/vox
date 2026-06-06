@@ -52,15 +52,14 @@ HookAction processKey(bool pressed, std::size_t vk, const KeyEvent& event,
 
 namespace testing {
 
-/// @brief Replaces the low-level hook install. Returns a non-null opaque handle
-///        to simulate success, or nullptr to simulate `SetWindowsHookEx` failing.
-///        While an override is installed, the matching `UnhookWindowsHookEx` is
-///        skipped (the handle is not real).
-using InstallHookOverride = std::function<void*()>;
+/// @brief Replaces the low-level hook install. Returns true to simulate a
+///        successful install, false to simulate `SetWindowsHookEx` failing. No
+///        real hook handle is created, so teardown has nothing to unhook.
+using InstallHookOverride = std::function<bool()>;
 
-/// @brief Installs @p override for subsequent `KeyboardHook::start()` calls; an
-///        empty override restores the real install. Test-only, not thread-safe.
-void setInstallHookOverride(InstallHookOverride override);
+/// @brief Installs @p installer for subsequent `KeyboardHook::start()` calls; an
+///        empty installer restores the real install. Test-only, not thread-safe.
+void setInstallHookOverride(InstallHookOverride installer);
 
 } // namespace testing
 

@@ -236,7 +236,7 @@ TEST_F(SapiEngineTest, FallsBackToNonGermanUnderPreferGerman) {
 TEST_F(SapiEngineTest, SynthesizeEmptyTextIsANoOp) {
   SapiTtsEngine engine{VoiceSelectionPolicy::PreferGerman};
   EXPECT_CALL(voice_, Speak(_, _, _)).Times(0);
-  engine.synthesize("", [](std::span<const std::byte>) {});
+  engine.synthesize("", [](std::span<const std::byte>) { /* never called: empty input */ });
 }
 
 TEST_F(SapiEngineTest, SynthesizeThrowsOnInvalidUtf8) {

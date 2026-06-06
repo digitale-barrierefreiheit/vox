@@ -19,6 +19,9 @@
 
 #if defined(_WIN32)
 
+#  include <utility>
+#  include <vector>
+
 #  include <gmock/gmock.h>
 
 // The Windows UIA headers are include-order sensitive (windows.h must lead), so
@@ -498,10 +501,25 @@ public:
     return E_NOTIMPL;
   }
 
-  MOCK_METHOD(HRESULT, GetCachedPatternAs,
-              (PATTERNID patternId, __RPC__in REFIID riid,
-               __RPC__deref_out_opt void** patternObject),
-              (override, Calltype(STDMETHODCALLTYPE)));
+  // GetCachedPatternAs is hand-implemented (not gmock'd) so the void** out-param
+  // mandated by the UIA ABI stays confined to this generated mock header instead
+  // of leaking into the test. Register the per-pattern mocks with
+  // setCachedPattern(); the provider then looks them up by PATTERNID.
+  void setCachedPattern(PATTERNID patternId, IUnknown* pattern) {
+    cachedPatterns_.emplace_back(patternId, pattern);
+  }
+
+  HRESULT STDMETHODCALLTYPE GetCachedPatternAs(PATTERNID patternId, __RPC__in REFIID /*riid*/,
+                                               __RPC__deref_out_opt void** patternObject) override {
+    for (const auto& [id, pattern] : cachedPatterns_) {
+      if (id == patternId && pattern != nullptr) {
+        *patternObject = pattern;
+        return S_OK;
+      }
+    }
+    *patternObject = nullptr;
+    return S_FALSE;
+  }
 
   HRESULT STDMETHODCALLTYPE
   GetCurrentPattern(PATTERNID patternId, __RPC__deref_out_opt IUnknown** patternObject) override {
@@ -792,6 +810,9 @@ public:
                                               __RPC__out BOOL* gotClickable) override {
     return E_NOTIMPL;
   }
+
+private:
+  std::vector<std::pair<PATTERNID, IUnknown*>> cachedPatterns_; // for GetCachedPatternAs
 };
 
 /// Mock `IUIAutomationTogglePattern`.

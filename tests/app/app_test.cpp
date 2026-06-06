@@ -8,13 +8,13 @@
 #include <cstddef>
 #include <memory>
 #include <span>
-#include <stdexcept>
 #include <utility>
 
 #include <gtest/gtest.h>
 
 #include <vox/app/app.hpp>
 #include <vox/audio/audio_format.hpp>
+#include <vox/audio/errors.hpp>
 #include <vox/audio/iaudio_sink.hpp>
 #include <vox/german/de_lex_data.hpp>
 #include <vox/german/lexicon.hpp>
@@ -74,18 +74,25 @@ private:
   int stopCount_{0};
 };
 
-/// An audio sink whose start() throws, to drive the App's fatal-error path.
+/// An audio sink whose start() fails like the real WasapiAudioSink would (no
+/// device), to drive the App's fatal-error path.
 class ThrowingAudioSink : public vox::audio::IAudioSink {
 public:
   void start() override {
-    throw std::runtime_error("no audio device");
+    throw vox::audio::DeviceError("no audio device");
   }
 
-  void write(std::span<const std::byte> /*pcm*/) override {}
+  void write(std::span<const std::byte> /*pcm*/) override {
+    // no-op: start() always throws, so the pipeline never reaches write().
+  }
 
-  void flush() override {}
+  void flush() override {
+    // no-op: see write().
+  }
 
-  void stop() override {}
+  void stop() override {
+    // no-op: nothing was started.
+  }
 };
 
 TEST(AppTest, RunsUntilQuitAndReturnsZero) {

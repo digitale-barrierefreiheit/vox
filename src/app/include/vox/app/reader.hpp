@@ -71,7 +71,7 @@ public:
   ///        Idempotent. Must not be called from within the hook callback.
   void stop();
 
-  /// @brief Blocks until a Quit command is received.
+  /// @brief Blocks until a Quit command is received or stop() is called.
   void waitForExit();
 
   /// @brief Handles a reader command (invoked on the keyboard-hook thread).

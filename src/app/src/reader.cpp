@@ -96,6 +96,13 @@ void Reader::stop() {
     worker_.join();
   }
   audio_.stop();
+  {
+    // Unblock waitForExit() too, so a stop() (or destruction) without a prior
+    // Quit does not leave another thread waiting forever.
+    const std::lock_guard<std::mutex> lock(exitMutex_);
+    exitRequested_ = true;
+    exitCv_.notify_all();
+  }
 }
 
 void Reader::waitForExit() {

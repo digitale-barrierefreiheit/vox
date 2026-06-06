@@ -1,0 +1,37 @@
+name: SonarQube
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    types: [opened, synchronize, reopened]
+jobs:
+  build:
+    name: Analyze
+    runs-on: windows-latest
+    env:
+      VCPKG_BASELINE: ${{ vars.VCPKG_BASELINE }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+      - uses: lukka/get-cmake@v4.3.3
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
+      # run-vcpkg runs AFTER the MSVC env so its VCPKG_ROOT is not clobbered by
+      # the vcvars that ship with Visual Studio's bundled vcpkg.
+      - name: Set up vcpkg (pinned to the manifest baseline)
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_BASELINE }}
+      - name: Configure
+        run: cmake --preset x64-msvc
+      - name: Build
+        run: cmake --build --preset x64-msvc-release
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+

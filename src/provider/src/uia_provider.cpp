@@ -17,10 +17,10 @@
 // The Windows UIA headers are include-order sensitive (windows.h must lead), so
 // this block is exempt from clang-format's include sorting.
 // clang-format off
-#include <windows.h>
+#include <Windows.h>
 #include <objbase.h>
 #include <oleauto.h>
-#include <uiautomation.h>
+#include <UIAutomation.h>
 #pragma warning(push)
 #pragma warning(disable : 4265)  // WRL FtmBase: non-virtual dtor in a system header
 #include <wrl/client.h>
@@ -43,7 +43,7 @@ std::string toUtf8(BSTR text) {
   if (text == nullptr) {
     return {};
   }
-  const int length = static_cast<int>(::SysStringLen(text));
+  const auto length = static_cast<int>(::SysStringLen(text));
   if (length == 0) {
     return {};
   }
@@ -52,9 +52,9 @@ std::string toUtf8(BSTR text) {
     return {};
   }
   std::string out(static_cast<std::size_t>(bytes), '\0');
-  const int written =
-      ::WideCharToMultiByte(CP_UTF8, 0, text, length, out.data(), bytes, nullptr, nullptr);
-  if (written != bytes) {
+  if (const int written =
+          ::WideCharToMultiByte(CP_UTF8, 0, text, length, out.data(), bytes, nullptr, nullptr);
+      written != bytes) {
     return {}; // conversion failed — degrade to empty rather than return filler
   }
   return out;
@@ -72,8 +72,7 @@ UiaElementData extract(IUIAutomationElement* element) {
     data.controlTypeId = controlType;
   }
 
-  BSTR name = nullptr;
-  if (SUCCEEDED(element->get_CachedName(&name)) && name != nullptr) {
+  if (BSTR name = nullptr; SUCCEEDED(element->get_CachedName(&name)) && name != nullptr) {
     data.name = toUtf8(name);
     ::SysFreeString(name);
   }
@@ -89,8 +88,8 @@ UiaElementData extract(IUIAutomationElement* element) {
     data.isKeyboardFocusable = flag != FALSE;
   }
 
-  ComPtr<IUIAutomationTogglePattern> toggle;
-  if (SUCCEEDED(element->GetCachedPatternAs(UIA_TogglePatternId, IID_PPV_ARGS(&toggle))) &&
+  if (ComPtr<IUIAutomationTogglePattern> toggle;
+      SUCCEEDED(element->GetCachedPatternAs(UIA_TogglePatternId, IID_PPV_ARGS(&toggle))) &&
       toggle) {
     ToggleState state = ToggleState_Off;
     if (SUCCEEDED(toggle->get_CachedToggleState(&state))) {
@@ -99,8 +98,8 @@ UiaElementData extract(IUIAutomationElement* element) {
     }
   }
 
-  ComPtr<IUIAutomationExpandCollapsePattern> expand;
-  if (SUCCEEDED(element->GetCachedPatternAs(UIA_ExpandCollapsePatternId, IID_PPV_ARGS(&expand))) &&
+  if (ComPtr<IUIAutomationExpandCollapsePattern> expand;
+      SUCCEEDED(element->GetCachedPatternAs(UIA_ExpandCollapsePatternId, IID_PPV_ARGS(&expand))) &&
       expand) {
     ExpandCollapseState state = ExpandCollapseState_Collapsed;
     if (SUCCEEDED(expand->get_CachedExpandCollapseState(&state))) {
@@ -109,8 +108,8 @@ UiaElementData extract(IUIAutomationElement* element) {
     }
   }
 
-  ComPtr<IUIAutomationSelectionItemPattern> selection;
-  if (SUCCEEDED(
+  if (ComPtr<IUIAutomationSelectionItemPattern> selection;
+      SUCCEEDED(
           element->GetCachedPatternAs(UIA_SelectionItemPatternId, IID_PPV_ARGS(&selection))) &&
       selection) {
     BOOL selected = FALSE;
@@ -120,8 +119,8 @@ UiaElementData extract(IUIAutomationElement* element) {
     }
   }
 
-  ComPtr<IUIAutomationValuePattern> value;
-  if (SUCCEEDED(element->GetCachedPatternAs(UIA_ValuePatternId, IID_PPV_ARGS(&value))) && value) {
+  if (ComPtr<IUIAutomationValuePattern> value;
+      SUCCEEDED(element->GetCachedPatternAs(UIA_ValuePatternId, IID_PPV_ARGS(&value))) && value) {
     // The pattern's presence (and its read-only-ness) is independent of whether
     // the value text reads — capture it regardless.
     data.hasValuePattern = true;

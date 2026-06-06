@@ -46,8 +46,8 @@ protected:
   /// missing voice fails the build instead of falling back to English silently.
   static bool germanRequired() {
     char* value = nullptr;
-    std::size_t size = 0;
-    if (::_dupenv_s(&value, &size, "VOX_REQUIRE_GERMAN_VOICE") != 0 || value == nullptr) {
+    if (std::size_t size = 0;
+        ::_dupenv_s(&value, &size, "VOX_REQUIRE_GERMAN_VOICE") != 0 || value == nullptr) {
       return false;
     }
     const bool required = std::string_view(value) == "1";

@@ -18,65 +18,67 @@ using vox::model::Role;
 using vox::model::State;
 
 Role mapRole(int controlTypeId) {
+  using enum Role;
   switch (controlTypeId) {
   case UiaButtonControlTypeId:
-    return Role::Button;
+    return Button;
   case UiaCheckBoxControlTypeId:
-    return Role::Checkbox;
+    return Checkbox;
   case UiaRadioButtonControlTypeId:
-    return Role::RadioButton;
+    return RadioButton;
   case UiaEditControlTypeId:
-    return Role::Edit;
+    return Edit;
   case UiaComboBoxControlTypeId:
-    return Role::Combobox;
+    return Combobox;
   case UiaListItemControlTypeId:
-    return Role::ListItem;
+    return ListItem;
   case UiaMenuItemControlTypeId:
-    return Role::MenuItem;
+    return MenuItem;
   case UiaHyperlinkControlTypeId:
-    return Role::Link;
+    return Link;
   case UiaTextControlTypeId:
-    return Role::StaticText;
+    return StaticText;
   default:
-    return Role::Unknown;
+    return Unknown;
   }
 }
 
 } // namespace
 
 vox::model::AccessibleNode mapElement(const UiaElementData& data) {
+  using enum State;
   vox::model::AccessibleNode node;
   node.role = mapRole(data.controlTypeId);
   node.name = data.name;
 
   if (!data.isEnabled) {
-    node.states.set(State::Disabled);
+    node.states.set(Disabled);
   }
   if (data.hasKeyboardFocus) {
-    node.states.set(State::Focused);
+    node.states.set(Focused);
   }
   if (data.isKeyboardFocusable) {
-    node.states.set(State::Focusable);
+    node.states.set(Focusable);
   }
   if (data.hasToggle) {
     if (data.toggleState == UiaToggleStateOn) {
-      node.states.set(State::Checked);
+      node.states.set(Checked);
     } else if (data.toggleState == UiaToggleStateIndeterminate) {
-      node.states.set(State::Mixed);
+      node.states.set(Mixed);
     }
   }
   if (data.hasExpandCollapse && data.expandCollapseState != UiaExpandCollapseStateLeafNode) {
-    node.states.set(State::Expandable);
+    node.states.set(Expandable);
     if (data.expandCollapseState == UiaExpandCollapseStateExpanded ||
         data.expandCollapseState == UiaExpandCollapseStatePartiallyExpanded) {
-      node.states.set(State::Expanded);
+      node.states.set(Expanded);
     }
   }
   if (data.hasSelectionItem && data.isSelected) {
-    node.states.set(State::Selected);
+    node.states.set(Selected);
   }
   if (data.hasValuePattern && data.isReadOnly) {
-    node.states.set(State::ReadOnly); // read-only-ness is independent of the text
+    node.states.set(ReadOnly); // read-only-ness is independent of the text
   }
   if (data.hasValue) {
     node.value = data.value; // present even when empty; absent stays nullopt

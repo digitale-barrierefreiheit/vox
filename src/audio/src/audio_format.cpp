@@ -4,6 +4,7 @@
 /// @file
 /// @brief Implementation of vox::audio::toString(AudioFormat).
 #include <cstdint>
+#include <format>
 #include <string>
 
 #include <vox/audio/audio_format.hpp>
@@ -19,15 +20,15 @@ std::string channelLayout(std::uint16_t channels) {
   case 2U:
     return "stereo";
   default:
-    return std::to_string(channels) + "ch";
+    return std::format("{}ch", channels);
   }
 }
 
 } // namespace
 
 std::string toString(const AudioFormat& format) {
-  return std::to_string(format.sampleRate) + " Hz, " + std::to_string(format.bitsPerSample) +
-         "-bit, " + channelLayout(format.channels);
+  return std::format("{} Hz, {}-bit, {}", format.sampleRate, format.bitsPerSample,
+                     channelLayout(format.channels));
 }
 
 } // namespace vox::audio

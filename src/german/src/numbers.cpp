@@ -76,8 +76,7 @@ std::string below1000(int value) {
 } // namespace
 
 std::string numberToWords(int value) {
-  constexpr int MaxValue = 9999;
-  if (value < 0 || value > MaxValue) {
+  if (constexpr int MaxValue = 9999; value < 0 || value > MaxValue) {
     return std::to_string(value);
   }
   if (value == 0) {

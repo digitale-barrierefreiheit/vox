@@ -32,6 +32,10 @@ ctest --preset x64-msvc-debug      # run the test suite
 python tools/run-clang-format.py --check   # formatting gate
 ```
 
+Static analysis runs in CI: **clang-tidy** (Core Guidelines) and a **SonarCloud**
+scan whose quality gate must be green to merge (see *Definition of done* and
+architecture §8.6.7).
+
 > The formatting gate is pinned to **clang-format 18** (matching CI and the
 > devcontainer). Use that version locally to avoid spurious re-formatting from
 > version skew.
@@ -55,6 +59,12 @@ Per architecture §8.6.7, every change is reviewed against:
 - [ ] **SPDX header** present on every new source file (see below).
 - [ ] **No copyleft linked** into first-party binaries (GPL/LGPL — ADR-16).
 - [ ] **CI green** — format, clang-tidy, MSVC + 32/64-bit builds, sanitizers.
+- [ ] **SonarCloud quality gate green** — the scan in
+      [`sonar.yml`](.github/workflows/sonar.yml) is a required merge gate. Fix the
+      findings that make sense; for a finding that conflicts with a documented
+      decision (see architecture §8.6.7), suppress it **in version control** with a
+      justification in [`sonar-project.properties`](sonar-project.properties) rather
+      than resolving it in the Sonar UI.
 
 ## License & CLA
 

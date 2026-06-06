@@ -51,8 +51,8 @@ protected:
   /// True on the CI audio job: a missing device must fail, not silently skip.
   static bool audioRequired() {
     char* value = nullptr;
-    std::size_t size = 0;
-    if (::_dupenv_s(&value, &size, "VOX_REQUIRE_AUDIO_DEVICE") != 0 || value == nullptr) {
+    if (std::size_t size = 0;
+        ::_dupenv_s(&value, &size, "VOX_REQUIRE_AUDIO_DEVICE") != 0 || value == nullptr) {
       return false;
     }
     const bool required = std::string_view(value) == "1";

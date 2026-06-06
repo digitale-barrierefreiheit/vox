@@ -491,6 +491,7 @@ These practices are part of the architecture: at this performance target and rel
 
 - Target **high branch coverage (≥ ~90%)** on the pure cores (codec, normalization, ring, resync, diffing); accept lower on OS glue (injection, WASAPI), which is integration-tested instead.
 - Coverage is a guardrail, not a goal: branch coverage of normalization/parsing **edge cases** matters; line coverage of trivial getters does not. Do not chase 100% by testing the trivial — and never write assertions that merely re-state the implementation.
+- The **SonarCloud new-code coverage gate reflects this principle, not a flat target.** The OS-glue files (WASAPI, SAPI, UIA, the keyboard hook) are integration-tested behind a real device/voice, not unit-covered, so they are listed in `sonar.coverage.exclusions`; the gate then measures coverage where it is meaningful — the pure cores — exactly as this section prescribes.
 
 #### 8.6.3 Concurrency, fuzz, and property testing
 
@@ -522,7 +523,7 @@ The policy is **patterns for structure, data-oriented design for hot loops** (AD
 #### 8.6.7 Tooling, CI, and review gates
 
 - **CI builds both 32-bit and 64-bit**, runs the full test suite, the sanitizer builds, the clang-format/clang-tidy gates, the benchmark-regression gate, and the **cross-bitness wire-layout test** (asserts identical `sizeof`/`offsetof` for every shared struct — guards R12).
-- **Static analysis:** clang-tidy (incl. Core Guidelines checks) and MSVC `/analyze`.
+- **Static analysis:** clang-tidy (incl. Core Guidelines checks) and MSVC `/analyze`, plus a **SonarCloud** scan (`sonar.yml`) whose **quality gate is a required merge gate** — a pull request does not merge while the gate is red. Where a Sonar rule conflicts with a deliberate decision here (e.g. the lock-free ring's explicit memory orderings, the host-stability exception firewalls, or the unavoidable Win32/COM ABI casts at the OS-glue seam), the deviation is **suppressed in version control** with a justification (`sonar.issue.ignore.multicriteria` in `sonar-project.properties`) and recorded as documented technical debt, rather than silently resolved in the Sonar UI. ThreadSanitizer — not Sonar's static heuristics — is the authoritative gate for memory ordering (§8.6.3).
 - **Mandatory review** against a short checklist: hot-path allocation? thread-safety/ordering? names? test added? graceful-degradation path?
 - **Error-handling discipline:** exceptions permitted only in Core cold paths; the helper, audio callback, and hot paths use status/error codes. A fault must **degrade gracefully** (fall back to out-of-process, keep speaking) and **never crash the host**.
 - **Observability:** structured, leveled logging and counters (dropped records, resync count, latency histograms) for field diagnosis — opt-in and **privacy-respecting** (no announced content logged by default).

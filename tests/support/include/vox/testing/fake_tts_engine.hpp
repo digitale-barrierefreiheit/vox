@@ -47,7 +47,7 @@ public:
     bytesEmitted_ = 0;
 
     const std::vector<std::byte> chunk(bytesPerByte_, std::byte{0});
-    for (std::size_t i = 0; i < utf8Text.size(); ++i) {
+    for ([[maybe_unused]] const char inputByte : utf8Text) { // one chunk of silence per byte
       if (cancelled_.load()) {
         break;
       }

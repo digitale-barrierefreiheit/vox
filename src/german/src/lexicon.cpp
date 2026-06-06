@@ -8,6 +8,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <vox/german/lexicon.hpp>
@@ -86,7 +87,7 @@ std::string_view Lexicon::role(vox::model::Role role) const {
   if (role == vox::model::Role::Unknown) {
     return {}; // contract: an unknown role is never spoken, whatever the table holds
   }
-  const auto index = static_cast<std::size_t>(role);
+  const auto index = static_cast<std::size_t>(std::to_underlying(role));
   if (index >= roleWords_.size()) {
     return {};
   }
@@ -94,7 +95,7 @@ std::string_view Lexicon::role(vox::model::Role role) const {
 }
 
 std::string_view Lexicon::state(StateConcept stateConcept) const {
-  const auto index = static_cast<std::size_t>(stateConcept);
+  const auto index = static_cast<std::size_t>(std::to_underlying(stateConcept));
   if (index >= stateWords_.size()) {
     return {};
   }
@@ -104,7 +105,7 @@ std::string_view Lexicon::state(StateConcept stateConcept) const {
 std::vector<std::string> Lexicon::missingRequiredKeys() const {
   std::vector<std::string> missing;
   for (std::size_t i = 0; i < roleWords_.size(); ++i) {
-    if (i == static_cast<std::size_t>(vox::model::Role::Unknown)) {
+    if (i == static_cast<std::size_t>(std::to_underlying(vox::model::Role::Unknown))) {
       continue; // an unknown role is announced as nothing — not required
     }
     if (roleWords_.at(i).empty()) {

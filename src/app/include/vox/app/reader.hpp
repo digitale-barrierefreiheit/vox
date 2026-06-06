@@ -99,7 +99,9 @@ private:
   std::condition_variable exitCv_;
   bool exitRequested_{false};
 
-  std::shared_ptr<detail::ReaderFocusGuard> guard_; ///< Outlives a late provider callback.
+  /// Outlives a late provider callback. Created with the Reader (an in-class
+  /// initializer, so it exists once and is reused across stop()/start() cycles).
+  std::shared_ptr<detail::ReaderFocusGuard> guard_{std::make_shared<detail::ReaderFocusGuard>()};
 };
 
 } // namespace vox::app

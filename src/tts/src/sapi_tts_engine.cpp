@@ -29,7 +29,7 @@
 // The Windows/SAPI headers are include-order sensitive (windows.h must lead), so
 // this block is exempt from clang-format's include sorting.
 // clang-format off
-#include <windows.h>
+#include <Windows.h>
 #include <objbase.h>
 #include <mmreg.h>
 #include <sapi.h>
@@ -72,16 +72,16 @@ std::wstring toWide(std::string_view utf8) {
   if (utf8.empty()) {
     return {};
   }
-  const int length = static_cast<int>(utf8.size());
+  const auto length = static_cast<int>(utf8.size());
   const int chars =
       ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(), length, nullptr, 0);
   if (chars <= 0) {
     return {};
   }
   std::wstring out(static_cast<std::size_t>(chars), L'\0');
-  const int written =
-      ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(), length, out.data(), chars);
-  if (written != chars) {
+  if (const int written = ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(), length,
+                                                out.data(), chars);
+      written != chars) {
     return {};
   }
   return out;
@@ -89,42 +89,41 @@ std::wstring toWide(std::string_view utf8) {
 
 /// Converts a UTF-16 C-string to UTF-8 (empty for null/empty/invalid input).
 std::string toUtf8(const wchar_t* text) {
-  if (text == nullptr) {
+  if (text == nullptr || text[0] == L'\0') {
     return {};
   }
-  const int length = static_cast<int>(::wcslen(text));
-  if (length == 0) {
-    return {};
-  }
-  const int bytes = ::WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, text, length, nullptr, 0,
-                                          nullptr, nullptr);
-  if (bytes <= 0) {
+  // -1: `text` is null-terminated, so let the API walk it (no wcslen). The byte
+  // count it returns/needs then includes the terminator, which we trim below.
+  const int bytes =
+      ::WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, text, -1, nullptr, 0, nullptr, nullptr);
+  if (bytes <= 1) { // 1 == only the terminating null, i.e. empty content
     return {};
   }
   std::string out(static_cast<std::size_t>(bytes), '\0');
-  const int written = ::WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, text, length, out.data(),
-                                            bytes, nullptr, nullptr);
-  if (written != bytes) {
+  if (const int written = ::WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, text, -1, out.data(),
+                                                bytes, nullptr, nullptr);
+      written != bytes) {
     return {};
   }
+  out.resize(static_cast<std::size_t>(bytes) - 1U); // drop the embedded terminator
   return out;
 }
 
 /// True if any LCID in a SAPI "Language" attribute is a German primary language.
 /// The attribute is a ';'-separated list of hex LCIDs (e.g. "407;c07").
-bool languageIsGerman(const std::wstring& languageAttribute) {
+bool languageIsGerman(std::wstring_view languageAttribute) {
   std::size_t start = 0;
   while (start <= languageAttribute.size()) {
     const std::size_t end = languageAttribute.find(L';', start);
-    const std::size_t count = end == std::wstring::npos ? std::wstring::npos : end - start;
-    const std::wstring token = languageAttribute.substr(start, count);
-    if (!token.empty()) {
-      const auto lcid = static_cast<unsigned long>(::wcstoul(token.c_str(), nullptr, 16));
+    const std::size_t count =
+        end == std::wstring_view::npos ? std::wstring_view::npos : end - start;
+    if (const std::wstring token{languageAttribute.substr(start, count)}; !token.empty()) {
+      const auto lcid = ::wcstoul(token.c_str(), nullptr, 16);
       if (PRIMARYLANGID(static_cast<LANGID>(lcid)) == LANG_GERMAN) {
         return true;
       }
     }
-    if (end == std::wstring::npos) {
+    if (end == std::wstring_view::npos) {
       break;
     }
     start = end + 1;
@@ -375,7 +374,7 @@ public:
     cancelled_.store(true, std::memory_order_relaxed);
   }
 
-  void setRate(int rate) {
+  void setRate(int rate) const {
     voice_->SetRate(clampRate(rate)); // best effort; rate is non-critical
   }
 
@@ -392,8 +391,8 @@ private:
     }
 
     std::wstring defaultId;
-    LPWSTR rawDefaultId = nullptr;
-    if (SUCCEEDED(category->GetDefaultTokenId(&rawDefaultId)) && rawDefaultId != nullptr) {
+    if (LPWSTR rawDefaultId = nullptr;
+        SUCCEEDED(category->GetDefaultTokenId(&rawDefaultId)) && rawDefaultId != nullptr) {
       defaultId = rawDefaultId;
       ::CoTaskMemFree(rawDefaultId);
     }
@@ -405,8 +404,7 @@ private:
 
     for (;;) {
       ComPtr<ISpObjectToken> token;
-      ULONG fetched = 0;
-      if (tokens->Next(1, &token, &fetched) != S_OK || fetched != 1 || !token) {
+      if (ULONG fetched = 0; tokens->Next(1, &token, &fetched) != S_OK || fetched != 1 || !token) {
         break;
       }
 
@@ -426,7 +424,7 @@ private:
         continue;
       }
 
-      idToToken_.emplace(descriptor.id, token);
+      idToToken_.try_emplace(descriptor.id, token);
       descriptors_.push_back(std::move(descriptor));
     }
   }

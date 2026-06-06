@@ -10,26 +10,27 @@
 namespace vox::model {
 
 std::string_view toString(Role role) noexcept {
+  using enum Role;
   switch (role) {
-  case Role::Unknown:
+  case Unknown:
     return "Unknown";
-  case Role::Button:
+  case Button:
     return "Button";
-  case Role::Checkbox:
+  case Checkbox:
     return "Checkbox";
-  case Role::RadioButton:
+  case RadioButton:
     return "RadioButton";
-  case Role::Edit:
+  case Edit:
     return "Edit";
-  case Role::Combobox:
+  case Combobox:
     return "Combobox";
-  case Role::ListItem:
+  case ListItem:
     return "ListItem";
-  case Role::MenuItem:
+  case MenuItem:
     return "MenuItem";
-  case Role::Link:
+  case Link:
     return "Link";
-  case Role::StaticText:
+  case StaticText:
     return "StaticText";
   }
   return "Unknown";

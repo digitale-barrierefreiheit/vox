@@ -40,8 +40,8 @@ TEST(FakeTtsEngine, StreamsOneChunkPerByteIntoTheSink) {
 TEST(FakeTtsEngine, RecordsTextRateAndCallCounts) {
   FakeTtsEngine engine;
   engine.setRate(4);
-  engine.synthesize("Hallo", [](std::span<const std::byte>) {});
-  engine.synthesize("Welt", [](std::span<const std::byte>) {});
+  engine.synthesize("Hallo", [](std::span<const std::byte>) { /* discard PCM */ });
+  engine.synthesize("Welt", [](std::span<const std::byte>) { /* discard PCM */ });
 
   EXPECT_EQ(engine.lastText(), "Welt");
   EXPECT_EQ(engine.rate(), 4);

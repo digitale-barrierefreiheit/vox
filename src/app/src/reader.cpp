@@ -51,7 +51,11 @@ void Reader::start() {
     // Route the focus callback through a shared guard so it is safe even if the
     // provider invokes it after this Reader is destroyed (stop() detaches it).
     guard_ = std::make_shared<detail::ReaderFocusGuard>();
-    guard_->reader = this;
+    {
+      // Set under the guard's lock too, so every access to reader is consistent.
+      const std::lock_guard<std::mutex> lock(guard_->mutex);
+      guard_->reader = this;
+    }
     provider_.start([guard = guard_](const vox::model::AccessibleNode& node) {
       const std::lock_guard<std::mutex> lock(guard->mutex);
       if (guard->reader != nullptr) {

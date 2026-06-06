@@ -58,6 +58,24 @@ HHOOK installLowLevelHook(HOOKPROC proc) {
   return ::SetWindowsHookExW(WH_KEYBOARD_LL, proc, ::GetModuleHandleW(nullptr), 0);
 }
 
+/// Removes a hook from installLowLevelHook. A test-injected handle is not real,
+/// so the real UnhookWindowsHookEx is skipped when an override is installed.
+void uninstallLowLevelHook(HHOOK hook) {
+  if (!installHookOverride()) {
+    ::UnhookWindowsHookEx(hook);
+  }
+}
+
+/// Runs the calling thread's message loop until it receives WM_QUIT. A
+/// WH_KEYBOARD_LL hook only fires while its installing thread pumps messages.
+void pumpMessages() {
+  MSG message{};
+  while (::GetMessageW(&message, nullptr, 0, 0) > 0) {
+    ::TranslateMessage(&message);
+    ::DispatchMessageW(&message);
+  }
+}
+
 } // namespace
 
 namespace detail {
@@ -176,11 +194,7 @@ private:
       signalReady();
 
       if (hook_ != nullptr) {
-        MSG message{};
-        while (::GetMessageW(&message, nullptr, 0, 0) > 0) {
-          ::TranslateMessage(&message);
-          ::DispatchMessageW(&message);
-        }
+        pumpMessages(); // returns on the WM_QUIT that stop() posts
       }
     } catch (...) {
       if (error_.empty()) {
@@ -189,11 +203,8 @@ private:
       signalReady();
     }
     // Tear down only what this thread owns (active_ == this only after our CAS).
-    // A test-injected hook handle is not real, so it must not be unhooked.
     if (hook_ != nullptr) {
-      if (!installHookOverride()) {
-        ::UnhookWindowsHookEx(hook_);
-      }
+      uninstallLowLevelHook(hook_);
       hook_ = nullptr;
     }
     Impl* owned = this;

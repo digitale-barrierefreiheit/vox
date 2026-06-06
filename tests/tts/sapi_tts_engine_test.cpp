@@ -78,7 +78,7 @@ TEST(SapiTtsEngineErrors, ThrowsEngineErrorWhenVoiceCreationFails) {
 /// post-construction call.
 class SapiEngineTest : public ::testing::Test {
 protected:
-  static constexpr const wchar_t* kTokenId = L"VOX-TEST-VOICE-DE";
+  static constexpr wchar_t kTokenId[] = L"VOX-TEST-VOICE-DE";
 
   void SetUp() override {
     vox::tts::testing::setVoiceFactory([this](ISpVoice** out) {

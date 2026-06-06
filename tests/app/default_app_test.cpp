@@ -51,7 +51,7 @@ public:
 
 TEST(DefaultApp, BuildsTheRealDependenciesWithMockedCom) {
   const SeamGuard guard;
-  constexpr const wchar_t* tokenId = L"VOX-DEFAULT-VOICE";
+  constexpr wchar_t tokenId[] = L"VOX-DEFAULT-VOICE";
 
   // The SAPI chain the engine's constructor walks: voice + category -> enumerator
   // -> one German token -> its "Attributes" data key. Declared before any deps so

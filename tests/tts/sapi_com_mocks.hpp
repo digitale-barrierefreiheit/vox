@@ -75,14 +75,16 @@ public:
   }
 };
 
-/// Duplicates @p text into a `CoTaskMemAlloc` buffer (the engine frees SAPI
-/// string out-params with `CoTaskMemFree`). Returns nullptr on allocation
-/// failure, matching the COM contract.
-inline LPWSTR coTaskString(const wchar_t* text) {
-  const std::size_t count = std::wcslen(text) + 1U;
-  auto* copy = static_cast<LPWSTR>(::CoTaskMemAlloc(count * sizeof(wchar_t)));
+/// Duplicates the string literal @p text into a `CoTaskMemAlloc` buffer (the
+/// engine frees SAPI string out-params with `CoTaskMemFree`). Returns nullptr on
+/// allocation failure, matching the COM contract. Taking the literal by array
+/// reference gives the length (incl. the terminator) at compile time, so no
+/// run-time scan of a possibly-unterminated buffer is needed.
+template<std::size_t N>
+LPWSTR coTaskString(const wchar_t (&text)[N]) {
+  auto* copy = static_cast<LPWSTR>(::CoTaskMemAlloc(N * sizeof(wchar_t)));
   if (copy != nullptr) {
-    std::wmemcpy(copy, text, count);
+    std::wmemcpy(copy, text, N);
   }
   return copy;
 }

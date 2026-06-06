@@ -81,7 +81,7 @@ public:
     throw std::runtime_error("no audio device");
   }
 
-  void write(std::span<const std::byte>) override {}
+  void write(std::span<const std::byte> /*pcm*/) override {}
 
   void flush() override {}
 

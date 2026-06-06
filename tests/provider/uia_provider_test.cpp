@@ -86,6 +86,13 @@ protected:
   }
 
   void installHappyChain() {
+    installAutomationDefaults();
+    installElementDefaults();
+    installPatternDefaults();
+  }
+
+  /// The automation client: cache request, focused element, event registration.
+  void installAutomationDefaults() {
     ON_CALL(automation_, CreateCacheRequest(_))
         .WillByDefault([this](IUIAutomationCacheRequest** out) {
           *out = &cache_;
@@ -105,7 +112,11 @@ protected:
               return S_OK;
             });
     ON_CALL(automation_, RemoveFocusChangedEventHandler(_)).WillByDefault(Return(S_OK));
+  }
 
+  /// The focused element: an enabled, focused button named "OK", and the pattern
+  /// lookup that hands back the per-pattern mocks.
+  void installElementDefaults() {
     ON_CALL(element_, get_CachedControlType(_)).WillByDefault([](CONTROLTYPEID* out) {
       *out = UIA_ButtonControlTypeId;
       return S_OK;
@@ -114,39 +125,18 @@ protected:
       *out = bstr(L"OK");
       return S_OK;
     });
-    ON_CALL(element_, get_CachedIsEnabled(_)).WillByDefault([](BOOL* out) {
-      *out = TRUE;
-      return S_OK;
-    });
-    ON_CALL(element_, get_CachedHasKeyboardFocus(_)).WillByDefault([](BOOL* out) {
-      *out = TRUE;
-      return S_OK;
-    });
-    ON_CALL(element_, get_CachedIsKeyboardFocusable(_)).WillByDefault([](BOOL* out) {
-      *out = TRUE;
-      return S_OK;
-    });
+    ON_CALL(element_, get_CachedIsEnabled(_)).WillByDefault(setBool(TRUE));
+    ON_CALL(element_, get_CachedHasKeyboardFocus(_)).WillByDefault(setBool(TRUE));
+    ON_CALL(element_, get_CachedIsKeyboardFocusable(_)).WillByDefault(setBool(TRUE));
     ON_CALL(element_, GetCachedPatternAs(_, _, _))
         .WillByDefault([this](PATTERNID id, REFIID, void** out) {
-          *out = nullptr;
-          switch (id) {
-          case UIA_TogglePatternId:
-            *out = static_cast<IUIAutomationTogglePattern*>(&toggle_);
-            return S_OK;
-          case UIA_ExpandCollapsePatternId:
-            *out = static_cast<IUIAutomationExpandCollapsePattern*>(&expand_);
-            return S_OK;
-          case UIA_SelectionItemPatternId:
-            *out = static_cast<IUIAutomationSelectionItemPattern*>(&selection_);
-            return S_OK;
-          case UIA_ValuePatternId:
-            *out = static_cast<IUIAutomationValuePattern*>(&value_);
-            return S_OK;
-          default:
-            return S_FALSE;
-          }
+          *out = patternFor(id);
+          return *out != nullptr ? S_OK : S_FALSE;
         });
+  }
 
+  /// The four supported patterns: toggled-on, expanded, selected, value "hello".
+  void installPatternDefaults() {
     ON_CALL(toggle_, get_CachedToggleState(_)).WillByDefault([](ToggleState* out) {
       *out = ToggleState_On;
       return S_OK;
@@ -155,18 +145,37 @@ protected:
       *out = ExpandCollapseState_Expanded;
       return S_OK;
     });
-    ON_CALL(selection_, get_CachedIsSelected(_)).WillByDefault([](BOOL* out) {
-      *out = TRUE;
-      return S_OK;
-    });
+    ON_CALL(selection_, get_CachedIsSelected(_)).WillByDefault(setBool(TRUE));
     ON_CALL(value_, get_CachedValue(_)).WillByDefault([](BSTR* out) {
       *out = bstr(L"hello");
       return S_OK;
     });
-    ON_CALL(value_, get_CachedIsReadOnly(_)).WillByDefault([](BOOL* out) {
-      *out = FALSE;
+    ON_CALL(value_, get_CachedIsReadOnly(_)).WillByDefault(setBool(FALSE));
+  }
+
+  /// The AddRef'd pattern interface the element exposes for @p id (null if none).
+  [[nodiscard]] void* patternFor(PATTERNID id) {
+    if (id == UIA_TogglePatternId) {
+      return static_cast<IUIAutomationTogglePattern*>(&toggle_);
+    }
+    if (id == UIA_ExpandCollapsePatternId) {
+      return static_cast<IUIAutomationExpandCollapsePattern*>(&expand_);
+    }
+    if (id == UIA_SelectionItemPatternId) {
+      return static_cast<IUIAutomationSelectionItemPattern*>(&selection_);
+    }
+    if (id == UIA_ValuePatternId) {
+      return static_cast<IUIAutomationValuePattern*>(&value_);
+    }
+    return nullptr;
+  }
+
+  /// A default action that writes @p value into a `BOOL*` out-param and succeeds.
+  static auto setBool(BOOL value) {
+    return [value](BOOL* out) {
+      *out = value;
       return S_OK;
-    });
+    };
   }
 
   IUIAutomationFocusChangedEventHandler* capturedHandler_{nullptr};

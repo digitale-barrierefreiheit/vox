@@ -5,7 +5,6 @@
 /// @brief Tests for vox::OsError and its pure message formatter. Portable: runs
 ///        on every platform (no Win32), so the OS-error taxonomy is covered by
 ///        the sanitizer/clang-tidy build too (ADR-12).
-#include <cstdint>
 #include <stdexcept>
 #include <string>
 

@@ -57,8 +57,8 @@ TEST(AccessibleNode, AbsentValueDiffersFromEmptyValue) {
 TEST(AccessibleNode, NameIsUtf8) {
   // UTF-8 multibyte content survives round-trip and length is in bytes.
   AccessibleNode node;
-  node.name = "Größe \x{C3}\x{9C}"; // "Größe Ü"
-  EXPECT_EQ(node.name, "Größe \x{C3}\x{9C}");
+  node.name = "Größe \xC3\x9C"; // "Größe Ü"
+  EXPECT_EQ(node.name, "Größe \xC3\x9C");
 }
 
 TEST(AccessibleNode, Equality) {

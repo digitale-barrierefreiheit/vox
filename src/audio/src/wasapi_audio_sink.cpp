@@ -35,11 +35,11 @@
 // the min/max macros from clobbering std::min/std::max.
 // clang-format off
 #define NOMINMAX
-#include <windows.h>
+#include <Windows.h>
 #include <objbase.h>
 #include <mmreg.h>
 #include <mmdeviceapi.h>
-#include <audioclient.h>
+#include <Audioclient.h>
 #include <avrt.h>
 #pragma warning(push)
 #pragma warning(disable : 4265)  // WRL: non-virtual dtor in a system header
@@ -170,7 +170,7 @@ public:
 
   void write(std::span<const std::byte> pcm) {
     // Shared with flush(); excludes stop()'s teardown of converter_/ring_.
-    const std::shared_lock<std::shared_mutex> lock(stateMutex_);
+    const std::shared_lock lock(stateMutex_);
     if (!running_.load(std::memory_order_acquire)) {
       return;
     }
@@ -204,7 +204,7 @@ public:
 
   void flush() {
     // Shared with write(); excludes stop() so audioEvent_ cannot be closed here.
-    const std::shared_lock<std::shared_mutex> lock(stateMutex_);
+    const std::shared_lock lock(stateMutex_);
     // Bump the generation first so a blocked producer abandons stale audio, then
     // ask the render thread to drop what is buffered and reset the device.
     flushGeneration_.fetch_add(1, std::memory_order_acq_rel);
@@ -227,7 +227,7 @@ public:
     }
     // The render thread is gone; now exclude any in-flight write()/flush()
     // before tearing down the converter, ring, and event handle.
-    const std::unique_lock<std::shared_mutex> lock(stateMutex_);
+    const std::unique_lock lock(stateMutex_);
     if (audioClient_) {
       audioClient_->Stop();
     }

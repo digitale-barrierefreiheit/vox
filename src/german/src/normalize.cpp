@@ -15,7 +15,7 @@ namespace {
 constexpr std::string_view Whitespace = " \t\r\n\f\v";
 
 bool isWhitespace(char character) {
-  return Whitespace.find(character) != std::string_view::npos;
+  return Whitespace.contains(character);
 }
 
 } // namespace

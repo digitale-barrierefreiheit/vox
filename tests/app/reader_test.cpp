@@ -47,12 +47,12 @@ constexpr auto WaitTimeout = std::chrono::seconds(2);
 /// until the Reader's worker thread produces audio.
 class SyncAudioSink : public vox::audio::IAudioSink {
 public:
-  void start() override {}
+  void start() override {} // the sink is always ready; nothing to set up
 
-  void stop() override {}
+  void stop() override {} // nothing to tear down
 
   void write(std::span<const std::byte> pcm) override {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     bytesWritten_ += pcm.size();
     cv_.notify_all();
   }
@@ -66,7 +66,7 @@ public:
   ///        as state (not a per-call baseline) means a write that lands before
   ///        the call is not missed, and repeated waits still require new audio.
   [[nodiscard]] bool waitForWrite(std::chrono::milliseconds timeout) {
-    std::unique_lock<std::mutex> lock(mutex_);
+    std::unique_lock lock(mutex_);
     const bool produced = cv_.wait_for(lock, timeout, [this] { return bytesWritten_ > observed_; });
     if (produced) {
       observed_ = bytesWritten_;

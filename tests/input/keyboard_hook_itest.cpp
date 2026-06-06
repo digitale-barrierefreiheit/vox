@@ -27,7 +27,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
-#include <windows.h>
+#include <Windows.h>
 
 namespace {
 
@@ -60,8 +60,8 @@ private:
 /// True on the CI input job: a hook that cannot run must fail, not skip.
 bool inputHookRequired() {
   char* value = nullptr;
-  std::size_t size = 0;
-  if (::_dupenv_s(&value, &size, "VOX_REQUIRE_INPUT_HOOK") != 0 || value == nullptr) {
+  if (std::size_t size = 0;
+      ::_dupenv_s(&value, &size, "VOX_REQUIRE_INPUT_HOOK") != 0 || value == nullptr) {
     return false;
   }
   const bool required = std::string_view(value) == "1";

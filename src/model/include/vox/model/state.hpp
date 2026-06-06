@@ -18,6 +18,7 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
 
 namespace vox::model {
 
@@ -52,25 +53,25 @@ public:
   constexpr StateSet() noexcept = default;
 
   /// Constructs a set holding the single state @p state.
-  constexpr explicit StateSet(State state) noexcept : bits_{static_cast<std::uint32_t>(state)} {}
+  constexpr explicit StateSet(State state) noexcept : bits_{std::to_underlying(state)} {}
 
   /// Adds @p state to the set. Returns `*this` so calls can be chained; the
   /// result is fine to discard, hence intentionally not `[[nodiscard]]`.
   constexpr StateSet& set(State state) noexcept {
-    bits_ |= static_cast<std::uint32_t>(state);
+    bits_ |= std::to_underlying(state);
     return *this;
   }
 
   /// Removes @p state from the set. Returns `*this` so calls can be chained; the
   /// result is fine to discard, hence intentionally not `[[nodiscard]]`.
   constexpr StateSet& clear(State state) noexcept {
-    bits_ &= ~static_cast<std::uint32_t>(state);
+    bits_ &= ~std::to_underlying(state);
     return *this;
   }
 
   /// @brief Tests whether @p state is present.
   [[nodiscard]] constexpr bool test(State state) const noexcept {
-    return (bits_ & static_cast<std::uint32_t>(state)) != 0U;
+    return (bits_ & std::to_underlying(state)) != 0U;
   }
 
   /// @brief Returns true if any state is set.

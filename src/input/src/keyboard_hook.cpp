@@ -7,10 +7,12 @@
 #  include <atomic>
 #  include <cstddef>
 #  include <cstdint>
+#  include <format>
 #  include <future>
 #  include <stdexcept>
 #  include <string>
 #  include <thread>
+#  include <utility>
 
 #  include <vox/input/command_handler.hpp>
 #  include <vox/input/command_map.hpp>
@@ -19,7 +21,7 @@
 
 #  define WIN32_LEAN_AND_MEAN
 #  define NOMINMAX
-#  include <windows.h>
+#  include <Windows.h>
 
 namespace vox::input {
 
@@ -42,7 +44,7 @@ KeyModifiers currentModifiers() {
 
 class KeyboardHook::Impl {
 public:
-  Impl(ICommandHandler& handler, CommandMap map) : handler_(handler), map_(map) {}
+  Impl(ICommandHandler& handler, CommandMap map) : handler_(handler), map_(std::move(map)) {}
 
   void start() {
     if (running_) {
@@ -103,16 +105,15 @@ private:
       MSG queuePrimer{};
       ::PeekMessageW(&queuePrimer, nullptr, WM_USER, WM_USER, PM_NOREMOVE);
 
-      Impl* expected = nullptr;
-      if (!active_.compare_exchange_strong(expected, this, std::memory_order_acq_rel)) {
+      if (Impl* expected = nullptr;
+          !active_.compare_exchange_strong(expected, this, std::memory_order_acq_rel)) {
         error_ = "KeyboardHook: another keyboard hook is already active";
         signalReady();
         return; // not ours — leave active_ and skip teardown below
       }
       hook_ = ::SetWindowsHookExW(WH_KEYBOARD_LL, &Impl::hookProc, ::GetModuleHandleW(nullptr), 0);
       if (hook_ == nullptr) {
-        error_ = "KeyboardHook: SetWindowsHookEx failed (error " +
-                 std::to_string(::GetLastError()) + ")";
+        error_ = std::format("KeyboardHook: SetWindowsHookEx failed (error {})", ::GetLastError());
       }
       signalReady();
 
@@ -139,8 +140,8 @@ private:
   }
 
   static LRESULT CALLBACK hookProc(int code, WPARAM wParam, LPARAM lParam) {
-    Impl* self = active_.load(std::memory_order_acquire);
-    if (code == HC_ACTION && self != nullptr) {
+    if (Impl* self = active_.load(std::memory_order_acquire);
+        code == HC_ACTION && self != nullptr) {
       const auto* info = reinterpret_cast<const KBDLLHOOKSTRUCT*>(lParam);
       const bool pressed = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
       const std::size_t vk = info->vkCode & 0xFFU; // vkCode is 1..254
@@ -188,7 +189,7 @@ private:
 };
 
 KeyboardHook::KeyboardHook(ICommandHandler& handler, CommandMap map)
-    : impl_(std::make_unique<Impl>(handler, map)) {}
+    : impl_(std::make_unique<Impl>(handler, std::move(map))) {}
 
 KeyboardHook::~KeyboardHook() {
   impl_->stop();

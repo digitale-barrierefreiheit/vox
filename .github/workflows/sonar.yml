@@ -29,8 +29,26 @@ jobs:
           vcpkgGitCommitId: ${{ env.VCPKG_BASELINE }}
       - name: Configure
         run: cmake --preset x64-msvc
+      # Debug build so the binaries carry the PDB line info OpenCppCoverage needs.
       - name: Build
-        run: cmake --build --preset x64-msvc-release
+        run: cmake --build --preset x64-msvc-debug
+      - name: Install OpenCppCoverage
+        run: choco install OpenCppCoverage --version=0.9.9.0 -y --no-progress
+      # Run the suite under coverage and export Cobertura for Sonar. --sources
+      # limits measurement to our own src/ (not vcpkg/STL); --modules to our build
+      # output; --cover_children so the test executables ctest spawns are covered.
+      # The device/voice integration tests skip here (no hardware) -- that OS glue
+      # is integration-tested, not coverage-gated (sonar.coverage.exclusions, 8.6.2).
+      - name: Test with coverage
+        shell: pwsh
+        run: |
+          $occ = "C:\Program Files\OpenCppCoverage\OpenCppCoverage.exe"
+          & $occ `
+            --sources "$env:GITHUB_WORKSPACE\src" `
+            --modules "$env:GITHUB_WORKSPACE\build" `
+            --cover_children `
+            --export_type "cobertura:$env:GITHUB_WORKSPACE\coverage.xml" `
+            -- ctest --preset x64-msvc-debug
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
         env:

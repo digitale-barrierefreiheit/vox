@@ -22,8 +22,7 @@ namespace vox::app {
 
 Reader::Reader(vox::provider::IProvider& provider, vox::tts::ITtsEngine& tts,
                vox::audio::IAudioSink& audio, vox::output::OutputManager output)
-    : provider_(provider), tts_(tts), audio_(audio), output_(std::move(output)),
-      guard_(std::make_shared<detail::ReaderFocusGuard>()) {}
+    : provider_(provider), tts_(tts), audio_(audio), output_(std::move(output)) {}
 
 Reader::~Reader() {
   try {
@@ -38,14 +37,14 @@ void Reader::start() {
     return;
   }
   {
-    const std::lock_guard<std::mutex> lock(exitMutex_);
+    const std::scoped_lock lock(exitMutex_);
     exitRequested_ = false; // fresh run: a prior Quit must not leak into waitForExit()
   }
   audio_.start(); // may throw (no device): nothing spawned yet, so nothing to undo
   started_ = true;
   try {
     {
-      const std::lock_guard<std::mutex> lock(mutex_);
+      const std::scoped_lock lock(mutex_);
       running_ = true;
     }
     worker_ = std::thread([this] { workerLoop(); });
@@ -55,11 +54,11 @@ void Reader::start() {
       // Re-attach the single, lifetime-long guard (created in the constructor)
       // under its lock. Reusing it across restarts means a handler the provider
       // could not unregister still points back at this live Reader.
-      const std::lock_guard<std::mutex> lock(guard_->mutex);
+      const std::scoped_lock lock(guard_->mutex);
       guard_->reader = this;
     }
     provider_.start([guard = guard_](const vox::model::AccessibleNode& node) {
-      const std::lock_guard<std::mutex> lock(guard->mutex);
+      const std::scoped_lock lock(guard->mutex);
       if (guard->reader != nullptr) {
         guard->reader->onFocusChanged(node);
       }
@@ -81,12 +80,12 @@ void Reader::stop() {
   started_ = false;
   if (guard_) {
     // Detach first: after this, no provider callback will touch this Reader.
-    const std::lock_guard<std::mutex> lock(guard_->mutex);
+    const std::scoped_lock lock(guard_->mutex);
     guard_->reader = nullptr;
   }
   provider_.stop(); // ask the provider to unregister (it may not, hence the guard)
   {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     running_ = false;
     pending_.reset();
   }
@@ -99,26 +98,27 @@ void Reader::stop() {
   {
     // Unblock waitForExit() too, so a stop() (or destruction) without a prior
     // Quit does not leave another thread waiting forever.
-    const std::lock_guard<std::mutex> lock(exitMutex_);
+    const std::scoped_lock lock(exitMutex_);
     exitRequested_ = true;
     exitCv_.notify_all();
   }
 }
 
 void Reader::waitForExit() {
-  std::unique_lock<std::mutex> lock(exitMutex_);
+  std::unique_lock lock(exitMutex_);
   exitCv_.wait(lock, [this] { return exitRequested_; });
 }
 
 void Reader::onCommand(vox::input::Command command) {
+  using enum vox::input::Command;
   switch (command) {
-  case vox::input::Command::NavigateNext:
-  case vox::input::Command::NavigatePrevious:
-  case vox::input::Command::NavigateUp:
-  case vox::input::Command::NavigateDown:
+  case NavigateNext:
+  case NavigatePrevious:
+  case NavigateUp:
+  case NavigateDown:
     bargeIn(); // the focus-changed event will bring the new announcement
     break;
-  case vox::input::Command::ToggleSpeech: {
+  case ToggleSpeech: {
     const bool wasEnabled = speechEnabled_.load(std::memory_order_acquire);
     speechEnabled_.store(!wasEnabled, std::memory_order_release);
     if (wasEnabled) {
@@ -126,13 +126,13 @@ void Reader::onCommand(vox::input::Command command) {
     }
     break;
   }
-  case vox::input::Command::Quit: {
-    const std::lock_guard<std::mutex> lock(exitMutex_);
+  case Quit: {
+    const std::scoped_lock lock(exitMutex_);
     exitRequested_ = true;
     exitCv_.notify_all();
     break;
   }
-  case vox::input::Command::None:
+  case None:
     break;
   }
 }
@@ -143,7 +143,7 @@ void Reader::onFocusChanged(const vox::model::AccessibleNode& node) {
   }
   bargeIn(); // interrupt the previous announcement
   {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     pending_ = node; // latest focus wins (coalesces rapid navigation)
   }
   cv_.notify_one();
@@ -158,7 +158,7 @@ void Reader::workerLoop() {
   while (true) {
     vox::model::AccessibleNode node;
     {
-      std::unique_lock<std::mutex> lock(mutex_);
+      std::unique_lock lock(mutex_);
       cv_.wait(lock, [this] { return pending_.has_value() || !running_; });
       if (!running_) {
         return;
@@ -173,7 +173,7 @@ void Reader::workerLoop() {
       // stop() may have set running_ false after we dequeued but before this
       // blocking synthesis begins; cancel() alone can be lost if it lands before
       // synthesize() starts (engines reset their cancel flag there).
-      const std::lock_guard<std::mutex> lock(mutex_);
+      const std::scoped_lock lock(mutex_);
       if (!running_) {
         return;
       }

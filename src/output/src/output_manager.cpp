@@ -84,8 +84,7 @@ Utterance OutputManager::announce(const vox::model::AccessibleNode& node) const 
 
   appendWord(parts, lexicon_.role(node.role));
 
-  std::string name = vox::german::normalizeName(node.name);
-  if (!name.empty()) {
+  if (std::string name = vox::german::normalizeName(node.name); !name.empty()) {
     parts.push_back(std::move(name));
   }
 

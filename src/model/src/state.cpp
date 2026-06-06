@@ -13,17 +13,18 @@
 namespace vox::model {
 
 std::string toString(const StateSet& states) {
+  using enum State;
   // Ascending bit order, so the rendering of a given set is stable.
   static constexpr std::array<std::pair<State, std::string_view>, 9> StateNames{{
-      {State::Focusable, "Focusable"},
-      {State::Focused, "Focused"},
-      {State::Disabled, "Disabled"},
-      {State::Checked, "Checked"},
-      {State::Mixed, "Mixed"},
-      {State::Expandable, "Expandable"},
-      {State::Expanded, "Expanded"},
-      {State::Selected, "Selected"},
-      {State::ReadOnly, "ReadOnly"},
+      {Focusable, "Focusable"},
+      {Focused, "Focused"},
+      {Disabled, "Disabled"},
+      {Checked, "Checked"},
+      {Mixed, "Mixed"},
+      {Expandable, "Expandable"},
+      {Expanded, "Expanded"},
+      {Selected, "Selected"},
+      {ReadOnly, "ReadOnly"},
   }};
 
   std::string out;

@@ -41,6 +41,17 @@ Please implement test driven. Specification should be mapped to tests. Tests sho
 
 Please use modern C++ language level, C++ language standards and conventions, widely known community conventions and best practices. Linting and static code analysis should be used to ensure that.
 
+Static analysis runs in CI as **clang-tidy** and a **SonarCloud** scan. The
+SonarCloud **quality gate is a required pre-merge gate** (alongside CI, clang-tidy,
+and the Copilot review): a pull request does not merge while the gate is red. Treat
+the findings seriously — fix the ones that make sense. When a finding genuinely
+conflicts with a documented decision or this architecture (e.g. the lock-free ring's
+deliberate memory orderings, the host-stability exception firewalls, or the Win32/COM
+ABI casts at the OS-glue seam), do **not** silently dismiss it in the Sonar UI:
+suppress it in version control with a justification in `sonar-project.properties`
+(`sonar.issue.ignore.multicriteria`) and record it as documented technical debt. See
+architecture §8.6.7.
+
 Please use a good object orientied but optimized design. Use clear names, avoid abbreviations. Methods should be small and self explaining (the truth is the code). Avoid inline comments, they should not be needed to understand code. Naming and structure should make clear what is happening. Doc comments should be used, even for private members and functions. A developers reference should be generated from doc comments.
 
 Please respect single responisibility for methods, units and modules. Structure should follow domain and bounded contexts.

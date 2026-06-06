@@ -8,7 +8,6 @@
 #  include <cstddef>
 #  include <cstdint>
 #  include <future>
-#  include <stdexcept>
 #  include <string>
 #  include <thread>
 #  include <utility>

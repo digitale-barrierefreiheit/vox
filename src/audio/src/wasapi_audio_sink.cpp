@@ -21,7 +21,6 @@
 #include <optional>
 #include <shared_mutex>
 #include <span>
-#include <stdexcept>
 #include <thread>
 #include <vector>
 

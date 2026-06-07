@@ -186,7 +186,7 @@ protected:
   /// engine — no need to expose PcmSinkStream. @p sink is the caller's PcmSink.
   template<typename Probe>
   void withOutputStream(Probe probe, const vox::tts::ITtsEngine::PcmSink& sink) {
-    ON_CALL(voice_, Speak(_, _, _)).WillByDefault([this, probe](LPCWSTR, DWORD, ULONG*) -> HRESULT {
+    ON_CALL(voice_, Speak(_, _, _)).WillByDefault([this, probe](LPCWSTR, DWORD, ULONG*) {
       ISpStreamFormat* stream = nullptr;
       if (capturedOutput_ == nullptr ||
           FAILED(capturedOutput_->QueryInterface(IID_PPV_ARGS(&stream))) || stream == nullptr) {
@@ -370,7 +370,7 @@ TEST_F(SapiEngineTest, OutputStreamRejectsANullWriteBuffer) {
         EXPECT_EQ(stream->Write(nullptr, 4, &written), E_POINTER);
         EXPECT_EQ(written, 0U);
       },
-      [](std::span<const std::byte>) { /* never reached: the write is rejected */ });
+      [](std::span<const std::byte>) { ADD_FAILURE() << "sink must not run on a rejected write"; });
 }
 
 TEST_F(SapiEngineTest, OutputStreamWriteOfZeroBytesIsANoOp) {
@@ -381,7 +381,9 @@ TEST_F(SapiEngineTest, OutputStreamWriteOfZeroBytesIsANoOp) {
         EXPECT_EQ(stream->Write(&byte, 0, &written), S_OK);
         EXPECT_EQ(written, 0U);
       },
-      [](std::span<const std::byte>) { /* never reached: zero-byte write */ });
+      [](std::span<const std::byte>) {
+        ADD_FAILURE() << "sink must not run on a zero-byte write";
+      });
 }
 
 TEST_F(SapiEngineTest, OutputStreamReportsItsWaveFormat) {
@@ -392,20 +394,23 @@ TEST_F(SapiEngineTest, OutputStreamReportsItsWaveFormat) {
         EXPECT_EQ(stream->GetFormat(&formatId, &waveFormat), S_OK);
         EXPECT_EQ(formatId, SPDFID_WaveFormatEx);
         ASSERT_NE(waveFormat, nullptr);
-        EXPECT_EQ(waveFormat->nSamplesPerSec, 22050U);
+        EXPECT_EQ(waveFormat->nSamplesPerSec, 22050U); // the fixed 22050/16/1 output
+        EXPECT_EQ(waveFormat->wBitsPerSample, 16U);
+        EXPECT_EQ(waveFormat->nChannels, 1U);
         ::CoTaskMemFree(waveFormat);
       },
-      [](std::span<const std::byte>) { /* not exercised by GetFormat */ });
+      [](std::span<const std::byte>) { ADD_FAILURE() << "sink must not run on GetFormat"; });
 }
 
 TEST_F(SapiEngineTest, OutputStreamWriteFirewallsASinkException) {
   withOutputStream(
       [](ISpStreamFormat* stream) {
         const std::byte byte{1};
-        ULONG written = 0;
+        ULONG written = 1;
         // The sink throws; PcmSinkStream must turn that into E_FAIL rather than
-        // let it cross the COM ABI boundary.
+        // let it cross the COM ABI boundary, and report zero bytes written.
         EXPECT_EQ(stream->Write(&byte, 1, &written), E_FAIL);
+        EXPECT_EQ(written, 0U);
       },
       [](std::span<const std::byte>) { throw SinkError{}; });
 }

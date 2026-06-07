@@ -186,7 +186,9 @@ protected:
   /// engine — no need to expose PcmSinkStream. @p sink is the caller's PcmSink.
   template<typename Probe>
   void withOutputStream(Probe probe, const vox::tts::ITtsEngine::PcmSink& sink) {
-    ON_CALL(voice_, Speak(_, _, _)).WillByDefault([this, probe](LPCWSTR, DWORD, ULONG*) {
+    // EXPECT_CALL (not ON_CALL) so gmock verifies Speak — and therefore the probe
+    // — actually ran; a synthesize() that short-circuited would fail the test.
+    EXPECT_CALL(voice_, Speak(_, _, _)).WillOnce([this, probe](LPCWSTR, DWORD, ULONG*) {
       if (capturedOutput_ == nullptr) {
         return E_FAIL;
       }

@@ -19,6 +19,7 @@
 #include <exception>
 #include <functional>
 #include <memory>
+#include <utility>
 
 #include <vox/app/reader.hpp>
 #include <vox/audio/iaudio_sink.hpp>
@@ -92,7 +93,7 @@ void reportFatalError(const char* what) noexcept;
 template<typename MakeDependencies>
 [[nodiscard]] int runApp(MakeDependencies&& makeDependencies) noexcept {
   try {
-    return App{makeDependencies()}.run();
+    return App{std::forward<MakeDependencies>(makeDependencies)()}.run();
   } catch (const std::exception& error) {
     detail::reportFatalError(error.what());
     return 1;

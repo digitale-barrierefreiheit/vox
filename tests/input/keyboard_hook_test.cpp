@@ -33,7 +33,6 @@ using vox::input::ICommandHandler;
 using vox::input::KeyboardHook;
 using vox::input::KeyEvent;
 using vox::input::KeyModifiers;
-using vox::input::detail::currentModifiers;
 using vox::input::detail::dispatchLowLevelKey;
 using vox::input::detail::processKey;
 
@@ -148,15 +147,7 @@ TEST(KeyboardHookProcessKey, AThrowingHandlerDoesNotConsume) {
   EXPECT_FALSE(consumed[VkQ]);
 }
 
-// ---- currentModifiers / dispatchLowLevelKey: the hookProc translation ------
-
-TEST(KeyboardHookModifiers, ReportsNoneWhenNoKeysAreHeld) {
-  const KeyModifiers mods = currentModifiers(); // no keys physically held in the test
-  EXPECT_FALSE(mods.shift);
-  EXPECT_FALSE(mods.control);
-  EXPECT_FALSE(mods.alt);
-  EXPECT_FALSE(mods.win);
-}
+// ---- dispatchLowLevelKey: the hookProc translation ------------------------
 
 TEST(KeyboardHookDispatch, ConsumesAReaderControlChord) {
   std::array<bool, 256> consumed{};

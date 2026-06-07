@@ -49,11 +49,6 @@ HookAction processKey(bool pressed, std::size_t vk, const KeyEvent& event,
                       std::array<bool, 256>& consumed, const CommandMap& map,
                       ICommandHandler& handler);
 
-/// @brief Reads the live modifier-key state (Shift/Control/Alt/Win) via
-///        `GetAsyncKeyState`. Exposed so the wrapper is exercised directly (with
-///        no keys held it reports all-false), without a real hook firing.
-[[nodiscard]] KeyModifiers currentModifiers();
-
 /// @brief The hook callback's translation step, factored out of the Win32
 ///        `hookProc` so it is testable with no real hook. Builds a KeyEvent from
 ///        the raw WH_KEYBOARD_LL fields — @p message is WM_KEYDOWN /

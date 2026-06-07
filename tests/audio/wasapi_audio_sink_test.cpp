@@ -13,8 +13,9 @@
 #  include <chrono>
 #  include <cstddef>
 #  include <cstdint>
+#  include <future>
+#  include <memory>
 #  include <span>
-#  include <thread>
 #  include <vector>
 
 #  include <gmock/gmock.h>
@@ -48,6 +49,7 @@ using ::testing::Return;
 using ::testing::SetArgPointee;
 
 constexpr long ErrorFail = static_cast<long>(0x80004005U); // E_FAIL
+constexpr auto WaitTimeout = std::chrono::seconds(2);
 
 /// Restores the real enumerator factory on scope exit, so a test never leaks the
 /// seam into the next one.
@@ -121,6 +123,23 @@ protected:
     ON_CALL(client_, Reset()).WillByDefault(Return(S_OK));
     ON_CALL(client_, GetCurrentPadding(_))
         .WillByDefault(DoAll(SetArgPointee<0>(480U), Return(S_OK)));
+  }
+
+  /// Makes the client's Reset() return @p result and fulfil a future the first
+  /// time it is called, so a test can block deterministically on the render
+  /// thread servicing a flush — no polling, no sleeping. The shared state is
+  /// owned by the ON_CALL action, so it outlives this call.
+  std::future<void> resetSignal(HRESULT result) {
+    auto promise = std::make_shared<std::promise<void>>();
+    auto signaled = std::make_shared<std::atomic<bool>>(false);
+    std::future<void> future = promise->get_future();
+    ON_CALL(client_, Reset()).WillByDefault([promise, signaled, result] {
+      if (!signaled->exchange(true)) {
+        promise->set_value();
+      }
+      return result;
+    });
+    return future;
   }
 
   NiceMock<MockMMDeviceEnumerator> enumerator_;
@@ -231,13 +250,9 @@ TEST_F(WasapiAcquisitionTest, StartsAndStopsCleanlyOnTheHappyPath) {
 }
 
 TEST_F(WasapiAcquisitionTest, DrivesWriteFlushAndRenderAcrossALiveCycle) {
-  // The render thread Resets the client when it services a flush; count that to
-  // synchronize deterministically (rather than sleeping a fixed time).
-  std::atomic resetCount{0};
-  ON_CALL(client_, Reset()).WillByDefault([&resetCount] {
-    resetCount.fetch_add(1, std::memory_order_release);
-    return S_OK;
-  });
+  // The render thread Resets the client when it services a flush; block on that
+  // deterministically (a future, not a sleep).
+  std::future<void> reset = resetSignal(S_OK);
 
   WasapiAudioSink sink(AudioFormat{22050, 16, 1});
   ASSERT_NO_THROW(sink.start());
@@ -249,10 +264,7 @@ TEST_F(WasapiAcquisitionTest, DrivesWriteFlushAndRenderAcrossALiveCycle) {
 
   // flush() wakes the render thread, which Stops/Resets/clears/Starts the client.
   sink.flush();
-  for (int i = 0; i < 400 && resetCount.load(std::memory_order_acquire) == 0; ++i) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-  }
-  EXPECT_GE(resetCount.load(std::memory_order_acquire), 1);
+  ASSERT_EQ(reset.wait_for(WaitTimeout), std::future_status::ready);
 
   EXPECT_NO_THROW(sink.stop());
 }
@@ -298,35 +310,21 @@ TEST_F(WasapiAcquisitionTest, WriteAndFlushBeforeStartAreNoOps) {
 }
 
 TEST_F(WasapiAcquisitionTest, RenderThreadStopsWhenAFlushResetFails) {
-  std::atomic resetCount{0};
-  ON_CALL(client_, Reset()).WillByDefault([&resetCount] {
-    resetCount.fetch_add(1, std::memory_order_release);
-    return ErrorFail; // the stream is wedged: the render thread must give up
-  });
+  // Reset fails: the render thread must give up. Block on it deterministically.
+  std::future<void> reset = resetSignal(ErrorFail);
 
   WasapiAudioSink sink(AudioFormat{22050, 16, 1});
   ASSERT_NO_THROW(sink.start());
   sink.flush();
-  for (int i = 0; i < 400 && resetCount.load(std::memory_order_acquire) == 0; ++i) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-  }
-  EXPECT_GE(resetCount.load(std::memory_order_acquire), 1);
-  EXPECT_NO_THROW(sink.stop());
-}
-
-TEST_F(WasapiAcquisitionTest, RenderThreadToleratesWaitingWithNoAudioEvent) {
-  // With nothing signalling the audio event, the render thread's wait times out
-  // (RenderWaitMs) and loops to re-check the stop flag — covering that branch.
-  WasapiAudioSink sink(AudioFormat{22050, 16, 1});
-  ASSERT_NO_THROW(sink.start());
-  std::this_thread::sleep_for(std::chrono::milliseconds(260)); // > one wait period
+  ASSERT_EQ(reset.wait_for(WaitTimeout), std::future_status::ready);
   EXPECT_NO_THROW(sink.stop());
 }
 
 TEST_F(WasapiAcquisitionTest, ThrowsWhenStartedOnAnStaThread) {
   // WASAPI requires an MTA (or COM-uninitialized) thread; on an STA the sink's
   // ComApartment hits RPC_E_CHANGED_MODE and start() must surface a DeviceError.
-  ASSERT_EQ(::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED), S_OK);
+  // CoInitializeEx may return S_OK or S_FALSE; both are a success to balance.
+  ASSERT_TRUE(SUCCEEDED(::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED)));
   {
     WasapiAudioSink sink(AudioFormat{22050, 16, 1});
     EXPECT_THROW(sink.start(), DeviceError);

@@ -335,15 +335,32 @@ TEST_F(SapiEngineTest, SkipsATokenWithAnEmptyId) {
   EXPECT_THROW(SapiTtsEngine{VoiceSelectionPolicy::PreferGerman}, EngineError);
 }
 
+/// Balances a successful CoInitializeEx with CoUninitialize on scope exit, even
+/// if the body throws.
+class ComScope {
+public:
+  ComScope() = default;
+
+  ~ComScope() {
+    ::CoUninitialize();
+  }
+
+  ComScope(const ComScope&) = delete;
+  ComScope& operator=(const ComScope&) = delete;
+  ComScope(ComScope&&) = delete;
+  ComScope& operator=(ComScope&&) = delete;
+};
+
 TEST_F(SapiEngineTest, ToleratesAComApartmentAlreadyInitializedInAnotherMode) {
   // Pre-initialize COM as STA on this thread; the engine's ComApartment then
   // requests MTA and gets RPC_E_CHANGED_MODE, which it must tolerate (not own).
-  ASSERT_EQ(::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED), S_OK);
-  {
-    const SapiTtsEngine engine{VoiceSelectionPolicy::PreferGerman};
-    EXPECT_EQ(engine.selectedVoice().id, "VOX-TEST-VOICE-DE");
-  }
-  ::CoUninitialize();
+  // CoInitializeEx may return S_OK or S_FALSE (already initialized on this
+  // thread); both own a reference that ComScope balances even if the engine
+  // constructor throws.
+  ASSERT_TRUE(SUCCEEDED(::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED)));
+  const ComScope balance;
+  const SapiTtsEngine engine{VoiceSelectionPolicy::PreferGerman};
+  EXPECT_EQ(engine.selectedVoice().id, "VOX-TEST-VOICE-DE");
 }
 
 } // namespace

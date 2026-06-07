@@ -19,15 +19,18 @@
 #  include <string_view>
 
 // The Windows/SAPI headers are include-order sensitive (windows.h must lead), so
-// this block is exempt from clang-format's include sorting.
+// this block is exempt from clang-format's include sorting. WIN32_LEAN_AND_MEAN
+// trims the heavy sub-includes and NOMINMAX keeps min/max as functions.
 // clang-format off
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
 #  include <Windows.h>
 #  include <objbase.h>
 #  include <sapi.h>
-#  pragma warning(push)
-#  pragma warning(disable : 4265)  // WRL FtmBase: non-virtual dtor in a system header
-#  include <wrl/client.h>
-#  pragma warning(pop)
 // clang-format on
 
 namespace vox::tts::detail {
@@ -97,13 +100,17 @@ inline bool languageIsGerman(std::wstring_view languageAttribute) {
 }
 
 /// Reads one string value under a token's "Attributes" key (empty if absent).
+/// Uses a raw key pointer + Release (no WRL ComPtr) so this header needs no
+/// <wrl/client.h> and thus no warning-suppression pragma.
 inline std::wstring readAttribute(ISpObjectToken* token, const wchar_t* valueName) {
-  Microsoft::WRL::ComPtr<ISpDataKey> attributes;
-  if (FAILED(token->OpenKey(L"Attributes", &attributes)) || !attributes) {
+  ISpDataKey* attributes = nullptr;
+  if (FAILED(token->OpenKey(L"Attributes", &attributes)) || attributes == nullptr) {
     return {};
   }
   LPWSTR value = nullptr;
-  if (FAILED(attributes->GetStringValue(valueName, &value)) || value == nullptr) {
+  const HRESULT hr = attributes->GetStringValue(valueName, &value);
+  attributes->Release();
+  if (FAILED(hr) || value == nullptr) {
     return {};
   }
   std::wstring out(value);

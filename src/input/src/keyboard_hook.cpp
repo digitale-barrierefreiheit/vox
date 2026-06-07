@@ -70,13 +70,10 @@ void pumpMessages() {
   }
 }
 
-} // namespace
-
-namespace detail {
-
 /// Reads the live modifier state at the moment a key event is processed. In a
 /// low-level hook `GetAsyncKeyState` reflects the current physical key state, so
-/// modifiers pressed before this key are already visible.
+/// modifiers pressed before this key are already visible. OS-only (no
+/// deterministic unit test): exercised by the labelled keyboard itest.
 KeyModifiers currentModifiers() {
   const auto held = [](int virtualKey) {
     return (static_cast<unsigned int>(::GetAsyncKeyState(virtualKey)) & 0x8000U) != 0U;
@@ -86,6 +83,10 @@ KeyModifiers currentModifiers() {
                       .alt = held(VK_MENU),
                       .win = held(VK_LWIN) || held(VK_RWIN)};
 }
+
+} // namespace
+
+namespace detail {
 
 bool dispatchLowLevelKey(std::uintptr_t message, std::uint32_t vkCode, std::uint32_t flags,
                          KeyModifiers modifiers, std::array<bool, 256>& consumed,
@@ -238,8 +239,8 @@ private:
         code == HC_ACTION && self != nullptr) {
       const auto* info = reinterpret_cast<const KBDLLHOOKSTRUCT*>(lParam);
       if (detail::dispatchLowLevelKey(static_cast<std::uintptr_t>(wParam), info->vkCode,
-                                      info->flags, detail::currentModifiers(), self->consumed_,
-                                      self->map_, self->handler_)) {
+                                      info->flags, currentModifiers(), self->consumed_, self->map_,
+                                      self->handler_)) {
         return 1; // hide the key from the foreground app
       }
     }

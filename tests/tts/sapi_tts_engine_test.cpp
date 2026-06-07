@@ -13,6 +13,7 @@
 #  include <cstring>
 #  include <cwchar>
 #  include <span>
+#  include <stdexcept>
 #  include <string_view>
 #  include <vector>
 
@@ -44,6 +45,13 @@ using ::testing::NiceMock;
 using ::testing::Return;
 
 constexpr long ErrorFail = static_cast<long>(0x80004005U); // E_FAIL
+
+/// A dedicated exception a misbehaving PcmSink might raise (S112: not a generic
+/// one), to prove the output stream firewalls it into E_FAIL at the COM boundary.
+class SinkError : public std::runtime_error {
+public:
+  SinkError() : std::runtime_error("sink boom") {}
+};
 
 /// Restores the real COM factories on scope exit, so a test never leaks a seam
 /// into the next one.
@@ -170,6 +178,30 @@ protected:
     const HRESULT hr = stream->Write(pcm.data(), static_cast<ULONG>(pcm.size()), &written);
     stream->Release();
     return hr;
+  }
+
+  /// Runs one synthesize() and invokes @p probe with the engine's live output
+  /// stream (its PcmSinkStream) from inside Speak, where the stream is valid.
+  /// Lets the suite test the stream's IStream/ISpStreamFormat surface through the
+  /// engine — no need to expose PcmSinkStream. @p sink is the caller's PcmSink.
+  template<typename Probe>
+  void withOutputStream(Probe probe, const vox::tts::ITtsEngine::PcmSink& sink) {
+    // EXPECT_CALL (not ON_CALL) so gmock verifies Speak — and therefore the probe
+    // — actually ran; a synthesize() that short-circuited would fail the test.
+    EXPECT_CALL(voice_, Speak(_, _, _)).WillOnce([this, probe](LPCWSTR, DWORD, ULONG*) {
+      if (capturedOutput_ == nullptr) {
+        return E_FAIL;
+      }
+      ISpStreamFormat* stream = nullptr;
+      if (FAILED(capturedOutput_->QueryInterface(IID_PPV_ARGS(&stream))) || stream == nullptr) {
+        return E_FAIL;
+      }
+      probe(stream);
+      stream->Release();
+      return S_OK;
+    });
+    SapiTtsEngine engine{VoiceSelectionPolicy::PreferGerman};
+    engine.synthesize("hallo", sink);
   }
 
   /// Reconfigures the voice's reported language to en-US (a non-German LCID).
@@ -333,6 +365,58 @@ TEST_F(SapiEngineTest, SkipsATokenWithAnEmptyId) {
     return S_OK;
   });
   EXPECT_THROW(SapiTtsEngine{VoiceSelectionPolicy::PreferGerman}, EngineError);
+}
+
+TEST_F(SapiEngineTest, OutputStreamRejectsANullWriteBuffer) {
+  withOutputStream(
+      [](ISpStreamFormat* stream) {
+        ULONG written = 1;
+        EXPECT_EQ(stream->Write(nullptr, 4, &written), E_POINTER);
+        EXPECT_EQ(written, 0U);
+      },
+      [](std::span<const std::byte>) { ADD_FAILURE() << "sink must not run on a rejected write"; });
+}
+
+TEST_F(SapiEngineTest, OutputStreamWriteOfZeroBytesIsANoOp) {
+  withOutputStream(
+      [](ISpStreamFormat* stream) {
+        const std::byte byte{1};
+        ULONG written = 9;
+        EXPECT_EQ(stream->Write(&byte, 0, &written), S_OK);
+        EXPECT_EQ(written, 0U);
+      },
+      [](std::span<const std::byte>) {
+        ADD_FAILURE() << "sink must not run on a zero-byte write";
+      });
+}
+
+TEST_F(SapiEngineTest, OutputStreamReportsItsWaveFormat) {
+  withOutputStream(
+      [](ISpStreamFormat* stream) {
+        GUID formatId{};
+        WAVEFORMATEX* waveFormat = nullptr;
+        EXPECT_EQ(stream->GetFormat(&formatId, &waveFormat), S_OK);
+        EXPECT_EQ(formatId, SPDFID_WaveFormatEx);
+        ASSERT_NE(waveFormat, nullptr);
+        EXPECT_EQ(waveFormat->nSamplesPerSec, 22050U); // the fixed 22050/16/1 output
+        EXPECT_EQ(waveFormat->wBitsPerSample, 16U);
+        EXPECT_EQ(waveFormat->nChannels, 1U);
+        ::CoTaskMemFree(waveFormat);
+      },
+      [](std::span<const std::byte>) { ADD_FAILURE() << "sink must not run on GetFormat"; });
+}
+
+TEST_F(SapiEngineTest, OutputStreamWriteFirewallsASinkException) {
+  withOutputStream(
+      [](ISpStreamFormat* stream) {
+        const std::byte byte{1};
+        ULONG written = 1;
+        // The sink throws; PcmSinkStream must turn that into E_FAIL rather than
+        // let it cross the COM ABI boundary, and report zero bytes written.
+        EXPECT_EQ(stream->Write(&byte, 1, &written), E_FAIL);
+        EXPECT_EQ(written, 0U);
+      },
+      [](std::span<const std::byte>) { throw SinkError{}; });
 }
 
 /// Balances a successful CoInitializeEx with CoUninitialize on scope exit, even

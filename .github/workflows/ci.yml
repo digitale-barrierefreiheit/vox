@@ -16,14 +16,6 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  # vcpkg registry commit the build is pinned to. MUST stay in sync with
-  # "builtin-baseline" in vcpkg.json: run-vcpkg checks out vcpkg at exactly this
-  # commit, so the baseline is always resolvable and port versions are
-  # reproducible (architecture §8.6.7). Do not rely on the runner's preinstalled
-  # vcpkg — its commit drifts with the image and may not contain the baseline.
-  VCPKG_BASELINE: ${{ vars.VCPKG_BASELINE }}
-
 jobs:
   # ---------------------------------------------------------------------------
   # Fast, dependency-free gates: license headers and code formatting.
@@ -64,17 +56,14 @@ jobs:
         include:
           - arch: x64
             msvc_arch: amd64
-            configure_preset: x64-msvc
-            build_preset: x64-msvc-release
             test_preset: x64-msvc-release
           - arch: x86
             msvc_arch: amd64_x86
-            configure_preset: x86-msvc
-            build_preset: x86-msvc-release
             test_preset: x86-msvc-release
     steps:
       - uses: actions/checkout@v6
       - uses: lukka/get-cmake@591817e96fcad43505fb4eae36172462abb3a42e # v4.3.3
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
       - name: Install the VB-CABLE virtual audio device
         timeout-minutes: 5
         uses: ./.github/actions/install-vbcable
@@ -84,18 +73,16 @@ jobs:
           arch: ${{ matrix.msvc_arch }}
       # run-vcpkg runs AFTER the MSVC env so its VCPKG_ROOT is not clobbered by
       # the vcvars that ship with Visual Studio's bundled vcpkg.
+      - uses: ./.github/actions/vcpkg-baseline
       - name: Set up vcpkg (pinned to the manifest baseline)
         uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11.6
         with:
           vcpkgGitCommitId: ${{ env.VCPKG_BASELINE }}
-      - name: Configure
-        run: cmake --preset ${{ matrix.configure_preset }}
-      - name: Build
-        run: cmake --build --preset ${{ matrix.build_preset }}
-      - name: Test (audio device required)
+      # `just test` depends on `build`, so this single step builds and runs the suite.
+      - name: Build + test (audio device required)
         env:
           VOX_REQUIRE_AUDIO_DEVICE: "1"
-        run: ctest --preset ${{ matrix.test_preset }}
+        run: just test ${{ matrix.test_preset }}
 
   # ---------------------------------------------------------------------------
   # German speech integration (ADR-07) + audio. Augments an x64 runner with the
@@ -112,6 +99,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: lukka/get-cmake@591817e96fcad43505fb4eae36172462abb3a42e # v4.3.3
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
       - name: Install the German text-to-speech voice
         shell: pwsh
         run: |
@@ -145,19 +133,17 @@ jobs:
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
         with:
           arch: amd64
+      - uses: ./.github/actions/vcpkg-baseline
       - name: Set up vcpkg (pinned to the manifest baseline)
         uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11.6
         with:
           vcpkgGitCommitId: ${{ env.VCPKG_BASELINE }}
-      - name: Configure
-        run: cmake --preset x64-msvc
-      - name: Build
-        run: cmake --build --preset x64-msvc-release
-      - name: Test (German voice + audio device required)
+      # `just test` depends on `build`, so this single step builds and runs the suite.
+      - name: Build + test (German voice + audio device required)
         env:
           VOX_REQUIRE_GERMAN_VOICE: "1"
           VOX_REQUIRE_AUDIO_DEVICE: "1"
-        run: ctest --preset x64-msvc-release
+        run: just test x64-msvc-release
 
   # ---------------------------------------------------------------------------
   # Static analysis: clang-tidy over the compile database (incl. Core Guidelines).
@@ -168,21 +154,23 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: lukka/get-cmake@591817e96fcad43505fb4eae36172462abb3a42e # v4.3.3
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
       - name: Install LLVM tools
         run: sudo apt-get update && sudo apt-get install -y clang-18 clang-tidy-18 clang-tools-18 ninja-build
+      - uses: ./.github/actions/vcpkg-baseline
       - name: Set up vcpkg (pinned to the manifest baseline)
         uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11.6
         with:
           vcpkgGitCommitId: ${{ env.VCPKG_BASELINE }}
-      - name: Configure (generates compile_commands.json)
-        run: cmake --preset linux-clang
+      # `just tidy` configures linux-clang (compile_commands.json) then runs
+      # run-clang-tidy-18 — the justfile's Linux default. CLANG_TIDY is set here only to
+      # pin that exact parallel, versioned wrapper explicitly for CI.
+      - name: Run clang-tidy
+        run: just tidy
         env:
           CC: clang-18
           CXX: clang++-18
-      - name: Run clang-tidy
-        run: |
-          run-clang-tidy-18 -p build/linux-clang -warnings-as-errors='*' \
-            $(git ls-files 'src/*.cpp' 'tests/*.cpp')
+          CLANG_TIDY: run-clang-tidy-18
 
   # ---------------------------------------------------------------------------
   # Sanitizer matrix on the OS-independent cores (ASan+UBSan, TSan) — ADR-14.
@@ -200,15 +188,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: lukka/get-cmake@591817e96fcad43505fb4eae36172462abb3a42e # v4.3.3
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
       - name: Install Clang + sanitizer runtimes
         run: sudo apt-get update && sudo apt-get install -y clang-18 ninja-build
+      - uses: ./.github/actions/vcpkg-baseline
       - name: Set up vcpkg (pinned to the manifest baseline)
         uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11.6
         with:
           vcpkgGitCommitId: ${{ env.VCPKG_BASELINE }}
-      - name: Configure
-        run: cmake --preset linux-clang-${{ matrix.sanitizer }}
-      - name: Build
-        run: cmake --build --preset linux-clang-${{ matrix.sanitizer }}
-      - name: Test
-        run: ctest --preset linux-clang-${{ matrix.sanitizer }}
+      # `just test` depends on `build`, so this single step builds and runs the suite.
+      - name: Build + test
+        run: just test linux-clang-${{ matrix.sanitizer }}

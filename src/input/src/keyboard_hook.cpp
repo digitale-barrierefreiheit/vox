@@ -28,19 +28,6 @@ namespace vox::input {
 
 namespace {
 
-/// Reads the live modifier state at the moment a key event is processed. In a
-/// low-level hook `GetAsyncKeyState` reflects the current physical key state, so
-/// modifiers pressed before this key are already visible.
-KeyModifiers currentModifiers() {
-  const auto held = [](int virtualKey) {
-    return (static_cast<unsigned int>(::GetAsyncKeyState(virtualKey)) & 0x8000U) != 0U;
-  };
-  return KeyModifiers{.shift = held(VK_SHIFT),
-                      .control = held(VK_CONTROL),
-                      .alt = held(VK_MENU),
-                      .win = held(VK_LWIN) || held(VK_RWIN)};
-}
-
 /// Test seam (issue #68): the installed override, if any, replaces the
 /// SetWindowsHookEx call so start()/stop() are unit-tested with no real hook.
 /// Empty in production.
@@ -86,6 +73,31 @@ void pumpMessages() {
 } // namespace
 
 namespace detail {
+
+/// Reads the live modifier state at the moment a key event is processed. In a
+/// low-level hook `GetAsyncKeyState` reflects the current physical key state, so
+/// modifiers pressed before this key are already visible.
+KeyModifiers currentModifiers() {
+  const auto held = [](int virtualKey) {
+    return (static_cast<unsigned int>(::GetAsyncKeyState(virtualKey)) & 0x8000U) != 0U;
+  };
+  return KeyModifiers{.shift = held(VK_SHIFT),
+                      .control = held(VK_CONTROL),
+                      .alt = held(VK_MENU),
+                      .win = held(VK_LWIN) || held(VK_RWIN)};
+}
+
+bool dispatchLowLevelKey(std::uintptr_t message, std::uint32_t vkCode, std::uint32_t flags,
+                         KeyModifiers modifiers, std::array<bool, 256>& consumed,
+                         const CommandMap& map, ICommandHandler& handler) {
+  const bool pressed = (message == WM_KEYDOWN || message == WM_SYSKEYDOWN);
+  const std::size_t vk = vkCode & 0xFFU; // vkCode is 1..254
+  const KeyEvent event{.virtualKey = vkCode,
+                       .modifiers = modifiers,
+                       .pressed = pressed,
+                       .injected = (flags & LLKHF_INJECTED) != 0U};
+  return processKey(pressed, vk, event, consumed, map, handler) == HookAction::Consume;
+}
 
 HookAction processKey(bool pressed, std::size_t vk, const KeyEvent& event,
                       std::array<bool, 256>& consumed, const CommandMap& map,
@@ -225,14 +237,9 @@ private:
     if (Impl* self = active_.load(std::memory_order_acquire);
         code == HC_ACTION && self != nullptr) {
       const auto* info = reinterpret_cast<const KBDLLHOOKSTRUCT*>(lParam);
-      const bool pressed = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
-      const std::size_t vk = info->vkCode & 0xFFU; // vkCode is 1..254
-      const KeyEvent event{.virtualKey = static_cast<std::uint32_t>(info->vkCode),
-                           .modifiers = currentModifiers(),
-                           .pressed = pressed,
-                           .injected = (info->flags & LLKHF_INJECTED) != 0U};
-      if (detail::processKey(pressed, vk, event, self->consumed_, self->map_, self->handler_) ==
-          HookAction::Consume) {
+      if (detail::dispatchLowLevelKey(static_cast<std::uintptr_t>(wParam), info->vkCode,
+                                      info->flags, detail::currentModifiers(), self->consumed_,
+                                      self->map_, self->handler_)) {
         return 1; // hide the key from the foreground app
       }
     }

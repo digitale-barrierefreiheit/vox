@@ -75,5 +75,8 @@ if ($Base) {
     $files = @(git ls-files 'src/*.cpp' 'tests/*.cpp')
 }
 if ($files.Count -eq 0) { Write-Host 'tidy: no C++ sources to check'; exit 0 }
-& clang-tidy -p build/x64-clang-cl -warnings-as-errors='*' $files
+# Invoke via a variable: clang-tidy is an external executable, not a PowerShell cmdlet,
+# so calling it by literal name trips Sonar's cmdlet-casing rule (S8642, false positive).
+$clangTidy = 'clang-tidy'
+& $clangTidy -p build/x64-clang-cl -warnings-as-errors='*' $files
 exit $LASTEXITCODE

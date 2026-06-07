@@ -56,11 +56,9 @@ jobs:
         include:
           - arch: x64
             msvc_arch: amd64
-            build_preset: x64-msvc-release
             test_preset: x64-msvc-release
           - arch: x86
             msvc_arch: amd64_x86
-            build_preset: x86-msvc-release
             test_preset: x86-msvc-release
     steps:
       - uses: actions/checkout@v6
@@ -80,9 +78,8 @@ jobs:
         uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11.6
         with:
           vcpkgGitCommitId: ${{ env.VCPKG_BASELINE }}
-      - name: Build
-        run: just build ${{ matrix.build_preset }}
-      - name: Test (audio device required)
+      # `just test` depends on `build`, so this single step builds and runs the suite.
+      - name: Build + test (audio device required)
         env:
           VOX_REQUIRE_AUDIO_DEVICE: "1"
         run: just test ${{ matrix.test_preset }}
@@ -141,9 +138,8 @@ jobs:
         uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11.6
         with:
           vcpkgGitCommitId: ${{ env.VCPKG_BASELINE }}
-      - name: Build
-        run: just build x64-msvc-release
-      - name: Test (German voice + audio device required)
+      # `just test` depends on `build`, so this single step builds and runs the suite.
+      - name: Build + test (German voice + audio device required)
         env:
           VOX_REQUIRE_GERMAN_VOICE: "1"
           VOX_REQUIRE_AUDIO_DEVICE: "1"
@@ -200,7 +196,6 @@ jobs:
         uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11.6
         with:
           vcpkgGitCommitId: ${{ env.VCPKG_BASELINE }}
-      - name: Build
-        run: just build linux-clang-${{ matrix.sanitizer }}
-      - name: Test
+      # `just test` depends on `build`, so this single step builds and runs the suite.
+      - name: Build + test
         run: just test linux-clang-${{ matrix.sanitizer }}

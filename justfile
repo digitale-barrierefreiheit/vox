@@ -73,14 +73,14 @@ test preset=test_preset: (build preset)
 [linux]
 tidy base='':
     VCPKG_ROOT="${VCPKG_ROOT:-$HOME/.local/share/vcpkg}" cmake --preset linux-clang -B build/linux-clang-tidy -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18
-    if [ -n '{{base}}' ]; then files=$(git diff --name-only $(git merge-base HEAD '{{base}}') -- 'src/*.cpp' 'tests/*.cpp'); else files=$(git ls-files 'src/*.cpp' 'tests/*.cpp'); fi; if [ -n "$files" ]; then {{clang_tidy}} -p build/linux-clang-tidy -warnings-as-errors='*' $files; else echo 'tidy: no C++ sources to check'; fi
+    if [ -n '{{base}}' ]; then mb=$(git merge-base HEAD '{{base}}') || exit 1; files=$(git diff --name-only "$mb" -- 'src/*.cpp' 'tests/*.cpp'); else files=$(git ls-files 'src/*.cpp' 'tests/*.cpp'); fi; if [ -n "$files" ]; then {{clang_tidy}} -p build/linux-clang-tidy -warnings-as-errors='*' $files; else echo 'tidy: no C++ sources to check'; fi
 
 # 🧹 clang-tidy on macOS (warns: differs from CI). Pass a base ref for changed-only.
 [macos]
 tidy base='':
     @echo 'warning: macOS clang-tidy differs from the CI gate (Linux/Clang).'
     VCPKG_ROOT="${VCPKG_ROOT:-$HOME/.local/share/vcpkg}" cmake --preset macos-clang -B build/macos-clang-tidy
-    if [ -n '{{base}}' ]; then files=$(git diff --name-only $(git merge-base HEAD '{{base}}') -- 'src/*.cpp' 'tests/*.cpp'); else files=$(git ls-files 'src/*.cpp' 'tests/*.cpp'); fi; if [ -n "$files" ]; then {{clang_tidy}} -p build/macos-clang-tidy -warnings-as-errors='*' $files; else echo 'tidy: no C++ sources to check'; fi
+    if [ -n '{{base}}' ]; then mb=$(git merge-base HEAD '{{base}}') || exit 1; files=$(git diff --name-only "$mb" -- 'src/*.cpp' 'tests/*.cpp'); else files=$(git ls-files 'src/*.cpp' 'tests/*.cpp'); fi; if [ -n "$files" ]; then {{clang_tidy}} -p build/macos-clang-tidy -warnings-as-errors='*' $files; else echo 'tidy: no C++ sources to check'; fi
 
 # Picks an Ubuntu-24.04 WSL distro (matches CI), else native clang-cl. See tools/win-tidy.ps1.
 # 🧹 clang-tidy from Windows (WSL Ubuntu-24.04, else native). Pass a base ref for changed-only.

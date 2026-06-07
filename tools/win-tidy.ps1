@@ -47,7 +47,9 @@ function Find-CiDistro {
     if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) { return $null }
     foreach ($line in (wsl --list --quiet)) {
         $name = $line.Trim()
-        if ($name -and (Test-IsUbuntu2404 $name) -and (Test-HasTidyToolchain $name)) { return $name }
+        if (-not $name) { continue }
+        if (-not (Test-IsUbuntu2404 $name)) { continue }
+        if (Test-HasTidyToolchain $name) { return $name }
     }
     return $null
 }
@@ -66,8 +68,9 @@ Write-Warning ('No Ubuntu-24.04 WSL distro with the toolchain found; falling bac
 cmake --preset x64-clang-cl
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($Base) {
-    $mergeBase = (git merge-base HEAD $Base).Trim()
-    $files = @(git diff --name-only $mergeBase -- 'src/*.cpp' 'tests/*.cpp')
+    $mergeBase = git merge-base HEAD $Base
+    if ($LASTEXITCODE -ne 0 -or -not $mergeBase) { throw "Cannot compute merge-base with '$Base'." }
+    $files = @(git diff --name-only $mergeBase.Trim() -- 'src/*.cpp' 'tests/*.cpp')
 } else {
     $files = @(git ls-files 'src/*.cpp' 'tests/*.cpp')
 }

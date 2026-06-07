@@ -166,9 +166,9 @@ jobs:
         uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11.6
         with:
           vcpkgGitCommitId: ${{ env.VCPKG_BASELINE }}
-      # `just tidy` configures linux-clang (compile_commands.json) then runs tidy.
-      # CLANG_TIDY=run-clang-tidy-18 keeps CI's parallel, pinned-version invocation;
-      # locally the recipe defaults to serial `clang-tidy`.
+      # `just tidy` configures linux-clang (compile_commands.json) then runs
+      # run-clang-tidy-18 — the justfile's Linux default. CLANG_TIDY is set here only to
+      # pin that exact parallel, versioned wrapper explicitly for CI.
       - name: Run clang-tidy
         run: just tidy
         env:

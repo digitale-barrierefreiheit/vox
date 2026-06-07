@@ -361,9 +361,12 @@ private:
   /// The device mix format, owned so it is freed on every (incl. throwing) path.
   MixFormat readMixFormat() const {
     WAVEFORMATEX* raw = nullptr;
-    const HRESULT hr = audioClient_->GetMixFormat(&raw); // sequence before the null-check
-    throwOnFailure(hr, "WasapiAudioSink: cannot read the device mix format", raw != nullptr);
-    return MixFormat(raw, &::CoTaskMemFree);
+    const HRESULT hr = audioClient_->GetMixFormat(&raw);
+    // Take ownership immediately, so a throw below still frees anything the call
+    // allocated even when it also reported failure.
+    MixFormat mixFormat(raw, &::CoTaskMemFree);
+    throwOnFailure(hr, "WasapiAudioSink: cannot read the device mix format", mixFormat != nullptr);
+    return mixFormat;
   }
 
   /// Detects the sample encoding, guards the format's preconditions, and builds

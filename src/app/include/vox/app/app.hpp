@@ -75,6 +75,14 @@ private:
   std::unique_ptr<vox::input::IInputHook> hook_;
 };
 
+/// @brief Builds the App from @p makeDependencies and runs it, mapping any
+///        *construction* failure (the factory or the App constructor throwing) to
+///        exit code 1 logged to stderr. App::run() already firewalls everything
+///        after construction; this covers the one window it cannot, so the real
+///        `main()` is a trivial wrapper over this testable function.
+/// @return App::run()'s result, or 1 if construction threw. Never throws.
+[[nodiscard]] int runApp(const std::function<AppDependencies()>& makeDependencies) noexcept;
+
 } // namespace vox::app
 
 #endif // VOX_APP_APP_HPP

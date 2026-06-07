@@ -199,6 +199,37 @@ TEST(AppTest, ReturnsNonZeroWhenStartupThrowsANonStdException) {
   EXPECT_EQ(app.run(), 1); // mapped to exit 1 by run()'s catch-all
 }
 
+TEST(AppRunApp, ReturnsZeroWhenTheAppRunsToCompletion) {
+  const int result = vox::app::runApp([] {
+    return dependenciesWith(std::make_unique<FakeAudioSink>(),
+                            [](ICommandHandler& handler) -> std::unique_ptr<IInputHook> {
+                              return std::make_unique<QuitOnStartHook>(handler);
+                            });
+  });
+  EXPECT_EQ(result, 0);
+}
+
+TEST(AppRunApp, ReturnsOneWhenTheDependencyFactoryThrows) {
+  EXPECT_EQ(vox::app::runApp([]() -> AppDependencies { throw std::runtime_error("no voice"); }), 1);
+}
+
+TEST(AppRunApp, ReturnsOneWhenTheDependencyFactoryThrowsNonStd) {
+  EXPECT_EQ(vox::app::runApp([]() -> AppDependencies { throw NonStdError{}; }), 1);
+}
+
+TEST(AppRunApp, ReturnsOneWhenConstructionRejectsTheDependencies) {
+  const int result = vox::app::runApp([] {
+    AppDependencies deps =
+        dependenciesWith(std::make_unique<FakeAudioSink>(),
+                         [](ICommandHandler& handler) -> std::unique_ptr<IInputHook> {
+                           return std::make_unique<QuitOnStartHook>(handler);
+                         });
+    deps.provider = nullptr; // the App constructor will reject this
+    return deps;
+  });
+  EXPECT_EQ(result, 1);
+}
+
 TEST(AppTest, RunsUntilQuitAndReturnsZero) {
   QuitOnStartHook* hook = nullptr;
   AppDependencies deps{

@@ -233,7 +233,7 @@ TEST_F(WasapiAcquisitionTest, StartsAndStopsCleanlyOnTheHappyPath) {
 TEST_F(WasapiAcquisitionTest, DrivesWriteFlushAndRenderAcrossALiveCycle) {
   // The render thread Resets the client when it services a flush; count that to
   // synchronize deterministically (rather than sleeping a fixed time).
-  std::atomic<int> resetCount{0};
+  std::atomic resetCount{0};
   ON_CALL(client_, Reset()).WillByDefault([&resetCount] {
     resetCount.fetch_add(1, std::memory_order_release);
     return S_OK;
@@ -275,7 +275,9 @@ WAVEFORMATEX* makeExtensibleFloatFormat() {
   format->Format.cbSize = sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX);
   format->Samples.wValidBitsPerSample = 32;
   format->SubFormat.Data1 = WAVE_FORMAT_IEEE_FLOAT; // 0x0003
-  return reinterpret_cast<WAVEFORMATEX*>(format);
+  // WAVEFORMATEXTENSIBLE leads with its WAVEFORMATEX, so &Format is the same
+  // CoTaskMem allocation the sink later frees — no reinterpret_cast needed.
+  return &format->Format;
 }
 
 TEST_F(WasapiAcquisitionTest, AcceptsAnExtensibleFloatMixFormat) {
@@ -296,7 +298,7 @@ TEST_F(WasapiAcquisitionTest, WriteAndFlushBeforeStartAreNoOps) {
 }
 
 TEST_F(WasapiAcquisitionTest, RenderThreadStopsWhenAFlushResetFails) {
-  std::atomic<int> resetCount{0};
+  std::atomic resetCount{0};
   ON_CALL(client_, Reset()).WillByDefault([&resetCount] {
     resetCount.fetch_add(1, std::memory_order_release);
     return ErrorFail; // the stream is wedged: the render thread must give up

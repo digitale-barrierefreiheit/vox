@@ -14,7 +14,6 @@
 #include <condition_variable>
 #include <cstddef>
 #include <mutex>
-#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -31,7 +30,6 @@
 #include <vox/model/accessible_node.hpp>
 #include <vox/model/role.hpp>
 #include <vox/output/output_manager.hpp>
-#include <vox/provider/iprovider.hpp>
 #include <vox/testing/fake_provider.hpp>
 #include <vox/testing/fake_tts_engine.hpp>
 #include <vox/tts/itts_engine.hpp>
@@ -91,19 +89,10 @@ private:
   std::atomic<int> flushCount_{0};
 };
 
-/// A provider whose start() throws, to drive Reader::start()'s partial-failure
-/// cleanup (it must stop what it brought up and rethrow).
-class ThrowingProvider : public vox::provider::IProvider {
+/// A dedicated exception for a failing synthesizer (S112: not a generic one).
+class SynthError : public std::runtime_error {
 public:
-  [[nodiscard]] std::optional<AccessibleNode> focusedElement() const override {
-    return std::nullopt;
-  }
-
-  void start(FocusChangedCallback /*onFocusChanged*/) override {
-    throw std::runtime_error("provider start boom");
-  }
-
-  void stop() override {}
+  SynthError() : std::runtime_error("synthesize boom") {}
 };
 
 /// A TTS engine whose synthesize() throws, to prove the Reader's worker thread
@@ -118,7 +107,7 @@ public:
       attempted_ = true;
     }
     cv_.notify_all();
-    throw std::runtime_error("synthesize boom");
+    throw SynthError{};
   }
 
   [[nodiscard]] bool waitForAttempt(std::chrono::milliseconds timeout) {
@@ -233,16 +222,6 @@ TEST(Reader, QuitCommandReleasesWaitForExit) {
   reader.onCommand(Command::Quit); // sets the exit flag
   reader.waitForExit();            // returns because Quit already fired
   reader.stop();
-}
-
-TEST(Reader, StartRethrowsAndCleansUpWhenTheProviderFails) {
-  ThrowingProvider provider;
-  FakeTtsEngine tts;
-  SyncAudioSink audio;
-  Reader reader(provider, tts, audio, germanOutput());
-
-  // provider.start() throws; Reader must tear down what it brought up and rethrow.
-  EXPECT_THROW(reader.start(), std::runtime_error);
 }
 
 TEST(Reader, WorkerSurvivesASynthesisFailure) {

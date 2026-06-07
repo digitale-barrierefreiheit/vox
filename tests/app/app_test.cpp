@@ -96,46 +96,34 @@ public:
   }
 };
 
-/// A type deliberately not derived from std::exception, to drive the App's
-/// catch-all (non-std) boundaries.
-struct NonStdError {};
+/// A dedicated exception for a misbehaving stop() (S112: not a generic one).
+class StopError : public std::runtime_error {
+public:
+  StopError() : std::runtime_error("stop boom") {}
+};
+
+/// A dedicated exception for a failing dependency factory (e.g. no SAPI voice).
+class FactoryError : public std::runtime_error {
+public:
+  FactoryError() : std::runtime_error("no voice") {}
+};
 
 /// Quits on start() so the loop completes, but throws from stop() — to drive
 /// App::teardown()'s best-effort, must-not-escape error handling.
 class ThrowingStopHook : public IInputHook {
 public:
-  ThrowingStopHook(ICommandHandler& handler, bool stdException)
-      : handler_(handler), stdException_(stdException) {}
+  explicit ThrowingStopHook(ICommandHandler& handler) : handler_(handler) {}
 
   void start() override {
     handler_.onCommand(Command::Quit);
   }
 
   void stop() override {
-    if (stdException_) {
-      throw std::runtime_error("stop boom");
-    }
-    throw NonStdError{};
+    throw StopError{};
   }
 
 private:
   ICommandHandler& handler_;
-  bool stdException_;
-};
-
-/// An audio sink whose start() throws a non-std exception, to drive run()'s
-/// catch-all (as opposed to the catch(std::exception&) path).
-class NonStdThrowingAudioSink : public vox::audio::IAudioSink {
-public:
-  void start() override {
-    throw NonStdError{};
-  }
-
-  void write(std::span<const std::byte> /*pcm*/) override {}
-
-  void flush() override {}
-
-  void stop() override {}
 };
 
 AppDependencies dependenciesWith(std::unique_ptr<vox::audio::IAudioSink> audio,
@@ -173,30 +161,10 @@ TEST(AppTest, TeardownSwallowsAStdExceptionFromStop) {
   AppDependencies deps =
       dependenciesWith(std::make_unique<FakeAudioSink>(),
                        [](ICommandHandler& handler) -> std::unique_ptr<IInputHook> {
-                         return std::make_unique<ThrowingStopHook>(handler, /*stdException=*/true);
+                         return std::make_unique<ThrowingStopHook>(handler);
                        });
   App app(std::move(deps));
   EXPECT_EQ(app.run(), 0); // the stop() failure is logged and swallowed
-}
-
-TEST(AppTest, TeardownSwallowsANonStdExceptionFromStop) {
-  AppDependencies deps =
-      dependenciesWith(std::make_unique<FakeAudioSink>(),
-                       [](ICommandHandler& handler) -> std::unique_ptr<IInputHook> {
-                         return std::make_unique<ThrowingStopHook>(handler, /*stdException=*/false);
-                       });
-  App app(std::move(deps));
-  EXPECT_EQ(app.run(), 0);
-}
-
-TEST(AppTest, ReturnsNonZeroWhenStartupThrowsANonStdException) {
-  AppDependencies deps =
-      dependenciesWith(std::make_unique<NonStdThrowingAudioSink>(),
-                       [](ICommandHandler& handler) -> std::unique_ptr<IInputHook> {
-                         return std::make_unique<QuitOnStartHook>(handler);
-                       });
-  App app(std::move(deps));
-  EXPECT_EQ(app.run(), 1); // mapped to exit 1 by run()'s catch-all
 }
 
 TEST(AppRunApp, ReturnsZeroWhenTheAppRunsToCompletion) {
@@ -210,11 +178,7 @@ TEST(AppRunApp, ReturnsZeroWhenTheAppRunsToCompletion) {
 }
 
 TEST(AppRunApp, ReturnsOneWhenTheDependencyFactoryThrows) {
-  EXPECT_EQ(vox::app::runApp([]() -> AppDependencies { throw std::runtime_error("no voice"); }), 1);
-}
-
-TEST(AppRunApp, ReturnsOneWhenTheDependencyFactoryThrowsNonStd) {
-  EXPECT_EQ(vox::app::runApp([]() -> AppDependencies { throw NonStdError{}; }), 1);
+  EXPECT_EQ(vox::app::runApp([]() -> AppDependencies { throw FactoryError{}; }), 1);
 }
 
 TEST(AppRunApp, ReturnsOneWhenConstructionRejectsTheDependencies) {

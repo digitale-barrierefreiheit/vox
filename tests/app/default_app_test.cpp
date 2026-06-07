@@ -40,7 +40,9 @@ using ::testing::Return;
 /// A do-nothing command handler, just to hand the hook factory a callback target.
 class NullHandler : public vox::input::ICommandHandler {
 public:
-  void onCommand(vox::input::Command /*command*/) override {}
+  void onCommand(vox::input::Command /*command*/) override {
+    // The factory test never issues commands; this only needs to exist.
+  }
 };
 
 /// Restores every seam on scope exit.

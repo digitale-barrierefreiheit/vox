@@ -11,8 +11,10 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cwchar>
 #include <functional>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -22,24 +24,42 @@
 #include <vox/audio/audio_format.hpp>
 #include <vox/tts/detail/sapi_internal.hpp>
 #include <vox/tts/errors.hpp>
+#include <vox/tts/itts_engine.hpp>
 #include <vox/tts/rate.hpp>
 #include <vox/tts/sapi_test_seam.hpp>
 #include <vox/tts/sapi_tts_engine.hpp>
 #include <vox/tts/voice_selection.hpp>
 
+// The Windows/SAPI headers are include-order sensitive (windows.h must lead), so
+// this block is exempt from clang-format's include sorting.
+// clang-format off
+#include <Windows.h>
+#include <objbase.h>
+#include <mmreg.h>
+#include <sapi.h>
+#pragma warning(push)
+#pragma warning(disable : 4265)  // WRL FtmBase: non-virtual dtor in a system header
+#include <wrl/client.h>
+#include <wrl/implements.h>
+#pragma warning(pop)
+// clang-format on
+
 namespace vox::tts {
 
 namespace {
 
+using Microsoft::WRL::ChainInterfaces;
+using Microsoft::WRL::ClassicCom;
 using Microsoft::WRL::ComPtr;
 using Microsoft::WRL::Make;
+using Microsoft::WRL::RuntimeClass;
+using Microsoft::WRL::RuntimeClassFlags;
 
-// SAPI internals (converters, LCID parser, attribute reader, PCM output stream)
-// live in detail/ so the test suite drives every branch directly (#68/#72).
+// The pure UTF-8/UTF-16 converters, the LCID parser, and the attribute reader
+// live in detail/ so the suite tests every branch directly (#68/#72). The COM
+// PcmSinkStream below stays here (its IStream ABI surface is exercised through
+// the engine), keeping this the only translation unit that needs the SDK glue.
 using detail::languageIsGerman;
-using detail::makeOutputWaveFormat;
-using detail::OutputFormat;
-using detail::PcmSinkStream;
 using detail::readAttribute;
 using detail::toUtf8;
 using detail::toWide;
@@ -91,6 +111,154 @@ struct TransparentStringHash {
   [[nodiscard]] std::size_t operator()(std::string_view text) const noexcept {
     return std::hash<std::string_view>{}(text);
   }
+};
+
+/// The single PCM shape the engine forces SAPI output into.
+constexpr vox::audio::AudioFormat OutputFormat{22050, 16, 1};
+
+/// The WAVEFORMATEX matching @ref OutputFormat.
+WAVEFORMATEX makeWaveFormat() {
+  WAVEFORMATEX wfx{};
+  wfx.wFormatTag = WAVE_FORMAT_PCM;
+  wfx.nChannels = OutputFormat.channels;
+  wfx.nSamplesPerSec = OutputFormat.sampleRate;
+  wfx.wBitsPerSample = OutputFormat.bitsPerSample;
+  wfx.nBlockAlign = static_cast<WORD>(bytesPerFrame(OutputFormat));
+  wfx.nAvgBytesPerSec = bytesPerSecond(OutputFormat);
+  wfx.cbSize = 0;
+  return wfx;
+}
+
+/// A SAPI output stream that forwards each PCM block to a PcmSink and aborts
+/// promptly once cancellation is requested. Lives only for one synthesize()
+/// call, so it can hold references to the sink and the cancel flag.
+class PcmSinkStream final
+    : public RuntimeClass<RuntimeClassFlags<ClassicCom>,
+                          ChainInterfaces<ISpStreamFormat, IStream, ISequentialStream>> {
+public:
+  PcmSinkStream(const ITtsEngine::PcmSink& sink, const std::atomic<bool>& cancelled,
+                const WAVEFORMATEX& format)
+      : sink_(sink), cancelled_(cancelled), format_(format) {}
+
+  // ISequentialStream
+  HRESULT STDMETHODCALLTYPE Read(void* /*pv*/, ULONG /*cb*/, ULONG* /*read*/) override {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE Write(const void* pv, ULONG cb, ULONG* written) override {
+    if (written != nullptr) {
+      *written = 0; // keep pcbWritten meaningful on every path, including failures
+    }
+    if (cancelled_.load(std::memory_order_relaxed)) {
+      return E_ABORT; // makes the synchronous Speak() unwind promptly
+    }
+    if (pv == nullptr && cb != 0) {
+      return E_POINTER;
+    }
+    if (cb != 0 && sink_) {
+      const auto* bytes = static_cast<const std::byte*>(pv);
+      try {
+        sink_(std::span<const std::byte>(bytes, cb));
+      } catch (...) { // never let an exception cross the COM ABI boundary
+        return E_FAIL;
+      }
+    }
+    if (written != nullptr) {
+      *written = cb;
+    }
+    position_ += cb;
+    return S_OK;
+  }
+
+  // IStream
+  HRESULT STDMETHODCALLTYPE Seek(LARGE_INTEGER move, DWORD origin,
+                                 ULARGE_INTEGER* newPosition) override {
+    long long base = 0;
+    switch (origin) {
+    case STREAM_SEEK_SET:
+      base = 0;
+      break;
+    case STREAM_SEEK_CUR:
+    case STREAM_SEEK_END:
+      base = static_cast<long long>(position_); // append-only: no real end
+      break;
+    default:
+      return STG_E_INVALIDFUNCTION;
+    }
+    const long long target = base + move.QuadPart;
+    if (target < 0) {
+      return STG_E_INVALIDFUNCTION;
+    }
+    position_ = static_cast<ULONGLONG>(target);
+    if (newPosition != nullptr) {
+      newPosition->QuadPart = position_;
+    }
+    return S_OK;
+  }
+
+  HRESULT STDMETHODCALLTYPE SetSize(ULARGE_INTEGER /*size*/) override {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE CopyTo(IStream* /*dst*/, ULARGE_INTEGER /*cb*/,
+                                   ULARGE_INTEGER* /*read*/, ULARGE_INTEGER* /*written*/) override {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE Commit(DWORD /*flags*/) override {
+    return S_OK;
+  }
+
+  HRESULT STDMETHODCALLTYPE Revert() override {
+    return S_OK;
+  }
+
+  HRESULT STDMETHODCALLTYPE LockRegion(ULARGE_INTEGER /*offset*/, ULARGE_INTEGER /*cb*/,
+                                       DWORD /*type*/) override {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE UnlockRegion(ULARGE_INTEGER /*offset*/, ULARGE_INTEGER /*cb*/,
+                                         DWORD /*type*/) override {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE Stat(STATSTG* stat, DWORD /*flags*/) override {
+    if (stat == nullptr) {
+      return STG_E_INVALIDPOINTER;
+    }
+    *stat = STATSTG{};
+    stat->type = STGTY_STREAM;
+    stat->cbSize.QuadPart = position_; // no name reported (STATFLAG_NONAME semantics)
+    return S_OK;
+  }
+
+  HRESULT STDMETHODCALLTYPE Clone(IStream** /*clone*/) override {
+    return E_NOTIMPL;
+  }
+
+  // ISpStreamFormat
+  HRESULT STDMETHODCALLTYPE GetFormat(GUID* formatId, WAVEFORMATEX** waveFormat) override {
+    if (formatId != nullptr) {
+      *formatId = SPDFID_WaveFormatEx;
+    }
+    if (waveFormat != nullptr) {
+      *waveFormat = nullptr;
+      auto* copy = static_cast<WAVEFORMATEX*>(::CoTaskMemAlloc(sizeof(WAVEFORMATEX)));
+      if (copy == nullptr) {
+        return E_OUTOFMEMORY;
+      }
+      *copy = format_;
+      *waveFormat = copy;
+    }
+    return S_OK;
+  }
+
+private:
+  const ITtsEngine::PcmSink& sink_;
+  const std::atomic<bool>& cancelled_;
+  WAVEFORMATEX format_;
+  ULONGLONG position_{0};
 };
 
 /// RAII for the COM apartment: CoUninitialize iff this object initialized it.
@@ -183,7 +351,7 @@ public:
       throw EngineError("SapiTtsEngine: input text is not valid UTF-8");
     }
 
-    const WAVEFORMATEX format = makeOutputWaveFormat();
+    const WAVEFORMATEX format = makeWaveFormat();
     const ComPtr<PcmSinkStream> output = Make<PcmSinkStream>(sink, cancelled_, format);
     if (!output) {
       throw EngineError("SapiTtsEngine: failed to create the output stream");

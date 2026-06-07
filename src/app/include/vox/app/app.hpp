@@ -16,6 +16,7 @@
 #ifndef VOX_APP_APP_HPP
 #define VOX_APP_APP_HPP
 
+#include <exception>
 #include <functional>
 #include <memory>
 
@@ -75,13 +76,32 @@ private:
   std::unique_ptr<vox::input::IInputHook> hook_;
 };
 
+namespace detail {
+/// Logs a top-level fatal error to stderr. Kept in the .cpp so this header needs
+/// no <iostream>; used by runApp's construction firewall.
+void reportFatalError(const char* what) noexcept;
+} // namespace detail
+
 /// @brief Builds the App from @p makeDependencies and runs it, mapping any
 ///        *construction* failure (the factory or the App constructor throwing) to
 ///        exit code 1 logged to stderr. App::run() already firewalls everything
 ///        after construction; this covers the one window it cannot, so the real
 ///        `main()` is a trivial wrapper over this testable function.
+/// @tparam MakeDependencies a callable returning an AppDependencies.
 /// @return App::run()'s result, or 1 if construction threw. Never throws.
-[[nodiscard]] int runApp(const std::function<AppDependencies()>& makeDependencies) noexcept;
+template<typename MakeDependencies>
+[[nodiscard]] int runApp(MakeDependencies&& makeDependencies) noexcept {
+  try {
+    return App{makeDependencies()}.run();
+  } catch (const std::exception& error) {
+    detail::reportFatalError(error.what());
+    return 1;
+  } catch (...) {
+    // The process boundary: a non-std construction failure maps to exit 1.
+    detail::reportFatalError("unknown exception");
+    return 1;
+  }
+}
 
 } // namespace vox::app
 

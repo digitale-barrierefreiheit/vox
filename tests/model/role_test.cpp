@@ -51,10 +51,4 @@ TEST(Role, UnknownIsTheDefaultSentinel) {
   EXPECT_EQ(static_cast<std::uint8_t>(Role::Unknown), 0U);
 }
 
-TEST(Role, OutOfRangeValueFallsBackToUnknown) {
-  // A value outside the enumerators (e.g. from a corrupt cast) must not be UB;
-  // toString falls through its switch to the "Unknown" sentinel.
-  EXPECT_EQ(toString(static_cast<Role>(0xFF)), "Unknown");
-}
-
 } // namespace

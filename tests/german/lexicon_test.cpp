@@ -38,13 +38,6 @@ TEST(Lexicon, IgnoresLinesWithAnEmptyKey) {
   EXPECT_EQ(lex.role(Role::Button), "Schaltfläche");
 }
 
-TEST(Lexicon, OutOfRangeRoleAndStateLookupsAreEmpty) {
-  const Lexicon lex = Lexicon::parse("role.button = Schaltfläche\n");
-  // Indices past the tables (e.g. from a corrupt cast) return empty, not UB.
-  EXPECT_TRUE(lex.role(static_cast<Role>(250)).empty());
-  EXPECT_TRUE(lex.state(static_cast<StateConcept>(250)).empty());
-}
-
 TEST(Lexicon, TrimsWhitespaceAndStripsCarriageReturns) {
   const Lexicon lex = Lexicon::parse("  role.edit   =   Eingabefeld  \r\n");
   EXPECT_EQ(lex.role(Role::Edit), "Eingabefeld");

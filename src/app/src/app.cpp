@@ -81,18 +81,10 @@ void App::teardown() noexcept {
   stopQuietly([this] { reader_.stop(); }, "the reader");
 }
 
-int runApp(const std::function<AppDependencies()>& makeDependencies) noexcept {
-  try {
-    return App{makeDependencies()}.run();
-  } catch (const std::exception& error) {
-    std::cerr << "vox: fatal error: " << error.what() << '\n';
-    return 1;
-  } catch (...) {
-    // The process boundary: a non-std construction failure must map to exit 1,
-    // not terminate.
-    std::cerr << "vox: fatal error: unknown exception\n";
-    return 1;
-  }
+namespace detail {
+void reportFatalError(const char* what) noexcept {
+  std::cerr << "vox: fatal error: " << what << '\n';
 }
+} // namespace detail
 
 } // namespace vox::app

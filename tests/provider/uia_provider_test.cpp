@@ -40,6 +40,13 @@ using ::testing::Return;
 
 constexpr long ErrorFail = static_cast<long>(0x80004005U); // E_FAIL
 
+/// A dedicated exception a focus callback might raise (S112: not a generic one),
+/// to prove the event handler firewalls it at the COM boundary.
+class CallbackError : public std::runtime_error {
+public:
+  CallbackError() : std::runtime_error("callback boom") {}
+};
+
 class SeamGuard {
 public:
   SeamGuard() = default;
@@ -253,7 +260,7 @@ TEST_F(UiaProviderTest, NameIsEmptyWhenTheNameBstrIsEmpty) {
 
 TEST_F(UiaProviderTest, FocusEventCallbackExceptionsAreSwallowed) {
   UiaProvider provider;
-  provider.start([](const AccessibleNode&) { throw std::runtime_error("callback boom"); });
+  provider.start([](const AccessibleNode&) { throw CallbackError{}; });
   ASSERT_NE(capturedHandler_, nullptr);
   // The handler must never let an exception cross the COM ABI boundary.
   EXPECT_EQ(capturedHandler_->HandleFocusChangedEvent(&element_), S_OK);
@@ -262,7 +269,7 @@ TEST_F(UiaProviderTest, FocusEventCallbackExceptionsAreSwallowed) {
 TEST_F(UiaProviderTest, StartDropsTheHandlerWhenRegistrationFails) {
   EXPECT_CALL(automation_, AddFocusChangedEventHandler(_, _)).WillOnce(Return(ErrorFail));
   UiaProvider provider;
-  provider.start([](const AccessibleNode&) {});
+  provider.start([](const AccessibleNode&) { /* this test only checks registration */ });
   // Registration failed, so there is nothing for stop() to remove.
   EXPECT_CALL(automation_, RemoveFocusChangedEventHandler(_)).Times(0);
   provider.stop();
@@ -270,14 +277,14 @@ TEST_F(UiaProviderTest, StartDropsTheHandlerWhenRegistrationFails) {
 
 TEST_F(UiaProviderTest, StopKeepsTheHandlerWhenRemovalFailsAndStartStaysIdempotent) {
   UiaProvider provider;
-  provider.start([](const AccessibleNode&) {});
+  provider.start([](const AccessibleNode&) { /* this test only checks stop()/start() */ });
   // Removal fails: UIA may still hold the handler, so the provider keeps its
   // reference rather than dropping a still-registered handler.
   EXPECT_CALL(automation_, RemoveFocusChangedEventHandler(_)).WillRepeatedly(Return(ErrorFail));
   provider.stop();
   // A subsequent start() sees the retained handler and does not double-register.
   EXPECT_CALL(automation_, AddFocusChangedEventHandler(_, _)).Times(0);
-  provider.start([](const AccessibleNode&) {});
+  provider.start([](const AccessibleNode&) { /* retained handler path */ });
 }
 
 /// A degraded provider (automation creation failed) accepts start()/stop() as

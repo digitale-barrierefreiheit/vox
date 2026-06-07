@@ -1,0 +1,13 @@
+# Reads the pinned vcpkg registry commit from vcpkg.json's "builtin-baseline" — the
+# single source of truth — into $VCPKG_BASELINE, so run-vcpkg can check out the vcpkg
+# tool at exactly that commit. This replaces a duplicated repository variable: the
+# baseline now lives only in vcpkg.json (manifest mode reads it for port versions, and
+# this action feeds the same value to the vcpkg tool checkout). jq is preinstalled on
+# GitHub-hosted runners. (Action YAML is exempt from the SPDX-header check.)
+name: vcpkg baseline
+description: Export vcpkg.json's builtin-baseline as the VCPKG_BASELINE environment variable.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: echo "VCPKG_BASELINE=$(jq -r '.["builtin-baseline"]' vcpkg.json)" >> "$GITHUB_ENV"

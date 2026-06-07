@@ -105,6 +105,21 @@
       "cacheVariables": {
         "VOX_SANITIZER": "thread"
       }
+    },
+    {
+      "name": "macos-clang",
+      "displayName": "macOS (Clang)",
+      "description": "Local macOS build for clang-tidy; no shipping target yet (macOS is a later milestone).",
+      "inherits": "base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      },
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++"
+      }
     }
   ],
   "buildPresets": [
@@ -115,7 +130,8 @@
     { "name": "x64-clang-cl-release",  "configurePreset": "x64-clang-cl",    "configuration": "Release" },
     { "name": "linux-clang-debug",     "configurePreset": "linux-clang",     "configuration": "Debug" },
     { "name": "linux-clang-asan",      "configurePreset": "linux-clang-asan","configuration": "Debug" },
-    { "name": "linux-clang-tsan",      "configurePreset": "linux-clang-tsan","configuration": "Debug" }
+    { "name": "linux-clang-tsan",      "configurePreset": "linux-clang-tsan","configuration": "Debug" },
+    { "name": "macos-clang-debug",     "configurePreset": "macos-clang",     "configuration": "Debug" }
   ],
   "testPresets": [
     {
@@ -130,6 +146,7 @@
     { "name": "x86-msvc-release", "inherits": "common", "configurePreset": "x86-msvc",         "configuration": "Release" },
     { "name": "linux-clang-debug","inherits": "common", "configurePreset": "linux-clang",      "configuration": "Debug" },
     { "name": "linux-clang-asan", "inherits": "common", "configurePreset": "linux-clang-asan", "configuration": "Debug" },
-    { "name": "linux-clang-tsan", "inherits": "common", "configurePreset": "linux-clang-tsan", "configuration": "Debug" }
+    { "name": "linux-clang-tsan", "inherits": "common", "configurePreset": "linux-clang-tsan", "configuration": "Debug" },
+    { "name": "macos-clang-debug","inherits": "common", "configurePreset": "macos-clang",      "configuration": "Debug" }
   ]
 }

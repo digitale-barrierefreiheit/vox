@@ -103,6 +103,27 @@ is merged via pull request into `dev`; `dev` is released to `main` via a
 
 Issues are **not** closed on the `dev` merge — only when released to `main`.
 
+**Local checks before pushing.** Run **`just check`** before pushing — it runs the CI
+gates in parallel (format-check ∥ build+coverage ∥ tidy) so failures surface locally
+instead of in a slow CI round-trip, and the CI workflows call the same `just` tasks
+(single source of truth). `just --list` shows every task (see README → *Developer
+tasks*). `just tidy` is the Linux/Clang gate: native on Linux/macOS; on Windows it runs
+in an **Ubuntu-24.04 WSL distro that matches CI** (clang-18), else falls back to native
+clang-cl (which fails on the MSVC STL) — so set up that distro or let CI run tidy. For a
+fast inner loop, **`just tidy-changed`** checks only the C++ sources changed vs the base.
+
+**Batch review-fixes.** When a pull request is under review, wait for the **full**
+review wave to report — CI/clang-tidy, SonarCloud, CodeScene, and the Copilot
+review — then address the findings in **one pass**. Avoid fixing and pushing per
+individual finding: every push re-triggers the entire gate stack and a fresh Copilot
+re-review, multiplying CI minutes and review churn.
+
+**Commit hygiene.** Before committing, review `git status` / the staged paths and
+confirm every staged file belongs to the change. **Never** blanket-stage with
+`git add -A` / `git add .` without checking — it sweeps in stray local files (editor
+or plugin config such as `.claude/`, build artifacts, coverage reports). Stage the
+specific files you changed.
+
 ## Be interactive
 
 Please cooperate with user. If way isn't clear or u are unsure, ask the user instead of guessing what is wanted.

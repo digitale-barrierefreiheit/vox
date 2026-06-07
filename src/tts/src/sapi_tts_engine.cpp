@@ -402,8 +402,10 @@ private:
   /// unavailable.
   ComPtr<ISpObjectTokenCategory> openVoiceCategory() {
     ComPtr<ISpObjectTokenCategory> category;
-    const HRESULT created = createTokenCategory(category.ReleaseAndGetAddressOf());
-    if (FAILED(created) || !category) {
+    // The init-statement runs before the condition, so category is set by the
+    // call before the null-check reads it.
+    if (const HRESULT created = createTokenCategory(category.ReleaseAndGetAddressOf());
+        FAILED(created) || !category) {
       return nullptr;
     }
     if (FAILED(category->SetId(SPCAT_VOICES, FALSE))) {
@@ -433,7 +435,7 @@ private:
 
   /// Reads @p token into the voice tables; skips a token whose id cannot be read
   /// or is empty.
-  void addVoice(const ComPtr<ISpObjectToken>& token, const std::wstring& defaultId) {
+  void addVoice(const ComPtr<ISpObjectToken>& token, std::wstring_view defaultId) {
     LPWSTR rawId = nullptr;
     if (FAILED(token->GetId(&rawId)) || rawId == nullptr) {
       return;

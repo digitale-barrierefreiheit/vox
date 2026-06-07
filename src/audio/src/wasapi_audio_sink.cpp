@@ -342,9 +342,11 @@ private:
     const HRESULT endpointHr = enumerator_->GetDefaultAudioEndpoint(eRender, eConsole, &device_);
     throwOnFailure(endpointHr, "WasapiAudioSink: no default render device", device_ != nullptr);
 
-    throwOnFailure(device_->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
-                                     reinterpret_cast<void**>(audioClient_.GetAddressOf())),
-                   "WasapiAudioSink: cannot activate the audio client");
+    const HRESULT activateHr =
+        device_->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
+                          reinterpret_cast<void**>(audioClient_.GetAddressOf()));
+    throwOnFailure(activateHr, "WasapiAudioSink: cannot activate the audio client",
+                   audioClient_ != nullptr);
   }
 
   /// Builds the converter for the device mix format, then starts the event-driven
@@ -357,7 +359,7 @@ private:
   }
 
   /// The device mix format, owned so it is freed on every (incl. throwing) path.
-  MixFormat readMixFormat() {
+  MixFormat readMixFormat() const {
     WAVEFORMATEX* raw = nullptr;
     const HRESULT hr = audioClient_->GetMixFormat(&raw); // sequence before the null-check
     throwOnFailure(hr, "WasapiAudioSink: cannot read the device mix format", raw != nullptr);
@@ -368,9 +370,9 @@ private:
   /// the PCM converter (so start() only ever throws DeviceError).
   void configureConverter(const WAVEFORMATEX& mixFormat) {
     const SampleFormat sampleFormat = detectSampleFormat(mixFormat);
-    const bool formatIsUsable =
-        mixFormat.nSamplesPerSec != 0U && mixFormat.nChannels != 0U && mixFormat.nBlockAlign != 0U;
-    if (!formatIsUsable) {
+    if (const bool formatIsUsable = mixFormat.nSamplesPerSec != 0U && mixFormat.nChannels != 0U &&
+                                    mixFormat.nBlockAlign != 0U;
+        !formatIsUsable) {
       throw DeviceError("WasapiAudioSink: invalid device mix format");
     }
     frameBytes_ = mixFormat.nBlockAlign;
@@ -392,8 +394,9 @@ private:
                    "WasapiAudioSink: cannot set the render event handle");
     throwOnFailure(audioClient_->GetBufferSize(&bufferFrameCount_),
                    "WasapiAudioSink: cannot get the buffer size");
-    throwOnFailure(audioClient_->GetService(IID_PPV_ARGS(&renderClient_)),
-                   "WasapiAudioSink: cannot get the render client");
+    const HRESULT serviceHr = audioClient_->GetService(IID_PPV_ARGS(&renderClient_));
+    throwOnFailure(serviceHr, "WasapiAudioSink: cannot get the render client",
+                   renderClient_ != nullptr);
   }
 
   /// Ring capacity in bytes. Sizing is a smoothness knob, not a correctness one:

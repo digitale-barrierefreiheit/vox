@@ -10,4 +10,10 @@ runs:
   using: composite
   steps:
     - shell: bash
-      run: echo "VCPKG_BASELINE=$(jq -r '.["builtin-baseline"]' vcpkg.json)" >> "$GITHUB_ENV"
+      run: |
+        baseline=$(jq -r '.["builtin-baseline"] // empty' vcpkg.json)
+        if [ -z "$baseline" ]; then
+          echo "::error file=vcpkg.json::vcpkg.json has no \"builtin-baseline\"; cannot pin the vcpkg tool." >&2
+          exit 1
+        fi
+        echo "VCPKG_BASELINE=$baseline" >> "$GITHUB_ENV"

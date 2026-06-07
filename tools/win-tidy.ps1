@@ -18,21 +18,35 @@ param(
 $ErrorActionPreference = 'Stop'
 $env:WSL_UTF8 = '1'  # make wsl.exe emit UTF-8, not UTF-16, so output parses cleanly
 
-# First installed WSL distro that is Ubuntu 24.04 and carries the tidy toolchain.
+# Validate the base ref up front (a git ref: letters, digits, . _ / -). Positional args
+# don't survive `wsl -- bash -lc <script> $0 $1`, so the WSL path interpolates $Base into
+# the command; validating here keeps that injection-safe. The native path passes $Base to
+# git as a separate argv (already safe).
+if ($Base -and $Base -notmatch '^[\w./-]+$') {
+    throw "Invalid base ref '$Base'; expected a git ref (letters, digits, '. _ / -')."
+}
+
+# Is the named WSL distro Ubuntu 24.04 (matching CI)?
+function Test-IsUbuntu2404($name) {
+    $osRelease = (wsl -d $name -- cat /etc/os-release) -join "`n"
+    return ($osRelease -match '(?m)^ID=ubuntu\b') -and ($osRelease -match '(?m)^VERSION_ID="?24\.04')
+}
+
+# Does the named WSL distro carry the clang-tidy toolchain CI uses?
+function Test-HasTidyToolchain($name) {
+    foreach ($tool in 'cmake', 'clang-18', 'clang-tidy-18', 'just') {
+        wsl -d $name -- which $tool *> $null
+        if ($LASTEXITCODE -ne 0) { return $false }
+    }
+    return $true
+}
+
+# First installed WSL distro that is Ubuntu 24.04 and carries the toolchain.
 function Find-CiDistro {
     if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) { return $null }
     foreach ($line in (wsl --list --quiet)) {
         $name = $line.Trim()
-        if (-not $name) { continue }
-        $osRelease = (wsl -d $name -- cat /etc/os-release) -join "`n"
-        if ($osRelease -notmatch '(?m)^ID=ubuntu\b') { continue }
-        if ($osRelease -notmatch '(?m)^VERSION_ID="?24\.04') { continue }
-        $hasToolchain = $true
-        foreach ($tool in 'cmake', 'clang-18', 'clang-tidy-18', 'just') {
-            wsl -d $name -- which $tool *> $null
-            if ($LASTEXITCODE -ne 0) { $hasToolchain = $false; break }
-        }
-        if ($hasToolchain) { return $name }
+        if ($name -and (Test-IsUbuntu2404 $name) -and (Test-HasTidyToolchain $name)) { return $name }
     }
     return $null
 }
@@ -40,7 +54,7 @@ function Find-CiDistro {
 $distro = Find-CiDistro
 if ($distro) {
     Write-Warning "clang-tidy via WSL distro '$distro' (Ubuntu 24.04, matches the CI toolchain)."
-    $recipe = if ($Base) { "just tidy $Base" } else { 'just tidy' }
+    $recipe = if ($Base) { "just tidy $Base" } else { 'just tidy' }   # $Base validated above
     wsl -d $distro --cd $RepoNative -- bash -lc $recipe
     exit $LASTEXITCODE
 }

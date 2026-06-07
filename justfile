@@ -35,7 +35,7 @@ default:
 # 🚀 Run all CI gates in parallel: format-check ∥ (build+coverage) ∥ tidy.
 [windows]
 check:
-    $r='{{root_native}}'; $j=@((Start-Job {Set-Location $using:r; just format-check; if($LASTEXITCODE){throw 'format-check'}}), (Start-Job {Set-Location $using:r; just coverage; if($LASTEXITCODE){throw 'coverage'}}), (Start-Job {Set-Location $using:r; just tidy; if($LASTEXITCODE){throw 'tidy'}})); $j | Wait-Job | Out-Null; $j | ForEach-Object { Receive-Job $_ }; $bad=@($j | Where-Object {$_.State -ne 'Completed'}); $j | Remove-Job -Force; if($bad.Count){Write-Host 'check: FAILED'; exit 1}; Write-Host 'check: all gates passed'
+    & "{{justfile_directory()}}\tools\win-check.ps1" -RepoNative "{{root_native}}"
 
 # 🚀 Run all CI gates in parallel: format-check ∥ (build+coverage) ∥ tidy.
 [unix]

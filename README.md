@@ -82,7 +82,7 @@ macOS → `macos-clang`). CI passes explicit presets, e.g. `just build x64-msvc-
 
 | Task | What it does |
 |------|--------------|
-| `just check` | Run all CI gates **in parallel**: format-check ∥ (build + coverage) ∥ tidy |
+| `just check` | Run the gates **in parallel**: format-check ∥ build+coverage on Windows / build+test on Linux+macOS ∥ tidy |
 | `just format` | Reformat all C++ sources in place (clang-format) |
 | `just format-check` | Verify formatting; fail if anything is unformatted |
 | `just configure [preset]` | Configure the build (vcpkg restore + `compile_commands.json`) |

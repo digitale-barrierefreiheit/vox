@@ -37,10 +37,11 @@ default:
 check:
     & "{{justfile_directory()}}\tools\win-check.ps1" -RepoNative "{{root_native}}"
 
-# 🚀 Run all CI gates in parallel: format-check ∥ (build+coverage) ∥ tidy.
+# 🚀 Run all CI gates in parallel: format-check ∥ (build+test) ∥ tidy.
+# (coverage is Windows-only, so Linux/macOS run build+test as the middle gate.)
 [unix]
 check:
-    just format-check & p1=$!; just coverage & p2=$!; just tidy & p3=$!; rc=0; wait $p1 || rc=1; wait $p2 || rc=1; wait $p3 || rc=1; if [ $rc -eq 0 ]; then echo 'check: all gates passed'; else echo 'check: FAILED'; exit 1; fi
+    just format-check & p1=$!; just test & p2=$!; just tidy & p3=$!; rc=0; wait $p1 || rc=1; wait $p2 || rc=1; wait $p3 || rc=1; if [ $rc -eq 0 ]; then echo 'check: all gates passed'; else echo 'check: FAILED'; exit 1; fi
 
 # 🎨 Reformat every C++ source in place (clang-format).
 format:
@@ -66,18 +67,20 @@ test preset=test_preset: (build preset)
 # Pins clang-18 + clang-tidy-18 to match CI; VCPKG_ROOT falls back to
 # ~/.local/share/vcpkg for non-interactive WSL invocations (expanded by Linux sh, so
 # no Windows-boundary quoting). A base ref limits tidy to merge-base-changed sources.
+# Uses a dedicated build/linux-clang-tidy dir (clang-18) so it never collides with a
+# `just build`/`just test` of build/linux-clang (e.g. run in parallel by `check`).
 # 🧹 clang-tidy — the CI gate (Linux/Clang). Pass a base ref (e.g. origin/dev) for changed-only.
 [linux]
 tidy base='':
-    VCPKG_ROOT="${VCPKG_ROOT:-$HOME/.local/share/vcpkg}" cmake --preset linux-clang -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18
-    if [ -n '{{base}}' ]; then files=$(git diff --name-only $(git merge-base HEAD '{{base}}') -- 'src/*.cpp' 'tests/*.cpp'); else files=$(git ls-files 'src/*.cpp' 'tests/*.cpp'); fi; if [ -n "$files" ]; then {{clang_tidy}} -p build/linux-clang -warnings-as-errors='*' $files; else echo 'tidy: no C++ sources to check'; fi
+    VCPKG_ROOT="${VCPKG_ROOT:-$HOME/.local/share/vcpkg}" cmake --preset linux-clang -B build/linux-clang-tidy -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18
+    if [ -n '{{base}}' ]; then files=$(git diff --name-only $(git merge-base HEAD '{{base}}') -- 'src/*.cpp' 'tests/*.cpp'); else files=$(git ls-files 'src/*.cpp' 'tests/*.cpp'); fi; if [ -n "$files" ]; then {{clang_tidy}} -p build/linux-clang-tidy -warnings-as-errors='*' $files; else echo 'tidy: no C++ sources to check'; fi
 
 # 🧹 clang-tidy on macOS (warns: differs from CI). Pass a base ref for changed-only.
 [macos]
 tidy base='':
     @echo 'warning: macOS clang-tidy differs from the CI gate (Linux/Clang).'
-    VCPKG_ROOT="${VCPKG_ROOT:-$HOME/.local/share/vcpkg}" cmake --preset macos-clang
-    if [ -n '{{base}}' ]; then files=$(git diff --name-only $(git merge-base HEAD '{{base}}') -- 'src/*.cpp' 'tests/*.cpp'); else files=$(git ls-files 'src/*.cpp' 'tests/*.cpp'); fi; if [ -n "$files" ]; then {{clang_tidy}} -p build/macos-clang -warnings-as-errors='*' $files; else echo 'tidy: no C++ sources to check'; fi
+    VCPKG_ROOT="${VCPKG_ROOT:-$HOME/.local/share/vcpkg}" cmake --preset macos-clang -B build/macos-clang-tidy
+    if [ -n '{{base}}' ]; then files=$(git diff --name-only $(git merge-base HEAD '{{base}}') -- 'src/*.cpp' 'tests/*.cpp'); else files=$(git ls-files 'src/*.cpp' 'tests/*.cpp'); fi; if [ -n "$files" ]; then {{clang_tidy}} -p build/macos-clang-tidy -warnings-as-errors='*' $files; else echo 'tidy: no C++ sources to check'; fi
 
 # Picks an Ubuntu-24.04 WSL distro (matches CI), else native clang-cl. See tools/win-tidy.ps1.
 # 🧹 clang-tidy from Windows (WSL Ubuntu-24.04, else native). Pass a base ref for changed-only.

@@ -25,7 +25,9 @@ $jobs = foreach ($target in $targets) {
 }
 
 $jobs | Wait-Job | Out-Null
-$jobs | ForEach-Object { Receive-Job $_ }       # surface each gate's output (and errors)
+# -ErrorAction Continue: a failed gate's error must not terminate (ErrorActionPreference
+# is Stop) before we print the summary and clean up; the .State check drives the exit.
+$jobs | ForEach-Object { Receive-Job $_ -ErrorAction Continue }
 $failed = @($jobs | Where-Object { $_.State -ne 'Completed' })
 $jobs | Remove-Job -Force
 

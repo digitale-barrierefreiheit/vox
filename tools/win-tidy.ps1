@@ -18,12 +18,13 @@ param(
 $ErrorActionPreference = 'Stop'
 $env:WSL_UTF8 = '1'  # make wsl.exe emit UTF-8, not UTF-16, so output parses cleanly
 
-# Validate the base ref up front (a git ref: letters, digits, . _ / -). Positional args
-# don't survive `wsl -- bash -lc <script> $0 $1`, so the WSL path interpolates $Base into
-# the command; validating here keeps that injection-safe. The native path passes $Base to
-# git as a separate argv (already safe).
-if ($Base -and $Base -notmatch '^[\w./-]+$') {
-    throw "Invalid base ref '$Base'; expected a git ref (letters, digits, '. _ / -')."
+# Validate the base ref up front. Positional args don't survive
+# `wsl -- bash -lc <script> $0 $1`, so the WSL path interpolates $Base into the command;
+# validating here keeps that injection-safe. The allowed set covers git revision syntax
+# (HEAD~1, HEAD^, @{u}, origin/dev, SHAs) but excludes shell metacharacters (; & | $ ` ( )
+# spaces, quotes, ...). The native path passes $Base to git as a separate argv (safe).
+if ($Base -and $Base -notmatch '^[\w./@~^{}-]+$') {
+    throw "Invalid base ref '$Base'; expected a git revision (no shell metacharacters)."
 }
 
 # Is the named WSL distro Ubuntu 24.04 (matching CI)?

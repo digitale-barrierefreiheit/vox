@@ -187,9 +187,11 @@ protected:
   template<typename Probe>
   void withOutputStream(Probe probe, const vox::tts::ITtsEngine::PcmSink& sink) {
     ON_CALL(voice_, Speak(_, _, _)).WillByDefault([this, probe](LPCWSTR, DWORD, ULONG*) {
+      if (capturedOutput_ == nullptr) {
+        return E_FAIL;
+      }
       ISpStreamFormat* stream = nullptr;
-      if (capturedOutput_ == nullptr ||
-          FAILED(capturedOutput_->QueryInterface(IID_PPV_ARGS(&stream))) || stream == nullptr) {
+      if (FAILED(capturedOutput_->QueryInterface(IID_PPV_ARGS(&stream))) || stream == nullptr) {
         return E_FAIL;
       }
       probe(stream);

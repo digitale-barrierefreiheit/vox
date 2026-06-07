@@ -20,6 +20,7 @@
 
 #  include <array>
 #  include <cstddef>
+#  include <cstdint>
 #  include <functional>
 
 #  include <vox/input/command_handler.hpp>
@@ -47,6 +48,18 @@ namespace detail {
 HookAction processKey(bool pressed, std::size_t vk, const KeyEvent& event,
                       std::array<bool, 256>& consumed, const CommandMap& map,
                       ICommandHandler& handler);
+
+/// @brief The hook callback's translation step, factored out of the Win32
+///        `hookProc` so it is testable with no real hook. Builds a KeyEvent from
+///        the raw WH_KEYBOARD_LL fields — @p message is WM_KEYDOWN /
+///        WM_SYSKEYDOWN / WM_KEYUP / WM_SYSKEYUP, @p flags carries LLKHF_INJECTED
+///        — plus the live @p modifiers, routes it via processKey(), and reports
+///        whether the key should be consumed (hidden from the foreground app).
+///        Integer parameter types keep this declaration Windows-header-free.
+[[nodiscard]] bool dispatchLowLevelKey(std::uintptr_t message, std::uint32_t vkCode,
+                                       std::uint32_t flags, KeyModifiers modifiers,
+                                       std::array<bool, 256>& consumed, const CommandMap& map,
+                                       ICommandHandler& handler);
 
 } // namespace detail
 

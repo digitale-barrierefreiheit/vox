@@ -81,4 +81,10 @@ void App::teardown() noexcept {
   stopQuietly([this] { reader_.stop(); }, "the reader");
 }
 
+namespace detail {
+void reportFatalError(const char* what) noexcept {
+  std::cerr << "vox: fatal error: " << what << '\n';
+}
+} // namespace detail
+
 } // namespace vox::app

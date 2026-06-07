@@ -22,6 +22,7 @@
 #include <vector>
 
 #include <vox/audio/audio_format.hpp>
+#include <vox/tts/detail/sapi_internal.hpp>
 #include <vox/tts/errors.hpp>
 #include <vox/tts/itts_engine.hpp>
 #include <vox/tts/rate.hpp>
@@ -53,6 +54,15 @@ using Microsoft::WRL::ComPtr;
 using Microsoft::WRL::Make;
 using Microsoft::WRL::RuntimeClass;
 using Microsoft::WRL::RuntimeClassFlags;
+
+// The pure UTF-8/UTF-16 converters, the LCID parser, and the attribute reader
+// live in detail/ so the suite tests every branch directly (#68/#72). The COM
+// PcmSinkStream below stays here (its IStream ABI surface is exercised through
+// the engine), keeping this the only translation unit that needs the SDK glue.
+using detail::languageIsGerman;
+using detail::readAttribute;
+using detail::toUtf8;
+using detail::toWide;
 
 /// Test seams (issue #68): when installed, these factories replace
 /// CoCreateInstance for the SAPI voice and the voice-token category, so the
@@ -117,85 +127,6 @@ WAVEFORMATEX makeWaveFormat() {
   wfx.nAvgBytesPerSec = bytesPerSecond(OutputFormat);
   wfx.cbSize = 0;
   return wfx;
-}
-
-/// Converts UTF-8 text to a UTF-16 string (empty for empty/invalid input).
-std::wstring toWide(std::string_view utf8) {
-  if (utf8.empty()) {
-    return {};
-  }
-  const auto length = static_cast<int>(utf8.size());
-  const int chars =
-      ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(), length, nullptr, 0);
-  if (chars <= 0) {
-    return {};
-  }
-  std::wstring out(static_cast<std::size_t>(chars), L'\0');
-  if (const int written = ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(), length,
-                                                out.data(), chars);
-      written != chars) {
-    return {};
-  }
-  return out;
-}
-
-/// Converts a UTF-16 C-string to UTF-8 (empty for null/empty/invalid input).
-std::string toUtf8(const wchar_t* text) {
-  if (text == nullptr || text[0] == L'\0') {
-    return {};
-  }
-  // -1: `text` is null-terminated, so let the API walk it (no wcslen). The byte
-  // count it returns/needs then includes the terminator, which we trim below.
-  const int bytes =
-      ::WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, text, -1, nullptr, 0, nullptr, nullptr);
-  if (bytes <= 1) { // 1 == only the terminating null, i.e. empty content
-    return {};
-  }
-  std::string out(static_cast<std::size_t>(bytes), '\0');
-  if (const int written = ::WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, text, -1, out.data(),
-                                                bytes, nullptr, nullptr);
-      written != bytes) {
-    return {};
-  }
-  out.resize(static_cast<std::size_t>(bytes) - 1U); // drop the embedded terminator
-  return out;
-}
-
-/// True if any LCID in a SAPI "Language" attribute is a German primary language.
-/// The attribute is a ';'-separated list of hex LCIDs (e.g. "407;c07").
-bool languageIsGerman(std::wstring_view languageAttribute) {
-  std::size_t start = 0;
-  while (start <= languageAttribute.size()) {
-    const std::size_t end = languageAttribute.find(L';', start);
-    const std::size_t count =
-        end == std::wstring_view::npos ? std::wstring_view::npos : end - start;
-    if (const std::wstring token{languageAttribute.substr(start, count)}; !token.empty()) {
-      const auto lcid = ::wcstoul(token.c_str(), nullptr, 16);
-      if (PRIMARYLANGID(static_cast<LANGID>(lcid)) == LANG_GERMAN) {
-        return true;
-      }
-    }
-    if (end == std::wstring_view::npos) {
-      break;
-    }
-    start = end + 1;
-  }
-  return false;
-}
-
-/// Reads one string value under a token's "Attributes" key (empty if absent).
-std::wstring readAttribute(ISpObjectToken* token, const wchar_t* valueName) {
-  ComPtr<ISpDataKey> attributes;
-  if (FAILED(token->OpenKey(L"Attributes", &attributes)) || !attributes) {
-    return {};
-  }
-  LPWSTR value = nullptr;
-  if (FAILED(attributes->GetStringValue(valueName, &value)) || value == nullptr) {
-    return {};
-  }
-  std::wstring out(value);
-  ::CoTaskMemFree(value);
-  return out;
 }
 
 /// A SAPI output stream that forwards each PCM block to a PcmSink and aborts

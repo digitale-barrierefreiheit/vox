@@ -33,12 +33,19 @@ using vox::input::ICommandHandler;
 using vox::input::KeyboardHook;
 using vox::input::KeyEvent;
 using vox::input::KeyModifiers;
+using vox::input::detail::dispatchLowLevelKey;
 using vox::input::detail::processKey;
 
 // Windows virtual-key codes (spelled out so this test needs no <windows.h>).
 constexpr std::uint32_t VkTab = 0x09;
 constexpr std::uint32_t VkA = 0x41;
 constexpr std::uint32_t VkQ = 0x51;
+
+// WH_KEYBOARD_LL message ids and flags (spelled out for the same reason).
+constexpr std::uintptr_t WmKeyDown = 0x0100;
+constexpr std::uintptr_t WmSysKeyDown = 0x0104;
+constexpr std::uintptr_t WmKeyUp = 0x0101;
+constexpr std::uint32_t LlkhfInjected = 0x00000010;
 
 /// Records the commands it is handed.
 class RecordingHandler : public ICommandHandler {
@@ -138,6 +145,59 @@ TEST(KeyboardHookProcessKey, AThrowingHandlerDoesNotConsume) {
   EXPECT_EQ(processKey(true, VkQ, quitChord(true), consumed, map, handler),
             HookAction::PassThrough);
   EXPECT_FALSE(consumed[VkQ]);
+}
+
+// ---- dispatchLowLevelKey: the hookProc translation ------------------------
+
+TEST(KeyboardHookDispatch, ConsumesAReaderControlChord) {
+  std::array<bool, 256> consumed{};
+  RecordingHandler handler;
+  const CommandMap map;
+  const KeyModifiers chord{.shift = true, .control = true};
+  EXPECT_TRUE(dispatchLowLevelKey(WmKeyDown, VkQ, 0, chord, consumed, map, handler));
+  EXPECT_TRUE(consumed[VkQ]);
+  ASSERT_EQ(handler.commands.size(), 1U);
+  EXPECT_EQ(handler.commands.front(), Command::Quit);
+}
+
+TEST(KeyboardHookDispatch, PassesThroughNavigationKeys) {
+  std::array<bool, 256> consumed{};
+  RecordingHandler handler;
+  const CommandMap map;
+  EXPECT_FALSE(dispatchLowLevelKey(WmKeyDown, VkTab, 0, KeyModifiers{}, consumed, map, handler));
+  ASSERT_EQ(handler.commands.size(), 1U);
+  EXPECT_EQ(handler.commands.front(), Command::NavigateNext);
+}
+
+TEST(KeyboardHookDispatch, TreatsSysKeyDownAsAPress) {
+  std::array<bool, 256> consumed{};
+  RecordingHandler handler;
+  const CommandMap map;
+  // WM_SYSKEYDOWN (Alt held) must count as pressed, so the key still routes
+  // (navigation is not consumed, so the call returns false).
+  EXPECT_FALSE(dispatchLowLevelKey(WmSysKeyDown, VkTab, 0, KeyModifiers{}, consumed, map, handler));
+  ASSERT_EQ(handler.commands.size(), 1U);
+  EXPECT_EQ(handler.commands.front(), Command::NavigateNext);
+}
+
+TEST(KeyboardHookDispatch, SwallowsTheKeyUpOfAConsumedKey) {
+  std::array<bool, 256> consumed{};
+  consumed[VkQ] = true; // its key-down was consumed
+  RecordingHandler handler;
+  const CommandMap map;
+  EXPECT_TRUE(dispatchLowLevelKey(WmKeyUp, VkQ, 0, KeyModifiers{}, consumed, map, handler));
+  EXPECT_FALSE(consumed[VkQ]);
+}
+
+TEST(KeyboardHookDispatch, RecordsTheInjectedFlagButStillRoutes) {
+  std::array<bool, 256> consumed{};
+  RecordingHandler handler;
+  const CommandMap map;
+  const KeyModifiers chord{.shift = true, .control = true};
+  // The injected flag is parsed into the event; it does not block routing.
+  EXPECT_TRUE(dispatchLowLevelKey(WmKeyDown, VkQ, LlkhfInjected, chord, consumed, map, handler));
+  ASSERT_EQ(handler.commands.size(), 1U);
+  EXPECT_EQ(handler.commands.front(), Command::Quit);
 }
 
 // ---- start()/stop(): lifecycle through the install seam --------------------

@@ -31,6 +31,13 @@ TEST(Lexicon, IgnoresCommentsBlankLinesAndMalformedLines) {
   EXPECT_TRUE(lex.role(Role::Checkbox).empty());
 }
 
+TEST(Lexicon, IgnoresLinesWithAnEmptyKey) {
+  // A line whose key is empty before the '=' (here just "= x") is skipped, not
+  // stored under an empty key.
+  const Lexicon lex = Lexicon::parse("= orphaned value\nrole.button = Schaltfläche\n");
+  EXPECT_EQ(lex.role(Role::Button), "Schaltfläche");
+}
+
 TEST(Lexicon, TrimsWhitespaceAndStripsCarriageReturns) {
   const Lexicon lex = Lexicon::parse("  role.edit   =   Eingabefeld  \r\n");
   EXPECT_EQ(lex.role(Role::Edit), "Eingabefeld");

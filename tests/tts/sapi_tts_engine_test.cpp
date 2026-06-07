@@ -19,6 +19,7 @@
 #  include <gmock/gmock.h>
 #  include <gtest/gtest.h>
 
+#  include <vox/audio/audio_format.hpp>
 #  include <vox/tts/errors.hpp>
 #  include <vox/tts/sapi_test_seam.hpp>
 #  include <vox/tts/sapi_tts_engine.hpp>
@@ -300,6 +301,66 @@ TEST_F(SapiEngineTest, SetRateClampsOutOfRangeValues) {
   SapiTtsEngine engine{VoiceSelectionPolicy::PreferGerman};
   EXPECT_CALL(voice_, SetRate(10)).WillOnce(Return(S_OK)); // clamped from 99
   engine.setRate(99);
+}
+
+TEST_F(SapiEngineTest, FormatReportsTheFixedOutputShape) {
+  const SapiTtsEngine engine{VoiceSelectionPolicy::PreferGerman};
+  const vox::audio::AudioFormat format = engine.format();
+  EXPECT_EQ(format.sampleRate, 22050U);
+  EXPECT_EQ(format.bitsPerSample, 16U);
+  EXPECT_EQ(format.channels, 1U);
+}
+
+TEST_F(SapiEngineTest, EnumerationStopsWhenSettingTheCategoryIdFails) {
+  EXPECT_CALL(category_, SetId(_, _)).WillOnce(Return(ErrorFail));
+  // No voices enumerate, so selection finds nothing and construction fails.
+  EXPECT_THROW(SapiTtsEngine{VoiceSelectionPolicy::PreferGerman}, EngineError);
+}
+
+TEST_F(SapiEngineTest, SkipsATokenWhoseIdCannotBeRead) {
+  EXPECT_CALL(token_, GetId(_)).WillRepeatedly([](LPWSTR* out) {
+    if (out != nullptr) {
+      *out = nullptr;
+    }
+    return ErrorFail; // the only token is skipped -> no usable voice
+  });
+  EXPECT_THROW(SapiTtsEngine{VoiceSelectionPolicy::PreferGerman}, EngineError);
+}
+
+TEST_F(SapiEngineTest, SkipsATokenWithAnEmptyId) {
+  EXPECT_CALL(token_, GetId(_)).WillRepeatedly([](LPWSTR* out) {
+    *out = coTaskString(L""); // empty id -> descriptor dropped
+    return S_OK;
+  });
+  EXPECT_THROW(SapiTtsEngine{VoiceSelectionPolicy::PreferGerman}, EngineError);
+}
+
+/// Balances a successful CoInitializeEx with CoUninitialize on scope exit, even
+/// if the body throws.
+class ComScope {
+public:
+  ComScope() = default;
+
+  ~ComScope() {
+    ::CoUninitialize();
+  }
+
+  ComScope(const ComScope&) = delete;
+  ComScope& operator=(const ComScope&) = delete;
+  ComScope(ComScope&&) = delete;
+  ComScope& operator=(ComScope&&) = delete;
+};
+
+TEST_F(SapiEngineTest, ToleratesAComApartmentAlreadyInitializedInAnotherMode) {
+  // Pre-initialize COM as STA on this thread; the engine's ComApartment then
+  // requests MTA and gets RPC_E_CHANGED_MODE, which it must tolerate (not own).
+  // CoInitializeEx may return S_OK or S_FALSE (already initialized on this
+  // thread); both own a reference that ComScope balances even if the engine
+  // constructor throws.
+  ASSERT_TRUE(SUCCEEDED(::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED)));
+  const ComScope balance;
+  const SapiTtsEngine engine{VoiceSelectionPolicy::PreferGerman};
+  EXPECT_EQ(engine.selectedVoice().id, "VOX-TEST-VOICE-DE");
 }
 
 } // namespace

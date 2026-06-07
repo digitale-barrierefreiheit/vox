@@ -17,7 +17,7 @@ if(WIN32)
   # Unit tests for the SAPI engine's COM construction/synthesis error handling,
   # driven through the #68 test seam with mock COM — no installed voice, so they
   # run everywhere (incl. the coverage job) and fault-inject the failure paths.
-  add_executable(tts_sapi_test sapi_tts_engine_test.cpp)
+  add_executable(tts_sapi_test sapi_tts_engine_test.cpp sapi_internal_test.cpp)
   vox_configure_target(tts_sapi_test)
   target_link_libraries(tts_sapi_test PRIVATE
     vox::tts

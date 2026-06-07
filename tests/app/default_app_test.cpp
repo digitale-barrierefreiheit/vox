@@ -9,11 +9,14 @@
 #if defined(_WIN32)
 
 #  include <cwchar>
+#  include <memory>
 
 #  include <gmock/gmock.h>
 #  include <gtest/gtest.h>
 
 #  include <vox/app/default_app.hpp>
+#  include <vox/input/command.hpp>
+#  include <vox/input/command_handler.hpp>
 #  include <vox/provider/uia_test_seam.hpp>
 #  include <vox/tts/sapi_test_seam.hpp>
 
@@ -33,6 +36,12 @@ using vox::tts::testing::MockSpVoice;
 using ::testing::_;
 using ::testing::NiceMock;
 using ::testing::Return;
+
+/// A do-nothing command handler, just to hand the hook factory a callback target.
+class NullHandler : public vox::input::ICommandHandler {
+public:
+  void onCommand(vox::input::Command /*command*/) override {}
+};
 
 /// Restores every seam on scope exit.
 class SeamGuard {
@@ -124,7 +133,12 @@ TEST(DefaultApp, BuildsTheRealDependenciesWithMockedCom) {
   EXPECT_NE(deps.provider, nullptr);
   EXPECT_NE(deps.tts, nullptr);
   EXPECT_NE(deps.audio, nullptr);
-  EXPECT_TRUE(static_cast<bool>(deps.makeHook));
+  ASSERT_TRUE(static_cast<bool>(deps.makeHook));
+
+  // Exercise the hook factory itself: it builds a real, un-started KeyboardHook
+  // (construction installs no hook), so this is safe headless.
+  NullHandler handler;
+  EXPECT_NE(deps.makeHook(handler), nullptr);
 }
 
 } // namespace

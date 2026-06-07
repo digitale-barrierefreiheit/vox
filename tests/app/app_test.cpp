@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <memory>
 #include <span>
+#include <stdexcept>
 #include <utility>
 
 #include <gtest/gtest.h>
@@ -94,6 +95,109 @@ public:
     // no-op: nothing was started.
   }
 };
+
+/// A type deliberately not derived from std::exception, to drive the App's
+/// catch-all (non-std) boundaries.
+struct NonStdError {};
+
+/// Quits on start() so the loop completes, but throws from stop() — to drive
+/// App::teardown()'s best-effort, must-not-escape error handling.
+class ThrowingStopHook : public IInputHook {
+public:
+  ThrowingStopHook(ICommandHandler& handler, bool stdException)
+      : handler_(handler), stdException_(stdException) {}
+
+  void start() override {
+    handler_.onCommand(Command::Quit);
+  }
+
+  void stop() override {
+    if (stdException_) {
+      throw std::runtime_error("stop boom");
+    }
+    throw NonStdError{};
+  }
+
+private:
+  ICommandHandler& handler_;
+  bool stdException_;
+};
+
+/// An audio sink whose start() throws a non-std exception, to drive run()'s
+/// catch-all (as opposed to the catch(std::exception&) path).
+class NonStdThrowingAudioSink : public vox::audio::IAudioSink {
+public:
+  void start() override {
+    throw NonStdError{};
+  }
+
+  void write(std::span<const std::byte> /*pcm*/) override {}
+
+  void flush() override {}
+
+  void stop() override {}
+};
+
+AppDependencies dependenciesWith(std::unique_ptr<vox::audio::IAudioSink> audio,
+                                 vox::app::HookFactory makeHook) {
+  return AppDependencies{
+      .provider = std::make_unique<FakeProvider>(),
+      .tts = std::make_unique<FakeTtsEngine>(TestFormat),
+      .audio = std::move(audio),
+      .output = germanOutput(),
+      .makeHook = std::move(makeHook),
+  };
+}
+
+TEST(AppTest, ConstructionThrowsWhenADependencyIsNull) {
+  AppDependencies deps{
+      .provider = nullptr, // missing seam
+      .tts = std::make_unique<FakeTtsEngine>(TestFormat),
+      .audio = std::make_unique<FakeAudioSink>(),
+      .output = germanOutput(),
+      .makeHook = [](ICommandHandler& handler) -> std::unique_ptr<IInputHook> {
+        return std::make_unique<QuitOnStartHook>(handler);
+      },
+  };
+  EXPECT_THROW(App{std::move(deps)}, std::invalid_argument);
+}
+
+TEST(AppTest, ConstructionThrowsWhenTheHookFactoryReturnsNull) {
+  AppDependencies deps =
+      dependenciesWith(std::make_unique<FakeAudioSink>(),
+                       [](ICommandHandler&) -> std::unique_ptr<IInputHook> { return nullptr; });
+  EXPECT_THROW(App{std::move(deps)}, std::invalid_argument);
+}
+
+TEST(AppTest, TeardownSwallowsAStdExceptionFromStop) {
+  AppDependencies deps =
+      dependenciesWith(std::make_unique<FakeAudioSink>(),
+                       [](ICommandHandler& handler) -> std::unique_ptr<IInputHook> {
+                         return std::make_unique<ThrowingStopHook>(handler, /*stdException=*/true);
+                       });
+  App app(std::move(deps));
+  EXPECT_EQ(app.run(), 0); // the stop() failure is logged and swallowed
+}
+
+TEST(AppTest, TeardownSwallowsANonStdExceptionFromStop) {
+  AppDependencies deps =
+      dependenciesWith(std::make_unique<FakeAudioSink>(),
+                       [](ICommandHandler& handler) -> std::unique_ptr<IInputHook> {
+                         return std::make_unique<ThrowingStopHook>(handler, /*stdException=*/false);
+                       });
+  App app(std::move(deps));
+  EXPECT_EQ(app.run(), 0);
+}
+
+TEST(AppTest, ReturnsNonZeroWhenStartupThrowsANonStdException) {
+  AppDependencies deps =
+      dependenciesWith(std::make_unique<NonStdThrowingAudioSink>(),
+                       [](ICommandHandler& handler) -> std::unique_ptr<IInputHook> {
+                         return std::make_unique<QuitOnStartHook>(handler);
+                       });
+  App app(std::move(deps));
+  EXPECT_EQ(app.run(), 1); // mapped to exit 1 by run()'s catch-all
+}
 
 TEST(AppTest, RunsUntilQuitAndReturnsZero) {
   QuitOnStartHook* hook = nullptr;

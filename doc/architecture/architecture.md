@@ -530,6 +530,7 @@ The policy is **patterns for structure, data-oriented design for hot loops** (AD
 - **Error-handling discipline:** exceptions permitted only in Core cold paths; the helper, audio callback, and hot paths use status/error codes. A fault must **degrade gracefully** (fall back to out-of-process, keep speaking) and **never crash the host**. Cold-path OS/COM failures are raised as the typed **`vox::OsError`** taxonomy (`vox::audio::DeviceError` / `vox::tts::EngineError` / `vox::input::HookError`), which carries the originating `HRESULT`/`GetLastError()` code so a handler can catch by subsystem and logs can report the native code.
 - **Observability:** structured, leveled logging and counters (dropped records, resync count, latency histograms) for field diagnosis — opt-in and **privacy-respecting** (no announced content logged by default).
 - **Reproducible builds:** pinned dependencies and **versioned models/voices**.
+- **Run summaries:** CI publishes results so a run's health reads at a glance — each test job writes a pass/fail/skip table to the run **Summary**, and a **single live-updating PR comment** per run shows a **test ✕ job matrix** (per-job counts, a failures table, and a collapsible full matrix). The comment is maintained by the bundled TypeScript **`test-matrix`** action (`.github/actions/test-matrix`, fed by `ctest --output-junit` from `just test`); the SonarCloud quality gate + new-code coverage arrive via SonarCloud's PR decoration.
 
 #### 8.6.8 Dogfooding with target users — the real acceptance test
 

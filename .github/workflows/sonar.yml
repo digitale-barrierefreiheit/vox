@@ -48,4 +48,15 @@ jobs:
         timeout-minutes: 10
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      # Surface the gate in the run Summary; the full gate + new-code coverage are on the
+      # SonarCloud PR decoration (a check + comment posted automatically).
+      - name: Quality gate summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## 🔍 SonarQube"
+            echo "Quality gate: see the **SonarQube** status check. New-code coverage and issues:"
+            echo "[SonarCloud dashboard](https://sonarcloud.io/summary/new_code?id=vox)."
+          } >> "$GITHUB_STEP_SUMMARY"
 

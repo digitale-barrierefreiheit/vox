@@ -61,8 +61,9 @@ build preset=build_preset:
     cmake --build --preset {{preset}}
 
 # ✅ Run the tests [preset] (integration tests self-skip without hardware).
+# Emits JUnit (test-results.xml) for CI's run-summary / PR-comment reporter (#65).
 test preset=test_preset: (build preset)
-    ctest --preset {{preset}}
+    ctest --preset {{preset}} --output-junit {{root}}/test-results.xml
 
 # Pins clang-18 + clang-tidy-18 to match CI; VCPKG_ROOT falls back to
 # ~/.local/share/vcpkg for non-interactive WSL invocations (expanded by Linux sh, so

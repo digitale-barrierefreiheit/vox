@@ -39,6 +39,24 @@ jobs:
         run: python3 tools/run-clang-format.py --check --clang-format clang-format-18
 
   # ---------------------------------------------------------------------------
+  # Test-results matrix (#65). Post the per-run PR comment at the start of the run; each
+  # test job below folds in its column as it finishes (.github/actions/test-matrix). A new
+  # run id gets a fresh comment.
+  # ---------------------------------------------------------------------------
+  test-comment-init:
+    name: test-results comment
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/test-matrix
+        with:
+          mode: init
+
+  # ---------------------------------------------------------------------------
   # Shipping toolchain: MSVC, static CRT, 64-bit and 32-bit (R12 wire layout).
   # Both arches install the VB-CABLE virtual audio device and run the WASAPI render
   # integration test with VOX_REQUIRE_AUDIO_DEVICE=1 (ADR-10), so a missing or
@@ -50,6 +68,9 @@ jobs:
   windows:
     name: windows-${{ matrix.arch }}-msvc
     runs-on: windows-2025
+    permissions:
+      contents: read
+      pull-requests: write
     strategy:
       fail-fast: false
       matrix:
@@ -83,6 +104,12 @@ jobs:
         env:
           VOX_REQUIRE_AUDIO_DEVICE: "1"
         run: just test ${{ matrix.test_preset }}
+      - name: Report test results
+        if: always()
+        uses: ./.github/actions/test-matrix
+        with:
+          mode: report
+          job: ${{ matrix.arch }}
 
   # ---------------------------------------------------------------------------
   # German speech integration (ADR-07) + audio. Augments an x64 runner with the
@@ -96,6 +123,9 @@ jobs:
   windows-de-DE:
     name: windows-x64-msvc-de-DE
     runs-on: windows-2025
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v6
       - uses: lukka/get-cmake@591817e96fcad43505fb4eae36172462abb3a42e # v4.3.3
@@ -144,6 +174,12 @@ jobs:
           VOX_REQUIRE_GERMAN_VOICE: "1"
           VOX_REQUIRE_AUDIO_DEVICE: "1"
         run: just test x64-msvc-release
+      - name: Report test results
+        if: always()
+        uses: ./.github/actions/test-matrix
+        with:
+          mode: report
+          job: de-DE
 
   # ---------------------------------------------------------------------------
   # Static analysis: clang-tidy over the compile database (incl. Core Guidelines).
@@ -178,6 +214,9 @@ jobs:
   sanitizers:
     name: linux-clang-${{ matrix.sanitizer }}
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
     strategy:
       fail-fast: false
       matrix:
@@ -199,3 +238,36 @@ jobs:
       # `just test` depends on `build`, so this single step builds and runs the suite.
       - name: Build + test
         run: just test linux-clang-${{ matrix.sanitizer }}
+      - name: Report test results
+        if: always()
+        uses: ./.github/actions/test-matrix
+        with:
+          mode: report
+          job: ${{ matrix.sanitizer }}
+
+  # ---------------------------------------------------------------------------
+  # The test-matrix action is TypeScript bundled with ncc — type-check it, run its unit
+  # tests, and verify the committed dist/ is in sync with src/ (rebuild + diff).
+  # ---------------------------------------------------------------------------
+  test-matrix-action:
+    name: test-matrix action (build + dist sync)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: .github/actions/test-matrix
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - name: Type-check + unit tests
+        run: npx tsc --noEmit && npm test
+      - name: Rebuild bundle and verify dist/ is up to date
+        run: |
+          npm run build
+          if ! git diff --quiet -- dist; then
+            echo "::error::.github/actions/test-matrix/dist is stale — run 'npm run build' there and commit it."
+            git --no-pager diff --stat -- dist
+            exit 1
+          fi

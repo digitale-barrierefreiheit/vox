@@ -80,6 +80,18 @@ HRESULT effectiveError(HRESULT hr) {
   return FAILED(hr) ? hr : E_POINTER;
 }
 
+/// Owns a device mix format's CoTaskMem allocation, freed on every exit path.
+using MixFormat = std::unique_ptr<WAVEFORMATEX, decltype(&::CoTaskMemFree)>;
+
+/// Throws DeviceError carrying the native code when a device call failed or left
+/// its out-param empty. Collapsing the repeated "check HRESULT (and null) then
+/// throw" lets acquireDevice() read as a flat sequence of steps.
+void throwOnFailure(HRESULT hr, const char* message, bool gotOutput = true) {
+  if (FAILED(hr) || !gotOutput) {
+    throw DeviceError(static_cast<std::uint32_t>(effectiveError(hr)), message);
+  }
+}
+
 /// Ring capacity as a fraction of a second of device audio — enough to absorb
 /// synthesis bursts without adding noticeable latency.
 constexpr double RingSeconds = 0.5;
@@ -315,70 +327,73 @@ public:
 
 private:
   void acquireDevice() {
-    if (const HRESULT hr = createDeviceEnumerator(enumerator_.ReleaseAndGetAddressOf());
-        FAILED(hr) || !enumerator_) {
-      throw DeviceError(static_cast<std::uint32_t>(effectiveError(hr)),
-                        "WasapiAudioSink: cannot create device enumerator");
-    }
-    if (const HRESULT hr = enumerator_->GetDefaultAudioEndpoint(eRender, eConsole, &device_);
-        FAILED(hr) || !device_) {
-      throw DeviceError(static_cast<std::uint32_t>(effectiveError(hr)),
-                        "WasapiAudioSink: no default render device");
-    }
-    if (const HRESULT hr = device_->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
-                                             reinterpret_cast<void**>(audioClient_.GetAddressOf()));
-        FAILED(hr)) {
-      throw DeviceError(static_cast<std::uint32_t>(hr),
-                        "WasapiAudioSink: cannot activate the audio client");
-    }
+    activateAudioClient();
+    initializeStream();
+  }
 
-    WAVEFORMATEX* rawMixFormat = nullptr;
-    if (const HRESULT hr = audioClient_->GetMixFormat(&rawMixFormat);
-        FAILED(hr) || rawMixFormat == nullptr) {
-      throw DeviceError(static_cast<std::uint32_t>(effectiveError(hr)),
-                        "WasapiAudioSink: cannot read the device mix format");
-    }
-    // Own the CoTaskMem allocation so it is freed on every path, including the
-    // throwing ones below (detectSampleFormat / converter construction).
-    const std::unique_ptr<WAVEFORMATEX, decltype(&::CoTaskMemFree)> mixFormat(rawMixFormat,
-                                                                              &::CoTaskMemFree);
+  /// device enumerator -> default render endpoint -> activated IAudioClient.
+  void activateAudioClient() {
+    // Sequence the call before its null-check: argument-evaluation order is
+    // unspecified, so the out-param must be inspected after the call returns.
+    const HRESULT enumHr = createDeviceEnumerator(enumerator_.ReleaseAndGetAddressOf());
+    throwOnFailure(enumHr, "WasapiAudioSink: cannot create device enumerator",
+                   enumerator_ != nullptr);
 
-    const SampleFormat sampleFormat = detectSampleFormat(*mixFormat);
-    if (mixFormat->nSamplesPerSec == 0U || mixFormat->nChannels == 0U ||
-        mixFormat->nBlockAlign == 0U) {
-      // Guard the converter's and ring's preconditions so start() only ever
-      // throws DeviceError, never std::invalid_argument from them.
+    const HRESULT endpointHr = enumerator_->GetDefaultAudioEndpoint(eRender, eConsole, &device_);
+    throwOnFailure(endpointHr, "WasapiAudioSink: no default render device", device_ != nullptr);
+
+    throwOnFailure(device_->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
+                                     reinterpret_cast<void**>(audioClient_.GetAddressOf())),
+                   "WasapiAudioSink: cannot activate the audio client");
+  }
+
+  /// Builds the converter for the device mix format, then starts the event-driven
+  /// stream and the ring.
+  void initializeStream() {
+    const MixFormat mixFormat = readMixFormat();
+    configureConverter(*mixFormat);
+    startEventDrivenClient(*mixFormat);
+    ring_ = std::make_unique<PcmRing>(ringCapacityBytes());
+  }
+
+  /// The device mix format, owned so it is freed on every (incl. throwing) path.
+  MixFormat readMixFormat() {
+    WAVEFORMATEX* raw = nullptr;
+    const HRESULT hr = audioClient_->GetMixFormat(&raw); // sequence before the null-check
+    throwOnFailure(hr, "WasapiAudioSink: cannot read the device mix format", raw != nullptr);
+    return MixFormat(raw, &::CoTaskMemFree);
+  }
+
+  /// Detects the sample encoding, guards the format's preconditions, and builds
+  /// the PCM converter (so start() only ever throws DeviceError).
+  void configureConverter(const WAVEFORMATEX& mixFormat) {
+    const SampleFormat sampleFormat = detectSampleFormat(mixFormat);
+    const bool formatIsUsable =
+        mixFormat.nSamplesPerSec != 0U && mixFormat.nChannels != 0U && mixFormat.nBlockAlign != 0U;
+    if (!formatIsUsable) {
       throw DeviceError("WasapiAudioSink: invalid device mix format");
     }
-    frameBytes_ = mixFormat->nBlockAlign;
-    converter_.emplace(sourceFormat_, mixFormat->nSamplesPerSec, mixFormat->nChannels,
-                       sampleFormat);
+    frameBytes_ = mixFormat.nBlockAlign;
+    converter_.emplace(sourceFormat_, mixFormat.nSamplesPerSec, mixFormat.nChannels, sampleFormat);
+  }
 
-    if (const HRESULT hr =
-            audioClient_->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK, 0,
-                                     0, mixFormat.get(), nullptr);
-        FAILED(hr)) {
-      throw DeviceError(static_cast<std::uint32_t>(hr),
-                        "WasapiAudioSink: IAudioClient::Initialize failed");
-    }
-
+  /// Initializes the shared-mode, event-driven stream and fetches the render
+  /// client used by the render thread.
+  void startEventDrivenClient(const WAVEFORMATEX& mixFormat) {
+    throwOnFailure(audioClient_->Initialize(AUDCLNT_SHAREMODE_SHARED,
+                                            AUDCLNT_STREAMFLAGS_EVENTCALLBACK, 0, 0, &mixFormat,
+                                            nullptr),
+                   "WasapiAudioSink: IAudioClient::Initialize failed");
     audioEvent_ = ::CreateEventW(nullptr, FALSE, FALSE, nullptr);
     if (audioEvent_ == nullptr) {
       throw DeviceError(::GetLastError(), "WasapiAudioSink: cannot create the render event");
     }
-    if (const HRESULT hr = audioClient_->SetEventHandle(audioEvent_); FAILED(hr)) {
-      throw DeviceError(static_cast<std::uint32_t>(hr),
-                        "WasapiAudioSink: cannot set the render event handle");
-    }
-    if (const HRESULT hr = audioClient_->GetBufferSize(&bufferFrameCount_); FAILED(hr)) {
-      throw DeviceError(static_cast<std::uint32_t>(hr),
-                        "WasapiAudioSink: cannot get the buffer size");
-    }
-    if (const HRESULT hr = audioClient_->GetService(IID_PPV_ARGS(&renderClient_)); FAILED(hr)) {
-      throw DeviceError(static_cast<std::uint32_t>(hr),
-                        "WasapiAudioSink: cannot get the render client");
-    }
-    ring_ = std::make_unique<PcmRing>(ringCapacityBytes());
+    throwOnFailure(audioClient_->SetEventHandle(audioEvent_),
+                   "WasapiAudioSink: cannot set the render event handle");
+    throwOnFailure(audioClient_->GetBufferSize(&bufferFrameCount_),
+                   "WasapiAudioSink: cannot get the buffer size");
+    throwOnFailure(audioClient_->GetService(IID_PPV_ARGS(&renderClient_)),
+                   "WasapiAudioSink: cannot get the render client");
   }
 
   /// Ring capacity in bytes. Sizing is a smoothness knob, not a correctness one:
@@ -433,22 +448,12 @@ private:
       if (waited != WAIT_OBJECT_0) {
         continue; // timed out — loop back and re-check the stop flag
       }
-      if (flushRequested_.load(std::memory_order_acquire)) {
-        const HRESULT stopped = audioClient_->Stop();
-        const HRESULT reset = audioClient_->Reset();
-        ring_->clear();
-        const HRESULT restarted = audioClient_->Start();
-        // Clear the flag only after the ring is emptied, so a producer waiting
-        // on it cannot push fresh audio that this clear would then drop.
-        flushRequested_.store(false, std::memory_order_release);
-        if (FAILED(stopped) || FAILED(reset) || FAILED(restarted)) {
-          // The stream is wedged; set stop so the loop condition exits on the
-          // next check, skipping renderAvailable() on the wedged stream. The flag
-          // is already cleared, so a blocked producer (which also checks
-          // stopRequested_) is released rather than left hanging.
-          stopRequested_.store(true, std::memory_order_release);
-          continue;
-        }
+      if (flushRequested_.load(std::memory_order_acquire) && !serviceFlush()) {
+        // The stream is wedged; set stop so the loop exits on the next check,
+        // skipping renderAvailable() on it. The flush flag is already cleared, so
+        // a blocked producer (which also checks stopRequested_) is released.
+        stopRequested_.store(true, std::memory_order_release);
+        continue;
       }
       renderAvailable();
     }
@@ -456,6 +461,19 @@ private:
     if (mmcss != nullptr) {
       ::AvRevertMmThreadCharacteristics(mmcss);
     }
+  }
+
+  /// Services a pending flush: stop the stream, drop buffered audio, restart.
+  /// Returns false if the stream is wedged (a Stop/Reset/Start failed) so the
+  /// render loop can give up. Clears the flush flag only after the ring is
+  /// emptied, so a producer waiting on it cannot push audio this clear would drop.
+  bool serviceFlush() {
+    const HRESULT stopped = audioClient_->Stop();
+    const HRESULT reset = audioClient_->Reset();
+    ring_->clear();
+    const HRESULT restarted = audioClient_->Start();
+    flushRequested_.store(false, std::memory_order_release);
+    return SUCCEEDED(stopped) && SUCCEEDED(reset) && SUCCEEDED(restarted);
   }
 
   void renderAvailable() {

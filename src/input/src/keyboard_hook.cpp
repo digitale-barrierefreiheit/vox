@@ -88,15 +88,14 @@ KeyModifiers currentModifiers() {
 
 namespace detail {
 
-bool dispatchLowLevelKey(std::uintptr_t message, std::uint32_t vkCode, std::uint32_t flags,
-                         KeyModifiers modifiers, std::array<bool, 256>& consumed,
+bool dispatchLowLevelKey(const LowLevelKey& key, std::array<bool, 256>& consumed,
                          const CommandMap& map, ICommandHandler& handler) {
-  const bool pressed = (message == WM_KEYDOWN || message == WM_SYSKEYDOWN);
-  const std::size_t vk = vkCode & 0xFFU; // vkCode is 1..254
-  const KeyEvent event{.virtualKey = vkCode,
-                       .modifiers = modifiers,
+  const bool pressed = (key.message == WM_KEYDOWN || key.message == WM_SYSKEYDOWN);
+  const std::size_t vk = key.vkCode & 0xFFU; // vkCode is 1..254
+  const KeyEvent event{.virtualKey = key.vkCode,
+                       .modifiers = key.modifiers,
                        .pressed = pressed,
-                       .injected = (flags & LLKHF_INJECTED) != 0U};
+                       .injected = (key.flags & LLKHF_INJECTED) != 0U};
   return processKey(pressed, vk, event, consumed, map, handler) == HookAction::Consume;
 }
 
@@ -238,9 +237,11 @@ private:
     if (Impl* self = active_.load(std::memory_order_acquire);
         code == HC_ACTION && self != nullptr) {
       const auto* info = reinterpret_cast<const KBDLLHOOKSTRUCT*>(lParam);
-      if (detail::dispatchLowLevelKey(static_cast<std::uintptr_t>(wParam), info->vkCode,
-                                      info->flags, currentModifiers(), self->consumed_, self->map_,
-                                      self->handler_)) {
+      const detail::LowLevelKey key{.message = static_cast<std::uintptr_t>(wParam),
+                                    .vkCode = static_cast<std::uint32_t>(info->vkCode),
+                                    .flags = static_cast<std::uint32_t>(info->flags),
+                                    .modifiers = currentModifiers()};
+      if (detail::dispatchLowLevelKey(key, self->consumed_, self->map_, self->handler_)) {
         return 1; // hide the key from the foreground app
       }
     }

@@ -49,17 +49,21 @@ HookAction processKey(bool pressed, std::size_t vk, const KeyEvent& event,
                       std::array<bool, 256>& consumed, const CommandMap& map,
                       ICommandHandler& handler);
 
+/// The decoded fields of one WH_KEYBOARD_LL event, bundled so the dispatch entry
+/// point takes few arguments. Integer types keep this Windows-header-free.
+struct LowLevelKey {
+  std::uintptr_t message; ///< WM_KEYDOWN / WM_SYSKEYDOWN / WM_KEYUP / WM_SYSKEYUP
+  std::uint32_t vkCode;   ///< virtual-key code
+  std::uint32_t flags;    ///< carries LLKHF_INJECTED
+  KeyModifiers modifiers; ///< the live Shift/Control/Alt/Win state
+};
+
 /// @brief The hook callback's translation step, factored out of the Win32
 ///        `hookProc` so it is testable with no real hook. Builds a KeyEvent from
-///        the raw WH_KEYBOARD_LL fields — @p message is WM_KEYDOWN /
-///        WM_SYSKEYDOWN / WM_KEYUP / WM_SYSKEYUP, @p flags carries LLKHF_INJECTED
-///        — plus the live @p modifiers, routes it via processKey(), and reports
-///        whether the key should be consumed (hidden from the foreground app).
-///        Integer parameter types keep this declaration Windows-header-free.
-[[nodiscard]] bool dispatchLowLevelKey(std::uintptr_t message, std::uint32_t vkCode,
-                                       std::uint32_t flags, KeyModifiers modifiers,
-                                       std::array<bool, 256>& consumed, const CommandMap& map,
-                                       ICommandHandler& handler);
+///        @p key, routes it via processKey(), and reports whether the key should
+///        be consumed (hidden from the foreground app).
+[[nodiscard]] bool dispatchLowLevelKey(const LowLevelKey& key, std::array<bool, 256>& consumed,
+                                       const CommandMap& map, ICommandHandler& handler);
 
 } // namespace detail
 

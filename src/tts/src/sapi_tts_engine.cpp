@@ -382,49 +382,75 @@ private:
     // Classic SAPI5 voices only (SPCAT_VOICES). Voices installed through the
     // modern language features register under Speech_OneCore and are not seen
     // here; discovering those is tracked in #52.
-    ComPtr<ISpObjectTokenCategory> category;
-    if (FAILED(createTokenCategory(category.ReleaseAndGetAddressOf())) || !category ||
-        FAILED(category->SetId(SPCAT_VOICES, FALSE))) {
+    const ComPtr<ISpObjectTokenCategory> category = openVoiceCategory();
+    if (!category) {
       return;
     }
-
-    std::wstring defaultId;
-    if (LPWSTR rawDefaultId = nullptr;
-        SUCCEEDED(category->GetDefaultTokenId(&rawDefaultId)) && rawDefaultId != nullptr) {
-      defaultId = rawDefaultId;
-      ::CoTaskMemFree(rawDefaultId);
-    }
+    const std::wstring defaultId = readDefaultTokenId(*category.Get());
 
     ComPtr<IEnumSpObjectTokens> tokens;
     if (FAILED(category->EnumTokens(nullptr, nullptr, &tokens)) || !tokens) {
       return;
     }
-
-    for (;;) {
-      ComPtr<ISpObjectToken> token;
-      if (ULONG fetched = 0; tokens->Next(1, &token, &fetched) != S_OK || fetched != 1 || !token) {
-        break;
-      }
-
-      LPWSTR rawId = nullptr;
-      if (FAILED(token->GetId(&rawId)) || rawId == nullptr) {
-        continue;
-      }
-      const std::wstring wideId(rawId);
-      ::CoTaskMemFree(rawId);
-
-      VoiceDescriptor descriptor;
-      descriptor.id = toUtf8(wideId.c_str());
-      descriptor.name = toUtf8(readAttribute(token.Get(), L"Name").c_str());
-      descriptor.isGerman = languageIsGerman(readAttribute(token.Get(), L"Language"));
-      descriptor.isDefault = !defaultId.empty() && wideId == defaultId;
-      if (descriptor.id.empty()) {
-        continue;
-      }
-
-      idToToken_.try_emplace(descriptor.id, token);
-      descriptors_.push_back(std::move(descriptor));
+    for (ComPtr<ISpObjectToken> token = nextToken(tokens.Get()); token;
+         token = nextToken(tokens.Get())) {
+      addVoice(token, defaultId);
     }
+  }
+
+  /// Opens the classic SAPI5 voice category (SPCAT_VOICES), or null if it is
+  /// unavailable.
+  ComPtr<ISpObjectTokenCategory> openVoiceCategory() {
+    ComPtr<ISpObjectTokenCategory> category;
+    const HRESULT created = createTokenCategory(category.ReleaseAndGetAddressOf());
+    if (FAILED(created) || !category) {
+      return nullptr;
+    }
+    if (FAILED(category->SetId(SPCAT_VOICES, FALSE))) {
+      return nullptr;
+    }
+    return category;
+  }
+
+  /// The id of the category's default voice token (empty if there is none).
+  static std::wstring readDefaultTokenId(ISpObjectTokenCategory& category) {
+    std::wstring defaultId;
+    if (LPWSTR raw = nullptr; SUCCEEDED(category.GetDefaultTokenId(&raw)) && raw != nullptr) {
+      defaultId = raw;
+      ::CoTaskMemFree(raw);
+    }
+    return defaultId;
+  }
+
+  /// The next token in the enumeration, or null at the end.
+  static ComPtr<ISpObjectToken> nextToken(IEnumSpObjectTokens* tokens) {
+    ComPtr<ISpObjectToken> token;
+    if (ULONG fetched = 0; tokens->Next(1, &token, &fetched) != S_OK || fetched != 1) {
+      return nullptr;
+    }
+    return token;
+  }
+
+  /// Reads @p token into the voice tables; skips a token whose id cannot be read
+  /// or is empty.
+  void addVoice(const ComPtr<ISpObjectToken>& token, const std::wstring& defaultId) {
+    LPWSTR rawId = nullptr;
+    if (FAILED(token->GetId(&rawId)) || rawId == nullptr) {
+      return;
+    }
+    const std::wstring wideId(rawId);
+    ::CoTaskMemFree(rawId);
+
+    VoiceDescriptor descriptor;
+    descriptor.id = toUtf8(wideId.c_str());
+    descriptor.name = toUtf8(readAttribute(token.Get(), L"Name").c_str());
+    descriptor.isGerman = languageIsGerman(readAttribute(token.Get(), L"Language"));
+    descriptor.isDefault = !defaultId.empty() && wideId == defaultId;
+    if (descriptor.id.empty()) {
+      return;
+    }
+    idToToken_.try_emplace(descriptor.id, token);
+    descriptors_.push_back(std::move(descriptor));
   }
 
   ComApartment com_; // first member: initialized first, uninitialized last

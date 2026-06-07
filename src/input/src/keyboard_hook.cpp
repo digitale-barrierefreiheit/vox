@@ -7,6 +7,7 @@
 #  include <atomic>
 #  include <cstddef>
 #  include <cstdint>
+#  include <functional>
 #  include <future>
 #  include <string>
 #  include <thread>
@@ -17,6 +18,7 @@
 #  include <vox/input/errors.hpp>
 #  include <vox/input/key_event.hpp>
 #  include <vox/input/keyboard_hook.hpp>
+#  include <vox/input/keyboard_test_seam.hpp>
 
 #  define WIN32_LEAN_AND_MEAN
 #  define NOMINMAX
@@ -39,7 +41,86 @@ KeyModifiers currentModifiers() {
                       .win = held(VK_LWIN) || held(VK_RWIN)};
 }
 
+/// Test seam (issue #68): the installed override, if any, replaces the
+/// SetWindowsHookEx call so start()/stop() are unit-tested with no real hook.
+/// Empty in production.
+std::function<bool()>& installHookOverride() {
+  static std::function<bool()> installer;
+  return installer;
+}
+
+/// The outcome of an install: the real handle (null for a test override) and
+/// whether it succeeded. Keeping them separate means a fake install needs no
+/// fabricated handle (no void* / reinterpret_cast), and teardown unhooks only a
+/// real, non-null handle.
+struct HookInstall {
+  HHOOK handle{nullptr};
+  bool installed{false};
+  DWORD error{0}; ///< GetLastError() from a real install failure; 0 for a fake.
+};
+
+/// Installs the low-level keyboard hook — via the test override when one is set,
+/// otherwise the real SetWindowsHookEx. @p proc is templated (not a HOOKPROC
+/// parameter) so the only function-pointer type is SetWindowsHookEx's own.
+template<typename HookProc>
+HookInstall installLowLevelHook(HookProc proc) {
+  if (const auto& installer = installHookOverride()) {
+    // Fake install: no Win32 call, so there is no GetLastError to report.
+    return {nullptr, installer(), 0};
+  }
+  HHOOK handle = ::SetWindowsHookExW(WH_KEYBOARD_LL, proc, ::GetModuleHandleW(nullptr), 0);
+  const DWORD error = handle != nullptr ? 0U : ::GetLastError(); // capture before it is clobbered
+  return {handle, handle != nullptr, error};
+}
+
+/// Runs the calling thread's message loop until it receives WM_QUIT. A
+/// WH_KEYBOARD_LL hook only fires while its installing thread pumps messages.
+void pumpMessages() {
+  MSG message{};
+  while (::GetMessageW(&message, nullptr, 0, 0) > 0) {
+    ::TranslateMessage(&message);
+    ::DispatchMessageW(&message);
+  }
+}
+
 } // namespace
+
+namespace detail {
+
+HookAction processKey(bool pressed, std::size_t vk, const KeyEvent& event,
+                      std::array<bool, 256>& consumed, const CommandMap& map,
+                      ICommandHandler& handler) {
+  using enum HookAction;
+  if (pressed) {
+    if (consumed[vk]) {
+      return Consume; // auto-repeat of a key we are consuming: swallow
+    }
+    bool consume = false;
+    try {
+      consume = routeKeyEvent(event, map, handler);
+    } catch (...) {
+      consume = false; // a throwing handler must not cross the Win32 boundary
+    }
+    if (consume) {
+      consumed[vk] = true; // remember so we also swallow this key's key-up
+      return Consume;
+    }
+    return PassThrough;
+  }
+  if (consumed[vk]) {
+    consumed[vk] = false;
+    return Consume; // swallow the key-up of a key whose key-down we consumed
+  }
+  return PassThrough;
+}
+
+} // namespace detail
+
+namespace testing {
+void setInstallHookOverride(InstallHookOverride installer) {
+  installHookOverride() = std::move(installer);
+}
+} // namespace testing
 
 class KeyboardHook::Impl {
 public:
@@ -113,19 +194,16 @@ private:
         signalReady();
         return; // not ours — leave active_ and skip teardown below
       }
-      hook_ = ::SetWindowsHookExW(WH_KEYBOARD_LL, &Impl::hookProc, ::GetModuleHandleW(nullptr), 0);
-      if (hook_ == nullptr) {
-        lastError_ = ::GetLastError();
+      const HookInstall install = installLowLevelHook(&Impl::hookProc);
+      hook_ = install.handle; // null for a test override
+      if (!install.installed) {
+        lastError_ = install.error; // 0 for a fake failure, GetLastError() for a real one
         error_ = "KeyboardHook: SetWindowsHookEx failed";
       }
       signalReady();
 
-      if (hook_ != nullptr) {
-        MSG message{};
-        while (::GetMessageW(&message, nullptr, 0, 0) > 0) {
-          ::TranslateMessage(&message);
-          ::DispatchMessageW(&message);
-        }
+      if (install.installed) {
+        pumpMessages(); // returns on the WM_QUIT that stop() posts
       }
     } catch (...) {
       if (error_.empty()) {
@@ -134,6 +212,7 @@ private:
       signalReady();
     }
     // Tear down only what this thread owns (active_ == this only after our CAS).
+    // A test override produces a null handle, so this naturally skips it.
     if (hook_ != nullptr) {
       ::UnhookWindowsHookEx(hook_);
       hook_ = nullptr;
@@ -148,27 +227,13 @@ private:
       const auto* info = reinterpret_cast<const KBDLLHOOKSTRUCT*>(lParam);
       const bool pressed = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
       const std::size_t vk = info->vkCode & 0xFFU; // vkCode is 1..254
-      if (pressed) {
-        if (self->consumed_[vk]) {
-          return 1; // auto-repeat of a key we are consuming: swallow, do not re-dispatch
-        }
-        const KeyEvent event{.virtualKey = static_cast<std::uint32_t>(info->vkCode),
-                             .modifiers = currentModifiers(),
-                             .pressed = true,
-                             .injected = (info->flags & LLKHF_INJECTED) != 0U};
-        bool consume = false;
-        try {
-          consume = routeKeyEvent(event, self->map_, self->handler_);
-        } catch (...) {
-          consume = false; // a throwing handler must not cross the Win32 boundary
-        }
-        if (consume) {
-          self->consumed_[vk] = true; // remember so we also swallow this key's key-up
-          return 1;                   // consumed (reader-control key) — hide it from the app
-        }
-      } else if (self->consumed_[vk]) {
-        self->consumed_[vk] = false;
-        return 1; // swallow the key-up of a key whose key-down we consumed
+      const KeyEvent event{.virtualKey = static_cast<std::uint32_t>(info->vkCode),
+                           .modifiers = currentModifiers(),
+                           .pressed = pressed,
+                           .injected = (info->flags & LLKHF_INJECTED) != 0U};
+      if (detail::processKey(pressed, vk, event, self->consumed_, self->map_, self->handler_) ==
+          HookAction::Consume) {
+        return 1; // hide the key from the foreground app
       }
     }
     return ::CallNextHookEx(nullptr, code, wParam, lParam);

@@ -8,11 +8,13 @@
 /// `UiaElementData` and handed to the pure `mapElement()`. All HRESULTs are
 /// checked so a missing property/pattern degrades to "absent" rather than
 /// crashing.
+#include <functional>
 #include <optional>
 #include <string>
 #include <utility>
 
 #include <vox/provider/uia_provider.hpp>
+#include <vox/provider/uia_test_seam.hpp>
 
 // The Windows UIA headers are include-order sensitive (windows.h must lead), so
 // this block is exempt from clang-format's include sorting.
@@ -37,6 +39,23 @@ namespace vox::provider {
 namespace {
 
 using Microsoft::WRL::ComPtr;
+
+/// Test seam (issue #68): the installed factory, if any, replaces CoCreateInstance
+/// for the UI Automation client so the provider's extraction and focus-event
+/// paths are unit-tested with mock COM. Empty in production.
+std::function<long(IUIAutomation**)>& automationFactory() {
+  static std::function<long(IUIAutomation**)> factory;
+  return factory;
+}
+
+/// Creates the UI Automation client — via the test factory when one is installed,
+/// otherwise the real CoCreateInstance.
+HRESULT createAutomation(IUIAutomation** out) {
+  if (const auto& factory = automationFactory()) {
+    return static_cast<HRESULT>(factory(out));
+  }
+  return ::CoCreateInstance(CLSID_CUIAutomation, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(out));
+}
 
 /// Converts a UTF-16 BSTR to a UTF-8 std::string (empty for null/empty input).
 std::string toUtf8(BSTR text) {
@@ -168,12 +187,17 @@ private:
 
 } // namespace
 
+namespace testing {
+void setAutomationFactory(AutomationFactory factory) {
+  automationFactory() = std::move(factory);
+}
+} // namespace testing
+
 class UiaProvider::Impl {
 public:
   Impl() {
     comInitialized_ = SUCCEEDED(::CoInitializeEx(nullptr, COINIT_MULTITHREADED));
-    if (FAILED(::CoCreateInstance(CLSID_CUIAutomation, nullptr, CLSCTX_INPROC_SERVER,
-                                  IID_PPV_ARGS(&automation_)))) {
+    if (FAILED(createAutomation(automation_.ReleaseAndGetAddressOf())) || !automation_) {
       automation_.Reset();
       return;
     }

@@ -2,45 +2,32 @@
 // SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
 
 /// @file
-/// @brief The Vox MVP reader executable: constructs the real Windows
-///        implementations, wires them into the portable Reader, and runs.
+/// @brief The Vox MVP reader executable: the thin entry point.
+///
+/// Behaviour lives in the testable `vox::app::App` (the run-loop) and
+/// `makeDefaultDependencies()` (the composition root). `main` only builds the
+/// App and runs it, mapping a fatal startup failure (e.g. no SAPI voice) to a
+/// non-zero exit — the one piece App::run() cannot cover, since it catches only
+/// what happens after construction.
 
 #if defined(_WIN32)
 
 #  include <exception>
 #  include <iostream>
-#  include <utility>
 
-#  include <vox/app/reader.hpp>
-#  include <vox/audio/wasapi_audio_sink.hpp>
-#  include <vox/german/de_lex_data.hpp>
-#  include <vox/german/lexicon.hpp>
-#  include <vox/input/keyboard_hook.hpp>
-#  include <vox/output/output_manager.hpp>
-#  include <vox/provider/uia_provider.hpp>
-#  include <vox/tts/sapi_tts_engine.hpp>
+#  include <vox/app/app.hpp>
+#  include <vox/app/default_app.hpp>
 
 int main() {
   try {
-    vox::provider::UiaProvider provider;
-    vox::tts::SapiTtsEngine tts; // prefer German, fall back to the system voice
-    vox::audio::WasapiAudioSink audio(tts.format());
-    vox::output::OutputManager output(
-        vox::german::Lexicon::parse(vox::german::DefaultGermanLexiconData));
-
-    vox::app::Reader reader(provider, tts, audio, std::move(output));
-    vox::input::KeyboardHook hook(reader);
-
-    reader.start();
-    hook.start();
-    reader.waitForExit(); // until Ctrl+Shift+Q
-
-    // Tear down off the hook callback, in dependency order.
-    hook.stop();
-    reader.stop();
-    return 0;
+    return vox::app::App{vox::app::makeDefaultDependencies()}.run();
   } catch (const std::exception& error) {
     std::cerr << "vox: fatal error: " << error.what() << '\n';
+    return 1;
+  } catch (...) {
+    // Top-level boundary for construction failures (before App::run()'s own
+    // firewall); a non-std exception must map to exit 1, not terminate.
+    std::cerr << "vox: fatal error: unknown exception\n";
     return 1;
   }
 }

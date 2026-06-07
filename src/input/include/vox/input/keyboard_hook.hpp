@@ -22,6 +22,7 @@
 #  include <memory>
 
 #  include <vox/input/command_map.hpp>
+#  include <vox/input/iinput_hook.hpp>
 
 namespace vox::input {
 
@@ -32,12 +33,12 @@ class ICommandHandler;
 /// @note `start()`/`stop()` are not thread-safe with respect to each other;
 ///       drive the lifecycle from a single thread. `stop()` is idempotent and
 ///       runs in the destructor.
-class KeyboardHook {
+class KeyboardHook : public IInputHook {
 public:
   /// @brief Builds a hook that delivers commands to @p handler using @p map.
   ///        Installs nothing until `start()`. @p handler must outlive the hook.
   explicit KeyboardHook(ICommandHandler& handler, CommandMap map = {});
-  ~KeyboardHook();
+  ~KeyboardHook() override;
 
   KeyboardHook(const KeyboardHook&) = delete;
   KeyboardHook& operator=(const KeyboardHook&) = delete;
@@ -46,10 +47,10 @@ public:
 
   /// @brief Installs the hook on a dedicated message-pump thread.
   /// @throws vox::input::HookError if a hook is already active or installation fails.
-  void start();
+  void start() override;
 
   /// @brief Removes the hook and joins its thread. Idempotent.
-  void stop();
+  void stop() override;
 
 private:
   class Impl;

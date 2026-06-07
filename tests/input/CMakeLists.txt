@@ -11,6 +11,20 @@ vox_add_test(
 set_target_properties(input_test PROPERTIES FOLDER "tests")
 
 if(WIN32)
+  # Unit tests for the keyboard hook's per-key decision and start/stop lifecycle,
+  # driven through the #68 test seams with no real WH_KEYBOARD_LL install, so they
+  # run everywhere (incl. the coverage job).
+  add_executable(input_keyboard_hook_test keyboard_hook_test.cpp)
+  vox_configure_target(input_keyboard_hook_test)
+  target_link_libraries(input_keyboard_hook_test PRIVATE
+    vox::input
+    GTest::gtest
+    GTest::gtest_main)
+  gtest_discover_tests(input_keyboard_hook_test
+    PROPERTIES LABELS "unit"
+    DISCOVERY_MODE PRE_TEST)
+  set_target_properties(input_keyboard_hook_test PROPERTIES FOLDER "tests")
+
   # Integration test driving the real WH_KEYBOARD_LL hook via SendInput.
   # Labelled "integration"; it skips when the desktop cannot host an LL hook
   # (and fails instead when VOX_REQUIRE_INPUT_HOOK=1, i.e. on the CI input job).

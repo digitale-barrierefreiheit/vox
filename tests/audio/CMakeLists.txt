@@ -18,6 +18,22 @@ vox_add_test(
 set_target_properties(audio_test PROPERTIES FOLDER "tests")
 
 if(WIN32)
+  # Unit tests for the WASAPI sink's device-acquisition error handling, driven
+  # through the #68 test seam with mock COM — no real device, so they run
+  # everywhere (incl. the coverage job) and fault-inject the failure paths.
+  add_executable(audio_wasapi_test wasapi_audio_sink_test.cpp)
+  vox_configure_target(audio_wasapi_test)
+  target_link_libraries(audio_wasapi_test PRIVATE
+    vox::audio
+    Threads::Threads
+    GTest::gtest
+    GTest::gmock
+    GTest::gtest_main)
+  gtest_discover_tests(audio_wasapi_test
+    PROPERTIES LABELS "unit"
+    DISCOVERY_MODE PRE_TEST)
+  set_target_properties(audio_wasapi_test PROPERTIES FOLDER "tests")
+
   # Integration test driving the real WASAPI render device. Labelled
   # "integration"; it skips when no device is present (and fails instead when
   # VOX_REQUIRE_AUDIO_DEVICE=1, i.e. on the virtual-audio CI job).

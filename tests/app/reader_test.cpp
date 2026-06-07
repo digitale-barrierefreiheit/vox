@@ -14,8 +14,11 @@
 #include <condition_variable>
 #include <cstddef>
 #include <mutex>
+#include <optional>
 #include <span>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include <gtest/gtest.h>
@@ -28,8 +31,10 @@
 #include <vox/model/accessible_node.hpp>
 #include <vox/model/role.hpp>
 #include <vox/output/output_manager.hpp>
+#include <vox/provider/iprovider.hpp>
 #include <vox/testing/fake_provider.hpp>
 #include <vox/testing/fake_tts_engine.hpp>
+#include <vox/tts/itts_engine.hpp>
 
 namespace {
 
@@ -84,6 +89,47 @@ private:
   std::size_t bytesWritten_{0};
   std::size_t observed_{0}; ///< Bytes already returned by a prior waitForWrite().
   std::atomic<int> flushCount_{0};
+};
+
+/// A provider whose start() throws, to drive Reader::start()'s partial-failure
+/// cleanup (it must stop what it brought up and rethrow).
+class ThrowingProvider : public vox::provider::IProvider {
+public:
+  [[nodiscard]] std::optional<AccessibleNode> focusedElement() const override {
+    return std::nullopt;
+  }
+
+  void start(FocusChangedCallback /*onFocusChanged*/) override {
+    throw std::runtime_error("provider start boom");
+  }
+
+  void stop() override {}
+};
+
+/// A TTS engine whose synthesize() throws, to prove the Reader's worker thread
+/// swallows a synthesis failure and keeps running. It signals the attempt so the
+/// test can wait deterministically.
+class FailingTts : public FakeTtsEngine {
+public:
+  void synthesize(std::string_view /*utf8Text*/,
+                  const vox::tts::ITtsEngine::PcmSink& /*sink*/) override {
+    {
+      const std::scoped_lock lock(mutex_);
+      attempted_ = true;
+    }
+    cv_.notify_all();
+    throw std::runtime_error("synthesize boom");
+  }
+
+  [[nodiscard]] bool waitForAttempt(std::chrono::milliseconds timeout) {
+    std::unique_lock lock(mutex_);
+    return cv_.wait_for(lock, timeout, [this] { return attempted_; });
+  }
+
+private:
+  std::mutex mutex_;
+  std::condition_variable cv_;
+  bool attempted_{false};
 };
 
 OutputManager germanOutput() {
@@ -164,6 +210,52 @@ TEST(Reader, ToggleSpeechMutesThenUnmutes) {
 
   EXPECT_EQ(tts.synthesizeCount(), 1); // only the unmuted announcement spoke
   EXPECT_EQ(tts.lastText(), "Schaltfläche, Abbrechen");
+}
+
+TEST(Reader, StartIsIdempotent) {
+  FakeProvider provider;
+  FakeTtsEngine tts;
+  SyncAudioSink audio;
+  Reader reader(provider, tts, audio, germanOutput());
+
+  reader.start();
+  reader.start(); // already started: a no-op, must not start a second worker
+  reader.stop();
+}
+
+TEST(Reader, QuitCommandReleasesWaitForExit) {
+  FakeProvider provider;
+  FakeTtsEngine tts;
+  SyncAudioSink audio;
+  Reader reader(provider, tts, audio, germanOutput());
+
+  reader.start();
+  reader.onCommand(Command::Quit); // sets the exit flag
+  reader.waitForExit();            // returns because Quit already fired
+  reader.stop();
+}
+
+TEST(Reader, StartRethrowsAndCleansUpWhenTheProviderFails) {
+  ThrowingProvider provider;
+  FakeTtsEngine tts;
+  SyncAudioSink audio;
+  Reader reader(provider, tts, audio, germanOutput());
+
+  // provider.start() throws; Reader must tear down what it brought up and rethrow.
+  EXPECT_THROW(reader.start(), std::runtime_error);
+}
+
+TEST(Reader, WorkerSurvivesASynthesisFailure) {
+  FakeProvider provider;
+  FailingTts tts;
+  SyncAudioSink audio;
+  Reader reader(provider, tts, audio, germanOutput());
+
+  reader.start();
+  provider.simulateFocusChange(button("OK"));
+  EXPECT_TRUE(
+      tts.waitForAttempt(WaitTimeout)); // the worker reached synthesize and caught its throw
+  reader.stop();                        // a swallowed failure leaves a joinable, healthy worker
 }
 
 } // namespace

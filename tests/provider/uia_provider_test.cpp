@@ -9,6 +9,7 @@
 #if defined(_WIN32)
 
 #  include <optional>
+#  include <stdexcept>
 #  include <string>
 
 #  include <gmock/gmock.h>
@@ -226,6 +227,72 @@ TEST_F(UiaProviderTest, StopRemovesTheRegisteredHandler) {
   provider.start([](const AccessibleNode&) { /* no-op: this test only checks stop() */ });
   EXPECT_CALL(automation_, RemoveFocusChangedEventHandler(_)).WillOnce(Return(S_OK));
   provider.stop();
+}
+
+TEST_F(UiaProviderTest, NameIsEmptyWhenTheNameBstrIsNull) {
+  ON_CALL(element_, get_CachedName(_)).WillByDefault([](BSTR* out) {
+    *out = nullptr; // null BSTR -> toUtf8 yields empty
+    return S_OK;
+  });
+  const UiaProvider provider;
+  const std::optional<AccessibleNode> node = provider.focusedElement();
+  ASSERT_TRUE(node.has_value());
+  EXPECT_TRUE(node->name.empty());
+}
+
+TEST_F(UiaProviderTest, NameIsEmptyWhenTheNameBstrIsEmpty) {
+  ON_CALL(element_, get_CachedName(_)).WillByDefault([](BSTR* out) {
+    *out = bstr(L""); // zero-length BSTR -> SysStringLen 0 -> empty
+    return S_OK;
+  });
+  const UiaProvider provider;
+  const std::optional<AccessibleNode> node = provider.focusedElement();
+  ASSERT_TRUE(node.has_value());
+  EXPECT_TRUE(node->name.empty());
+}
+
+TEST_F(UiaProviderTest, FocusEventCallbackExceptionsAreSwallowed) {
+  UiaProvider provider;
+  provider.start([](const AccessibleNode&) { throw std::runtime_error("callback boom"); });
+  ASSERT_NE(capturedHandler_, nullptr);
+  // The handler must never let an exception cross the COM ABI boundary.
+  EXPECT_EQ(capturedHandler_->HandleFocusChangedEvent(&element_), S_OK);
+}
+
+TEST_F(UiaProviderTest, StartDropsTheHandlerWhenRegistrationFails) {
+  EXPECT_CALL(automation_, AddFocusChangedEventHandler(_, _)).WillOnce(Return(ErrorFail));
+  UiaProvider provider;
+  provider.start([](const AccessibleNode&) {});
+  // Registration failed, so there is nothing for stop() to remove.
+  EXPECT_CALL(automation_, RemoveFocusChangedEventHandler(_)).Times(0);
+  provider.stop();
+}
+
+TEST_F(UiaProviderTest, StopKeepsTheHandlerWhenRemovalFailsAndStartStaysIdempotent) {
+  UiaProvider provider;
+  provider.start([](const AccessibleNode&) {});
+  // Removal fails: UIA may still hold the handler, so the provider keeps its
+  // reference rather than dropping a still-registered handler.
+  EXPECT_CALL(automation_, RemoveFocusChangedEventHandler(_)).WillRepeatedly(Return(ErrorFail));
+  provider.stop();
+  // A subsequent start() sees the retained handler and does not double-register.
+  EXPECT_CALL(automation_, AddFocusChangedEventHandler(_, _)).Times(0);
+  provider.start([](const AccessibleNode&) {});
+}
+
+/// A degraded provider (automation creation failed) accepts start()/stop() as
+/// safe no-ops rather than crashing.
+TEST(UiaProviderDegraded, StartAndStopAreNoOpsWhenAutomationIsUnavailable) {
+  [[maybe_unused]] const SeamGuard guard;
+  vox::provider::testing::setAutomationFactory([](struct IUIAutomation** out) {
+    *out = nullptr;
+    return ErrorFail;
+  });
+  UiaProvider provider;
+  bool called = false;
+  provider.start([&called](const AccessibleNode&) { called = true; });
+  provider.stop();
+  EXPECT_FALSE(called);
 }
 
 } // namespace

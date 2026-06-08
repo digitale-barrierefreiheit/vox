@@ -29,7 +29,7 @@ constexpr UINT_PTR FocusCycleTimerId = 1;
 constexpr UINT FocusCycleMs = 200;
 
 LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
-  if (message == WM_TIMER) {
+  if (message == WM_TIMER && wParam == FocusCycleTimerId) {
     // Advance focus to the next tab-stop control, wrapping at the end.
     if (HWND next = ::GetNextDlgTabItem(window, ::GetFocus(), FALSE)) {
       ::SetForegroundWindow(window);

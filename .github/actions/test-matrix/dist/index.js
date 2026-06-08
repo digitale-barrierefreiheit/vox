@@ -34393,34 +34393,30 @@ const parser = new fxp.XMLParser({
     // single suite/case parses the same as many.
     isArray: (name) => name === 'testsuite' || name === 'testcase',
 });
+/** Classify one `<testcase>`: a <failure>/<error> child is failed, <skipped>/disabled is
+ *  skipped, otherwise passed. */
+function classify(tc) {
+    if (tc.failure !== undefined || tc.error !== undefined)
+        return 'failed';
+    if (tc.skipped !== undefined || tc['@_status'] === 'disabled')
+        return 'skipped';
+    return 'passed';
+}
 /** Parse a CTest (`--output-junit`) JUnit XML string into one job's results. */
 function parseJunit(xml) {
     const doc = parser.parse(xml);
     const suites = doc.testsuite ?? doc.testsuites?.testsuite ?? [];
     const tests = {};
-    let passed = 0;
-    let failed = 0;
-    let skipped = 0;
+    const counts = { passed: 0, failed: 0, skipped: 0 };
     for (const suite of suites) {
         for (const tc of (suite.testcase ?? [])) {
             const name = String(tc['@_name'] ?? 'unknown');
-            let status;
-            if (tc.failure !== undefined || tc.error !== undefined) {
-                status = 'failed';
-                failed++;
-            }
-            else if (tc.skipped !== undefined || tc['@_status'] === 'disabled') {
-                status = 'skipped';
-                skipped++;
-            }
-            else {
-                status = 'passed';
-                passed++;
-            }
+            const status = classify(tc);
             tests[name] = status;
+            counts[status]++;
         }
     }
-    return { passed, failed, skipped, total: passed + failed + skipped, tests };
+    return { ...counts, total: counts.passed + counts.failed + counts.skipped, tests };
 }
 
 ;// CONCATENATED MODULE: ./src/render.ts
@@ -34469,6 +34465,14 @@ function parseState(body) {
     }
 }
 const codeAt = (col, i) => col.status[i] ?? '-';
+/** The one-line headline: running, some-failed, or all-passed. */
+function renderStatusLine(jobCount, totals) {
+    if (jobCount === 0)
+        return '⏳ Tests running… results appear as each job finishes.';
+    if (totals.f > 0)
+        return `❌ **${totals.f} failed**, ${totals.p} passed, ${totals.s} skipped — ${jobCount} job(s) reported`;
+    return `✅ **All ${totals.p} passed** (${totals.s} skipped) — ${jobCount} job(s) reported`;
+}
 /** Render the whole comment body (marker + tables + embedded state). */
 function renderComment(runId, state) {
     const jobs = state.jobOrder;
@@ -34477,11 +34481,7 @@ function renderComment(runId, state) {
         return { p: a.p + c.p, f: a.f + c.f, s: a.s + c.s };
     }, { p: 0, f: 0, s: 0 });
     const header = `### 🧪 Test results — run [#${state.runNumber}](${state.runUrl}) \`${state.commit}\``;
-    const statusLine = jobs.length === 0
-        ? '⏳ Tests running… results appear as each job finishes.'
-        : totals.f > 0
-            ? `❌ **${totals.f} failed**, ${totals.p} passed, ${totals.s} skipped — ${jobs.length} job(s) reported`
-            : `✅ **All ${totals.p} passed** (${totals.s} skipped) — ${jobs.length} job(s) reported`;
+    const statusLine = renderStatusLine(jobs.length, totals);
     let summary = '| Job | ✅ | ❌ | ⏭️ | Total |\n|---|--:|--:|--:|--:|\n';
     for (const j of jobs) {
         const c = state.jobs[j];
@@ -34575,44 +34575,74 @@ async function upsert(opts) {
 
 
 
+/** Read + parse this job's JUnit file; on any error (e.g. the build failed before it was
+ *  produced) warn and return null rather than throwing and masking the real failure. */
+function loadResult() {
+    const path = core.getInput('report-path') || 'test-results.xml';
+    try {
+        return parseJunit((0,external_node_fs_namespaceObject.readFileSync)(path, 'utf8'));
+    }
+    catch (err) {
+        core.warning(`test-matrix: could not read ${path} (${err instanceof Error ? err.message : err}); skipping report.`);
+        return null;
+    }
+}
 function writeJobSummary(job, r) {
     const failed = Object.entries(r.tests)
         .filter(([, s]) => s === 'failed')
         .map(([n]) => n);
-    let s = core.summary
+    core.summary
         .addHeading(`🧪 Tests — ${job}`, 3)
         .addRaw(`✅ ${r.passed} passed · ❌ ${r.failed} failed · ⏭️ ${r.skipped} skipped · ${r.total} total`, true);
-    if (failed.length > 0) {
-        s = s.addHeading('Failed', 4).addList(failed);
+    if (failed.length > 0)
+        core.summary.addHeading('Failed', 4).addList(failed);
+    return core.summary.write();
+}
+/** Upsert the run's comment. PR-comment writes 403 on restricted contexts (fork PRs get a
+ *  read-only token) — treat that as non-fatal so the test job's own status stays the signal. */
+async function postComment(prNumber, job, result) {
+    const token = core.getInput('token') || process.env.GITHUB_TOKEN || '';
+    const runId = process.env.GITHUB_RUN_ID ?? '';
+    try {
+        await upsert({
+            token,
+            runId,
+            prNumber,
+            merge: (state) => {
+                if (result)
+                    mergeJob(state, job, result);
+            },
+        });
     }
-    return s.write();
+    catch (err) {
+        core.warning(`test-matrix: could not update the PR comment (${err instanceof Error ? err.message : err}).`);
+    }
 }
 async function run() {
     const mode = core.getInput('mode', { required: true });
-    const token = core.getInput('token') || process.env.GITHUB_TOKEN || '';
-    const runId = process.env.GITHUB_RUN_ID ?? '';
-    const prNumber = github.context.payload.pull_request?.number;
-    if (!prNumber) {
-        core.info('Not a pull_request event — skipping the test-matrix comment.');
-        // Still surface this job's results in the run Summary on push runs.
-        if (mode === 'report') {
-            const job = core.getInput('job', { required: true });
-            await writeJobSummary(job, parseJunit((0,external_node_fs_namespaceObject.readFileSync)(core.getInput('report-paths') || 'test-results.xml', 'utf8')));
-        }
+    if (mode !== 'init' && mode !== 'report') {
+        core.setFailed(`Unknown mode '${mode}' (expected 'init' or 'report').`);
         return;
     }
-    if (mode === 'init') {
-        await upsert({ token, runId, prNumber, merge: () => { } });
-        return;
-    }
-    if (mode === 'report') {
-        const job = core.getInput('job', { required: true });
-        const result = parseJunit((0,external_node_fs_namespaceObject.readFileSync)(core.getInput('report-paths') || 'test-results.xml', 'utf8'));
+    const job = mode === 'report' ? core.getInput('job', { required: true }) : '';
+    const result = mode === 'report' ? loadResult() : null;
+    if (result)
         await writeJobSummary(job, result);
-        await upsert({ token, runId, prNumber, merge: (state) => mergeJob(state, job, result) });
-        return;
+    const prNumber = github.context.payload.pull_request?.number;
+    if (prNumber) {
+        await postComment(prNumber, job, result);
     }
-    core.setFailed(`Unknown mode '${mode}' (expected 'init' or 'report').`);
+    else {
+        core.info('Not a pull_request event — wrote the run Summary only.');
+    }
 }
-run().catch((err) => core.setFailed(err instanceof Error ? err.message : String(err)));
+async function main() {
+    try {
+        await run();
+    }
+    catch (err) {
+        core.setFailed(err instanceof Error ? err.message : String(err));
+    }
+}
+void main();
 

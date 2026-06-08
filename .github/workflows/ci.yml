@@ -259,13 +259,14 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - run: npm ci
-      - name: Type-check + unit tests
-        run: npx tsc --noEmit && npm test
-      - name: Rebuild bundle and verify dist/ is up to date
+          node-version: 24
+      # --ignore-scripts: don't run dependency lifecycle scripts on install (supply-chain).
+      - run: npm ci --ignore-scripts
+      # `npm run check` = tsc --noEmit && unit tests && ncc build, all via local bins (no npx).
+      - name: Type-check, test, and rebuild the bundle
+        run: npm run check
+      - name: Verify dist/ is committed and up to date
         run: |
-          npm run build
           if ! git diff --quiet -- dist; then
             echo "::error::.github/actions/test-matrix/dist is stale — run 'npm run build' there and commit it."
             git --no-pager diff --stat -- dist

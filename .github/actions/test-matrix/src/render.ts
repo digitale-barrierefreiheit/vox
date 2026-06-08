@@ -69,6 +69,14 @@ export function parseState(body: string): MatrixState | null {
 
 const codeAt = (col: JobColumn, i: number): Code => (col.status[i] as Code) ?? '-';
 
+/** The one-line headline: running, some-failed, or all-passed. */
+function renderStatusLine(jobCount: number, totals: { p: number; f: number; s: number }): string {
+  if (jobCount === 0) return '⏳ Tests running… results appear as each job finishes.';
+  if (totals.f > 0)
+    return `❌ **${totals.f} failed**, ${totals.p} passed, ${totals.s} skipped — ${jobCount} job(s) reported`;
+  return `✅ **All ${totals.p} passed** (${totals.s} skipped) — ${jobCount} job(s) reported`;
+}
+
 /** Render the whole comment body (marker + tables + embedded state). */
 export function renderComment(runId: string, state: MatrixState): string {
   const jobs = state.jobOrder;
@@ -81,12 +89,7 @@ export function renderComment(runId: string, state: MatrixState): string {
   );
 
   const header = `### 🧪 Test results — run [#${state.runNumber}](${state.runUrl}) \`${state.commit}\``;
-  const statusLine =
-    jobs.length === 0
-      ? '⏳ Tests running… results appear as each job finishes.'
-      : totals.f > 0
-        ? `❌ **${totals.f} failed**, ${totals.p} passed, ${totals.s} skipped — ${jobs.length} job(s) reported`
-        : `✅ **All ${totals.p} passed** (${totals.s} skipped) — ${jobs.length} job(s) reported`;
+  const statusLine = renderStatusLine(jobs.length, totals);
 
   let summary = '| Job | ✅ | ❌ | ⏭️ | Total |\n|---|--:|--:|--:|--:|\n';
   for (const j of jobs) {

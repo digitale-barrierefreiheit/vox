@@ -48,15 +48,33 @@ jobs:
         timeout-minutes: 10
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      # Surface the gate in the run Summary; the full gate + new-code coverage are on the
-      # SonarCloud PR decoration (a check + comment posted automatically).
+      # Write the actual quality-gate status + new-code coverage into the run Summary by
+      # querying SonarCloud's API (the same values SonarCloud posts as PR decoration).
       - name: Quality gate summary
         if: always()
         shell: bash
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
         run: |
+          api="https://sonarcloud.io/api"
+          pr="${PR:+&pullRequest=$PR}"
+          gate=$(curl -sf -u "$SONAR_TOKEN:" "$api/qualitygates/project_status?projectKey=vox${pr}" \
+                 | grep -o '"status":"[A-Z]*"' | head -1 | cut -d'"' -f4 || true)
+          cov=$(curl -sf -u "$SONAR_TOKEN:" "$api/measures/component?component=vox&metricKeys=new_coverage${pr}" \
+                 | grep -o '"value":"[0-9.]*"' | head -1 | cut -d'"' -f4 || true)
+          case "$gate" in
+            OK) badge="✅ Passed" ;;
+            ERROR) badge="❌ Failed" ;;
+            *) badge="❔ ${gate:-unknown}" ;;
+          esac
           {
             echo "## 🔍 SonarQube"
-            echo "Quality gate: see the **SonarQube** status check. New-code coverage and issues:"
-            echo "[SonarCloud dashboard](https://sonarcloud.io/summary/new_code?id=vox)."
+            echo "| Metric | Result |"
+            echo "|---|---|"
+            echo "| Quality gate | $badge |"
+            echo "| New-code coverage | ${cov:-n/a}% |"
+            echo ""
+            echo "[SonarCloud new-code dashboard](https://sonarcloud.io/summary/new_code?id=vox)"
           } >> "$GITHUB_STEP_SUMMARY"
 

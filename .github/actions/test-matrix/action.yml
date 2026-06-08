@@ -14,8 +14,8 @@ inputs:
     description: 'Column label for this job (report mode), e.g. x64, de-DE, asan.'
     required: false
     default: ''
-  report-paths:
-    description: 'Glob of JUnit XML files for this job (report mode).'
+  report-path:
+    description: 'Path to this job''s JUnit XML file (report mode).'
     required: false
     default: 'test-results.xml'
   token:
@@ -23,5 +23,5 @@ inputs:
     required: false
     default: ${{ github.token }}
 runs:
-  using: node20
+  using: node24
   main: dist/index.js

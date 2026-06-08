@@ -23,31 +23,28 @@ const parser = new XMLParser({
   isArray: (name) => name === 'testsuite' || name === 'testcase',
 });
 
+/** Classify one `<testcase>`: a <failure>/<error> child is failed, <skipped>/disabled is
+ *  skipped, otherwise passed. */
+function classify(tc: Record<string, unknown>): Status {
+  if (tc.failure !== undefined || tc.error !== undefined) return 'failed';
+  if (tc.skipped !== undefined || tc['@_status'] === 'disabled') return 'skipped';
+  return 'passed';
+}
+
 /** Parse a CTest (`--output-junit`) JUnit XML string into one job's results. */
 export function parseJunit(xml: string): ParsedJob {
   const doc = parser.parse(xml) as Record<string, any>;
   const suites: any[] = doc.testsuite ?? doc.testsuites?.testsuite ?? [];
   const tests: Record<string, Status> = {};
-  let passed = 0;
-  let failed = 0;
-  let skipped = 0;
+  const counts: Record<Status, number> = { passed: 0, failed: 0, skipped: 0 };
 
   for (const suite of suites) {
-    for (const tc of (suite.testcase ?? []) as any[]) {
+    for (const tc of (suite.testcase ?? []) as Record<string, unknown>[]) {
       const name = String(tc['@_name'] ?? 'unknown');
-      let status: Status;
-      if (tc.failure !== undefined || tc.error !== undefined) {
-        status = 'failed';
-        failed++;
-      } else if (tc.skipped !== undefined || tc['@_status'] === 'disabled') {
-        status = 'skipped';
-        skipped++;
-      } else {
-        status = 'passed';
-        passed++;
-      }
+      const status = classify(tc);
       tests[name] = status;
+      counts[status]++;
     }
   }
-  return { passed, failed, skipped, total: passed + failed + skipped, tests };
+  return { ...counts, total: counts.passed + counts.failed + counts.skipped, tests };
 }

@@ -71,11 +71,16 @@ function hasStringMeta(s: Record<string, unknown>): boolean {
   return typeof s.runNumber === 'string' && typeof s.runUrl === 'string' && typeof s.commit === 'string';
 }
 
-/** Every job column must be well-formed and carry one status code per test name. */
+/** Every job column must be well-formed, carry one status code per test name, and use only
+ *  the known codes (P/F/S/-) so codeAt/ICON never render an undefined cell. */
 function columnsValid(jobs: unknown, testCount: number): boolean {
   if (typeof jobs !== 'object' || jobs === null) return false;
   const columns = Object.values(jobs);
-  return columns.every(isJobColumn) && columns.every((c) => (c as JobColumn).status.length === testCount);
+  if (!columns.every(isJobColumn)) return false;
+  return columns.every((c) => {
+    const { status } = c as JobColumn;
+    return status.length === testCount && /^[PFS-]*$/.test(status);
+  });
 }
 
 /** Validate the decoded shape (meta strings, string arrays, well-formed and aligned job

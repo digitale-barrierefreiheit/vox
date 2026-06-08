@@ -84,6 +84,8 @@ test('parseState rejects state with a malformed job column or missing meta', () 
   assert.equal(parseState(encode({ ...base, jobs: { x64: { p: 1, f: 0, s: 0, status: 'PP' } } })), null);
   // jobOrder references a job with no column
   assert.equal(parseState(encode({ ...base, jobOrder: ['x64', 'ghost'], jobs: { x64: { p: 1, f: 0, s: 0, status: 'P' } } })), null);
+  // status contains an unknown code (would render undefined cells)
+  assert.equal(parseState(encode({ ...base, jobs: { x64: { p: 1, f: 0, s: 0, status: 'X' } } })), null);
   // missing meta string
   assert.equal(parseState(encode({ ...base, runUrl: undefined, jobs: {} })), null);
   // non-string entry in testNames

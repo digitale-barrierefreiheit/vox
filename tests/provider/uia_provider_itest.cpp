@@ -52,12 +52,19 @@ std::wstring envValue(const wchar_t* name) {
   }
   std::wstring value(size, L'\0');
   const DWORD written = ::GetEnvironmentVariableW(name, value.data(), size);
+  if (written == 0 || written >= size) {
+    return {}; // read failed, or the value grew between the size query and the read
+  }
   value.resize(written); // written excludes the null terminator
   return value;
 }
 
 bool envEquals(const wchar_t* name, std::wstring_view expected) {
   return envValue(name) == expected;
+}
+
+bool uiaTreeRequired() {
+  return envEquals(L"VOX_REQUIRE_UIA_TREE", L"1");
 }
 
 /// The test-app executable: the path CMake injected, else a sibling of this test
@@ -79,31 +86,44 @@ std::wstring locateTestApp() {
   return self.substr(0, slash + 1) + L"uia_test_app.exe";
 }
 
+bool isSpeichernButton(const std::optional<AccessibleNode>& node) {
+  return node.has_value() && node->role == Role::Button && node->name == "Speichern";
+}
+
+std::string describe(const std::optional<AccessibleNode>& node) {
+  if (!node.has_value()) {
+    return "no focused element";
+  }
+  return "role=" + std::to_string(static_cast<int>(node->role)) + " name='" + node->name + "'";
+}
+
+// Fails when VOX_REQUIRE_UIA_TREE demands a working tree, otherwise skips — the shared
+// reaction for every "couldn't read the focused button" path. Keeping it here flattens
+// the call sites (no `if-required-else-skip` nested in each guard).
+void skipOrFail(const char* failMessage, const std::string& skipMessage) {
+  if (uiaTreeRequired()) {
+    FAIL() << failMessage; // fatal — returns, so the skip below is the not-required path
+  }
+  GTEST_SKIP() << skipMessage;
+}
+
 class UiaProviderItest : public ::testing::Test {
 protected:
-  static bool uiaRequired() {
-    return envEquals(L"VOX_REQUIRE_UIA_TREE", L"1");
-  }
-
   void SetUp() override {
     const std::wstring exe = locateTestApp();
     if (exe.empty() || ::GetFileAttributesW(exe.c_str()) == INVALID_FILE_ATTRIBUTES) {
-      if (uiaRequired()) {
-        FAIL() << "VOX_REQUIRE_UIA_TREE is set but the UIA test app was not found.";
-      }
-      GTEST_SKIP() << "UIA test app not found (VOX_UIA_TEST_APP unset and no sibling exe).";
+      skipOrFail("VOX_REQUIRE_UIA_TREE is set but the UIA test app was not found.",
+                 "UIA test app not found (VOX_UIA_TEST_APP unset and no sibling exe).");
+      return;
     }
     if (!launchApp(exe)) {
-      if (uiaRequired()) {
-        FAIL() << "VOX_REQUIRE_UIA_TREE is set but the UIA test app failed to launch.";
-      }
-      GTEST_SKIP() << "Could not launch the UIA test app.";
+      skipOrFail("VOX_REQUIRE_UIA_TREE is set but the UIA test app failed to launch.",
+                 "Could not launch the UIA test app.");
+      return;
     }
     if (::WaitForSingleObject(readyEvent_, ReadyTimeoutMs) != WAIT_OBJECT_0) {
-      if (uiaRequired()) {
-        FAIL() << "VOX_REQUIRE_UIA_TREE is set but the UIA test app never signalled ready.";
-      }
-      GTEST_SKIP() << "UIA test app did not signal ready in time.";
+      skipOrFail("VOX_REQUIRE_UIA_TREE is set but the UIA test app never signalled ready.",
+                 "UIA test app did not signal ready in time.");
     }
   }
 
@@ -145,36 +165,24 @@ private:
   HANDLE readyEvent_ = nullptr;
 };
 
-// The app focuses its "Speichern" button on startup; the provider must read that
-// focused element through the real UIA stack. Polls briefly so the foreground/
-// focus has time to settle on the runner. When VOX_REQUIRE_UIA_TREE is not set
-// (dev box / no interactive desktop), an unreadable focus skips rather than fails.
+// The app focuses its "Speichern" button on startup; the provider must read exactly
+// that element through the real UIA stack. Polls until it appears (focus can take a
+// moment to settle, especially on x86). A miss skips unless VOX_REQUIRE_UIA_TREE=1.
 TEST_F(UiaProviderItest, ReadsTheFocusedButton) {
   const UiaProvider provider;
 
-  std::optional<AccessibleNode> node;
-  for (int attempt = 0; attempt < 50; ++attempt) {
-    node = provider.focusedElement();
-    if (node && node->role == Role::Button) {
-      break;
-    }
+  std::optional<AccessibleNode> node = provider.focusedElement();
+  for (int attempt = 0; attempt < 50 && !isSpeichernButton(node); ++attempt) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    node = provider.focusedElement();
   }
 
-  if (!node.has_value()) {
-    if (uiaRequired()) {
-      FAIL() << "VOX_REQUIRE_UIA_TREE is set but the provider read no focused element.";
-    }
-    GTEST_SKIP() << "No focused element to read (no interactive focus on this machine).";
+  if (isSpeichernButton(node)) {
+    SUCCEED() << "Provider read the focused \"Speichern\" button.";
+    return;
   }
-  if (node->role != Role::Button) {
-    if (uiaRequired()) {
-      FAIL() << "VOX_REQUIRE_UIA_TREE is set but the focused element was not the button (role "
-             << static_cast<int>(node->role) << ", name='" << node->name << "').";
-    }
-    GTEST_SKIP() << "Focused element was not the test app's button (no interactive focus?).";
-  }
-  EXPECT_EQ(node->name, "Speichern");
+  skipOrFail("VOX_REQUIRE_UIA_TREE is set but the provider never read the focused button.",
+             "Could not read the test app's button (focused: " + describe(node) + ").");
 }
 
 } // namespace

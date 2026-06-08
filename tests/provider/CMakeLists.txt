@@ -36,10 +36,10 @@ if(WIN32)
   # the exe this build just produced.
   add_executable(provider_uia_itest uia_provider_itest.cpp)
   vox_configure_target(provider_uia_itest)
+  # No gmock: this itest uses plain gtest assertions (no mocks).
   target_link_libraries(provider_uia_itest PRIVATE
     vox::provider
     GTest::gtest
-    GTest::gmock
     GTest::gtest_main)
   add_dependencies(provider_uia_itest uia_test_app)
   gtest_discover_tests(provider_uia_itest

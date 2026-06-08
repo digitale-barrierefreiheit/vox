@@ -33,7 +33,7 @@ function writeJobSummary(job: string, r: ParsedJob): Promise<unknown> {
 
 /** Upsert the run's comment. PR-comment writes 403 on restricted contexts (fork PRs get a
  *  read-only token) — treat that as non-fatal so the test job's own status stays the signal. */
-async function postComment(prNumber: number, job: string, result: ParsedJob | null): Promise<void> {
+async function postComment(prNumber: number, job: string, result: ParsedJob | null, create: boolean): Promise<void> {
   const token = core.getInput('token') || process.env.GITHUB_TOKEN || '';
   const runId = process.env.GITHUB_RUN_ID ?? '';
   try {
@@ -41,6 +41,7 @@ async function postComment(prNumber: number, job: string, result: ParsedJob | nu
       token,
       runId,
       prNumber,
+      create,
       merge: (state) => {
         if (result) mergeJob(state, job, result);
       },
@@ -63,7 +64,7 @@ async function run(): Promise<void> {
 
   const prNumber = github.context.payload.pull_request?.number;
   if (prNumber) {
-    await postComment(prNumber, job, result);
+    await postComment(prNumber, job, result, mode === 'init');
   } else {
     core.info('Not a pull_request event — wrote the run Summary only.');
   }

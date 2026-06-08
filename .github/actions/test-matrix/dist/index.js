@@ -32541,6 +32541,14 @@ async function upsertWith(client, opts) {
     const find = (cs) => cs.find((c) => c.body.includes(marker));
     for (let attempt = 0; attempt < 8; attempt++) {
         const existing = find(await client.list(opts.prNumber));
+        // Only the init step may create. Report steps run in parallel, so if they could create
+        // too, two racing jobs (both seeing no comment) would each create one and break the
+        // "one comment per run" guarantee. Init runs first (at the start of the run), so by the
+        // time reports run the comment exists; if it doesn't, init was skipped — skip quietly.
+        if (!existing && !opts.create) {
+            _actions_core__WEBPACK_IMPORTED_MODULE_0__.warning('test-matrix: run comment not found (init step skipped?); skipping update.');
+            return;
+        }
         const state = (existing?.body && (0,_render_js__WEBPACK_IMPORTED_MODULE_2__/* .parseState */ .Bu)(existing.body)) || (0,_render_js__WEBPACK_IMPORTED_MODULE_2__/* .emptyState */ .p$)(opts.meta);
         opts.merge(state);
         const body = (0,_render_js__WEBPACK_IMPORTED_MODULE_2__/* .renderComment */ .wQ)(opts.runId, state);
@@ -32579,7 +32587,13 @@ async function upsert(opts) {
             await octokit.rest.issues.updateComment({ owner, repo, comment_id: commentId, body });
         },
     };
-    await upsertWith(client, { runId: opts.runId, prNumber: opts.prNumber, merge: opts.merge, meta: runMeta() });
+    await upsertWith(client, {
+        runId: opts.runId,
+        prNumber: opts.prNumber,
+        merge: opts.merge,
+        meta: runMeta(),
+        create: opts.create,
+    });
 }
 
 
@@ -32631,7 +32645,7 @@ function writeJobSummary(job, r) {
 }
 /** Upsert the run's comment. PR-comment writes 403 on restricted contexts (fork PRs get a
  *  read-only token) — treat that as non-fatal so the test job's own status stays the signal. */
-async function postComment(prNumber, job, result) {
+async function postComment(prNumber, job, result, create) {
     const token = _actions_core__WEBPACK_IMPORTED_MODULE_1__.getInput('token') || process.env.GITHUB_TOKEN || '';
     const runId = process.env.GITHUB_RUN_ID ?? '';
     try {
@@ -32639,6 +32653,7 @@ async function postComment(prNumber, job, result) {
             token,
             runId,
             prNumber,
+            create,
             merge: (state) => {
                 if (result)
                     (0,_render_js__WEBPACK_IMPORTED_MODULE_4__/* .mergeJob */ .aF)(state, job, result);
@@ -32661,7 +32676,7 @@ async function run() {
         await writeJobSummary(job, result);
     const prNumber = _actions_github__WEBPACK_IMPORTED_MODULE_2__.context.payload.pull_request?.number;
     if (prNumber) {
-        await postComment(prNumber, job, result);
+        await postComment(prNumber, job, result, mode === 'init');
     }
     else {
         _actions_core__WEBPACK_IMPORTED_MODULE_1__.info('Not a pull_request event — wrote the run Summary only.');
@@ -32796,7 +32811,7 @@ function parseState(body) {
 const codeAt = (col, i) => col.status[i] ?? '-';
 // Escape a value for a Markdown table cell: `|` breaks the column, a backtick breaks the
 // inline-code span, and a newline breaks the row.
-const cell = (s) => s.replace(/\|/g, '\\|').replace(/`/g, 'ˋ').replace(/\r?\n/g, ' ');
+const cell = (s) => s.replaceAll('|', String.raw `\|`).replaceAll('`', 'ˋ').replaceAll(/\r?\n/g, ' ');
 /** The one-line headline: running, some-failed, or all-passed. */
 function renderStatusLine(jobCount, totals) {
     if (jobCount === 0)

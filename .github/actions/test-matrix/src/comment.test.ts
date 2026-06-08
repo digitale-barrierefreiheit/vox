@@ -35,27 +35,34 @@ function fakeClient(seed: { id: number; body: string }[] = []) {
   return { client, comments, calls };
 }
 
-test('creates the run comment when none exists', async () => {
+test('init creates the run comment when none exists', async () => {
   const { client, comments, calls } = fakeClient();
-  await upsertWith(client, { runId: 'r1', prNumber: 1, meta, sleep: noSleep, merge: fold('x64', 'A.a') });
+  await upsertWith(client, { runId: 'r1', prNumber: 1, meta, sleep: noSleep, create: true, merge: fold('x64', 'A.a') });
   assert.equal(calls.create, 1);
   assert.equal(comments.length, 1);
   assert.match(comments[0].body, /run=r1/);
   assert.deepEqual(parseState(comments[0].body)?.jobOrder, ['x64']);
 });
 
-test('updates the same comment to fold in a second job (no duplicate)', async () => {
+test('a report (create=false) updates the same comment to fold in its column', async () => {
   const { client, comments } = fakeClient();
-  await upsertWith(client, { runId: 'r1', prNumber: 1, meta, sleep: noSleep, merge: fold('x64', 'A.a') });
-  await upsertWith(client, { runId: 'r1', prNumber: 1, meta, sleep: noSleep, merge: fold('tsan', 'A.a') });
+  await upsertWith(client, { runId: 'r1', prNumber: 1, meta, sleep: noSleep, create: true, merge: fold('x64', 'A.a') });
+  await upsertWith(client, { runId: 'r1', prNumber: 1, meta, sleep: noSleep, create: false, merge: fold('tsan', 'A.a') });
   assert.equal(comments.length, 1);
   assert.deepEqual(parseState(comments[0].body)?.jobOrder, ['x64', 'tsan']);
+});
+
+test('a report (create=false) never creates — avoids the parallel-create race', async () => {
+  const { client, comments, calls } = fakeClient();
+  await upsertWith(client, { runId: 'r1', prNumber: 1, meta, sleep: noSleep, create: false, merge: fold('x64', 'A.a') });
+  assert.equal(calls.create, 0);
+  assert.equal(comments.length, 0); // init was "skipped"; the report skips quietly
 });
 
 test('a different run id gets its own comment', async () => {
   const seed = [{ id: 1, body: '<!-- vox-test-matrix run=OLD -->\nstale' }];
   const { client, comments, calls } = fakeClient(seed);
-  await upsertWith(client, { runId: 'NEW', prNumber: 1, meta, sleep: noSleep, merge: fold('x64', 'A.a') });
+  await upsertWith(client, { runId: 'NEW', prNumber: 1, meta, sleep: noSleep, create: true, merge: fold('x64', 'A.a') });
   assert.equal(calls.create, 1);
   assert.equal(comments.length, 2);
 });
@@ -76,7 +83,7 @@ test('retries when a concurrent write clobbers ours', async () => {
       if (c) c.body = body;
     },
   };
-  await upsertWith(client, { runId: 'r1', prNumber: 1, meta, sleep: noSleep, merge: fold('x64', 'A.a') });
+  await upsertWith(client, { runId: 'r1', prNumber: 1, meta, sleep: noSleep, create: false, merge: fold('x64', 'A.a') });
   assert.ok(list >= 4); // attempt 1 (list+verify) clobbered -> attempt 2 (list+verify) sticks
   assert.ok(parseState(comments[0].body)?.jobOrder.includes('x64'));
 });

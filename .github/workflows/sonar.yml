@@ -71,13 +71,13 @@ jobs:
                   return {}
           gate = get(f"{api}/qualitygates/project_status?projectKey=vox{q}").get("projectStatus", {}).get("status", "")
           measures = get(f"{api}/measures/component?component=vox&metricKeys=new_coverage{q}").get("component", {}).get("measures", [])
-          cov = measures[0]["value"] if measures else "n/a"
+          cov = f"{measures[0]['value']}%" if measures else "n/a"
           badge = {"OK": "✅ Passed", "ERROR": "❌ Failed"}.get(gate, f"❔ {gate or 'unknown'}")
           print("## 🔍 SonarQube")
           print("| Metric | Result |")
           print("|---|---|")
           print(f"| Quality gate | {badge} |")
-          print(f"| New-code coverage | {cov}% |")
+          print(f"| New-code coverage | {cov} |")
           print("")
           print("[SonarCloud new-code dashboard](https://sonarcloud.io/summary/new_code?id=vox)")
           PY

@@ -37,6 +37,8 @@ export async function upsertWith(
     prNumber: number;
     merge: (state: MatrixState) => void;
     meta: Pick<MatrixState, 'runNumber' | 'runUrl' | 'commit'>;
+    /** Only the init step creates the comment; report steps update-only (see below). */
+    create: boolean;
     sleep?: (ms: number) => Promise<void>;
   },
 ): Promise<void> {
@@ -46,6 +48,16 @@ export async function upsertWith(
 
   for (let attempt = 0; attempt < 8; attempt++) {
     const existing = find(await client.list(opts.prNumber));
+
+    // Only the init step may create. Report steps run in parallel, so if they could create
+    // too, two racing jobs (both seeing no comment) would each create one and break the
+    // "one comment per run" guarantee. Init runs first (at the start of the run), so by the
+    // time reports run the comment exists; if it doesn't, init was skipped — skip quietly.
+    if (!existing && !opts.create) {
+      core.warning('test-matrix: run comment not found (init step skipped?); skipping update.');
+      return;
+    }
+
     const state = (existing?.body && parseState(existing.body)) || emptyState(opts.meta);
     opts.merge(state);
     const body = renderComment(opts.runId, state);
@@ -67,6 +79,7 @@ export async function upsert(opts: {
   token: string;
   runId: string;
   prNumber: number;
+  create: boolean;
   merge: (state: MatrixState) => void;
 }): Promise<void> {
   const octokit = github.getOctokit(opts.token);
@@ -90,5 +103,11 @@ export async function upsert(opts: {
       await octokit.rest.issues.updateComment({ owner, repo, comment_id: commentId, body });
     },
   };
-  await upsertWith(client, { runId: opts.runId, prNumber: opts.prNumber, merge: opts.merge, meta: runMeta() });
+  await upsertWith(client, {
+    runId: opts.runId,
+    prNumber: opts.prNumber,
+    merge: opts.merge,
+    meta: runMeta(),
+    create: opts.create,
+  });
 }

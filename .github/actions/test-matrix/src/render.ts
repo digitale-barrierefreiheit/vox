@@ -78,7 +78,8 @@ const codeAt = (col: JobColumn, i: number): Code => (col.status[i] as Code) ?? '
 
 // Escape a value for a Markdown table cell: `|` breaks the column, a backtick breaks the
 // inline-code span, and a newline breaks the row.
-const cell = (s: string): string => s.replace(/\|/g, '\\|').replace(/`/g, 'ˋ').replace(/\r?\n/g, ' ');
+const cell = (s: string): string =>
+  s.replaceAll('|', String.raw`\|`).replaceAll('`', 'ˋ').replaceAll(/\r?\n/g, ' ');
 
 /** The one-line headline: running, some-failed, or all-passed. */
 function renderStatusLine(jobCount: number, totals: { p: number; f: number; s: number }): string {

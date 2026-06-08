@@ -58,7 +58,7 @@ test('hostile test names are escaped and cannot corrupt the embedded state', () 
   mergeJob(s, 'x64', { passed: 1, failed: 0, skipped: 0, total: 1, tests: { [evil]: 'passed' } });
   const body = renderComment('r', s);
   // The pipe is escaped in the rendered cell (so the table column survives).
-  assert.ok(body.includes('\\|'));
+  assert.ok(body.includes(String.raw`\|`));
   assert.ok(!body.includes('name|with'));
   // The embedded state (base64) round-trips the exact name despite the `-->`/pipe/backtick,
   // proving it wasn't corrupted; and re-rendering is byte-stable (so the retry converges).

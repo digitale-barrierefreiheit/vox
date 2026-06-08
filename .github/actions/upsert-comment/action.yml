@@ -40,6 +40,8 @@ runs:
           const existing = comments.find((c) => c.body && c.body.includes(marker));
           if (existing) {
             await github.rest.issues.updateComment({ owner: issue.owner, repo: issue.repo, comment_id: existing.id, body });
+            core.info(`upsert-comment: updated comment ${existing.id}.`);
           } else {
-            await github.rest.issues.createComment({ ...issue, body });
+            const created = await github.rest.issues.createComment({ ...issue, body });
+            core.info(`upsert-comment: created comment ${created.data.id}.`);
           }

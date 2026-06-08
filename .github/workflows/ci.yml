@@ -217,8 +217,8 @@ jobs:
         run: |
           n=$(grep -cE ': (warning|error):' tidy.log || true)
           {
-            echo '<!-- vox-clang-tidy -->'
-            echo '## 🧹 clang-tidy'
+            echo '<!-- vox-clang-tidy run=${{ github.run_id }} -->'
+            echo '## 🧹 clang-tidy — run [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})'
             if [ "${{ steps.tidy.outcome }}" = success ]; then
               echo '✅ No issues.'
             else
@@ -238,7 +238,7 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/upsert-comment
         with:
-          marker: '<!-- vox-clang-tidy -->'
+          marker: '<!-- vox-clang-tidy run=${{ github.run_id }} -->'
           body-file: clang-tidy-comment.md
 
   # ---------------------------------------------------------------------------

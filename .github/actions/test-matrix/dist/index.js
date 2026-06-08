@@ -32668,7 +32668,7 @@ const inputs = {
     reportPath: _actions_core__WEBPACK_IMPORTED_MODULE_1__.getInput('report-path') || 'test-results.xml',
 };
 try {
-    await (0,_report_js__WEBPACK_IMPORTED_MODULE_6__/* .run */ .e)(inputs, _actions_github__WEBPACK_IMPORTED_MODULE_2__.context.payload.pull_request?.number, io);
+    await (0,_report_js__WEBPACK_IMPORTED_MODULE_6__/* .run */ .eF)(inputs, _actions_github__WEBPACK_IMPORTED_MODULE_2__.context.payload.pull_request?.number, io);
 }
 catch (err) {
     _actions_core__WEBPACK_IMPORTED_MODULE_1__.setFailed(err instanceof Error ? err.message : String(err));
@@ -32887,9 +32887,9 @@ function renderComment(runId, state) {
 /***/ ((__unused_webpack_module, __webpack_exports__, __nccwpck_require__) => {
 
 /* harmony export */ __nccwpck_require__.d(__webpack_exports__, {
-/* harmony export */   e: () => (/* binding */ run)
+/* harmony export */   eF: () => (/* binding */ run)
 /* harmony export */ });
-/* unused harmony export summaryMarkdown */
+/* unused harmony exports summaryMarkdown, unavailableMarkdown */
 /* harmony import */ var _render_js__WEBPACK_IMPORTED_MODULE_0__ = __nccwpck_require__(7055);
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
@@ -32905,6 +32905,10 @@ function summaryMarkdown(job, r) {
     const list = failed.map((name) => `- ${(0,_render_js__WEBPACK_IMPORTED_MODULE_0__/* .codeCell */ .MZ)(name)}`).join('\n');
     return `${head}\n#### Failed\n${list}\n`;
 }
+/** Pure: the Summary shown when a job produced no JUnit (e.g. the build failed first). */
+function unavailableMarkdown(job) {
+    return `### 🧪 Tests — ${job}\n\n⚠️ Results unavailable — no JUnit report (the build may have failed before tests ran).\n`;
+}
 /** Validate inputs, write the per-job Summary, and (on PRs) fold this job into the comment. */
 async function run(inputs, prNumber, io) {
     if (inputs.mode !== 'init' && inputs.mode !== 'report') {
@@ -32916,10 +32920,13 @@ async function run(inputs, prNumber, io) {
         return;
     }
     const result = inputs.mode === 'report' ? io.readResults(inputs.reportPath) : null;
-    if (result)
-        await io.writeSummary(summaryMarkdown(inputs.job, result));
+    // Always write a per-job Summary in report mode — a "results unavailable" note when the
+    // JUnit is missing is clearer than an empty Summary.
+    if (inputs.mode === 'report') {
+        await io.writeSummary(result ? summaryMarkdown(inputs.job, result) : unavailableMarkdown(inputs.job));
+    }
     if (prNumber === undefined) {
-        io.info('Not a pull_request event — wrote the run Summary only.');
+        io.info('Not a pull_request event — skipping the PR comment.');
         return;
     }
     await io.upsertComment(inputs.mode === 'init', inputs.job, prNumber, result);

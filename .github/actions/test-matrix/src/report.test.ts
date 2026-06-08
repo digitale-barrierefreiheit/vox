@@ -93,9 +93,10 @@ test('run(report) requires a non-empty job', async () => {
   assert.equal(calls.comment.length, 0);
 });
 
-test('run(report) still upserts (no-op) when results are unavailable', async () => {
+test('run(report) writes an "unavailable" summary and still upserts when results are missing', async () => {
   const { io, calls } = fakeIo({ readResults: () => null });
   await run(inputs(), 7, io);
-  assert.equal(calls.summary.length, 0);
+  assert.equal(calls.summary.length, 1);
+  assert.match(calls.summary[0], /Results unavailable/);
   assert.equal(calls.comment[0].res, null);
 });

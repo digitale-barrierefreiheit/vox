@@ -36,6 +36,11 @@ export function summaryMarkdown(job: string, r: ParsedJob): string {
   return `${head}\n#### Failed\n${list}\n`;
 }
 
+/** Pure: the Summary shown when a job produced no JUnit (e.g. the build failed first). */
+export function unavailableMarkdown(job: string): string {
+  return `### 🧪 Tests — ${job}\n\n⚠️ Results unavailable — no JUnit report (the build may have failed before tests ran).\n`;
+}
+
 /** Validate inputs, write the per-job Summary, and (on PRs) fold this job into the comment. */
 export async function run(inputs: Inputs, prNumber: number | undefined, io: Io): Promise<void> {
   if (inputs.mode !== 'init' && inputs.mode !== 'report') {
@@ -48,10 +53,14 @@ export async function run(inputs: Inputs, prNumber: number | undefined, io: Io):
   }
 
   const result = inputs.mode === 'report' ? io.readResults(inputs.reportPath) : null;
-  if (result) await io.writeSummary(summaryMarkdown(inputs.job, result));
+  // Always write a per-job Summary in report mode — a "results unavailable" note when the
+  // JUnit is missing is clearer than an empty Summary.
+  if (inputs.mode === 'report') {
+    await io.writeSummary(result ? summaryMarkdown(inputs.job, result) : unavailableMarkdown(inputs.job));
+  }
 
   if (prNumber === undefined) {
-    io.info('Not a pull_request event — wrote the run Summary only.');
+    io.info('Not a pull_request event — skipping the PR comment.');
     return;
   }
   await io.upsertComment(inputs.mode === 'init', inputs.job, prNumber, result);

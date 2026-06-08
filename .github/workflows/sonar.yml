@@ -90,12 +90,16 @@ jobs:
             };
             const gate = (await get(`/qualitygates/project_status?projectKey=vox${pr}`)).projectStatus?.status ?? '';
             const measures = (await get(`/measures/component?component=vox&metricKeys=new_coverage${pr}`)).component?.measures ?? [];
-            const cov = measures.length ? `${measures[0].value}%` : 'n/a';
+            // new_coverage is a new-code metric: the value is under period.value (not value).
+            const raw = measures[0]?.period?.value ?? measures[0]?.value;
+            const cov = raw !== undefined ? `${raw}%` : 'n/a';
             const issues = (await get(`/issues/search?componentKeys=vox${pr}&resolved=false&ps=1`)).total ?? 0;
             const badge = { OK: '✅ Passed', ERROR: '❌ Failed' }[gate] ?? `❔ ${gate || 'unknown'}`;
+            // Run-specific marker so each run gets its own comment instead of updating the last.
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const body = [
-              '<!-- vox-sonar -->',
-              '## 🔍 SonarCloud',
+              `<!-- vox-sonar run=${context.runId} -->`,
+              `## 🔍 SonarCloud — run [#${context.runNumber}](${runUrl})`,
               '| Metric | Result |',
               '|---|---|',
               `| Quality gate | ${badge} |`,
@@ -112,6 +116,6 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/upsert-comment
         with:
-          marker: '<!-- vox-sonar -->'
+          marker: '<!-- vox-sonar run=${{ github.run_id }} -->'
           body-file: sonar-comment.md
 

@@ -16,10 +16,13 @@
 #define NOMINMAX
 #include <windows.h>
 
+#include <array>
+
 namespace {
 
 constexpr const wchar_t* WindowClassName = L"VoxUiaTestAppWindow";
 constexpr const wchar_t* WindowTitle = L"Vox UIA Test App";
+constexpr int EventNameBufferChars = 256;
 
 LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
   if (message == WM_DESTROY) {
@@ -34,10 +37,18 @@ HWND createButton(HWND parent, const wchar_t* text) {
                            10, 10, 160, 30, parent, nullptr, ::GetModuleHandleW(nullptr), nullptr);
 }
 
-// Sets the named ready event so the launching test knows the window is up and
-// focused. A missing/un-openable event is not fatal (the app is also useful by hand).
+// Signals the launcher's ready event so it knows the window is up and focused. The
+// event name arrives as a narrow argv (the CRT decoded it from the wide command line
+// via the active code page), so decode it back with CP_ACP and open the Unicode-named
+// event the launcher created with CreateEventW. A missing/un-openable event is not fatal.
 void signalReady(const char* eventName) {
-  if (HANDLE ready = ::OpenEventA(EVENT_MODIFY_STATE, FALSE, eventName)) {
+  std::array<wchar_t, EventNameBufferChars> wide{};
+  const int written =
+      ::MultiByteToWideChar(CP_ACP, 0, eventName, -1, wide.data(), EventNameBufferChars);
+  if (written <= 0) {
+    return; // conversion failed or the name did not fit the buffer
+  }
+  if (HANDLE ready = ::OpenEventW(EVENT_MODIFY_STATE, FALSE, wide.data())) {
     ::SetEvent(ready);
     ::CloseHandle(ready);
   }

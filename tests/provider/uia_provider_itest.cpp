@@ -43,38 +43,28 @@ using vox::provider::UiaProvider;
 
 constexpr DWORD ReadyTimeoutMs = 10000;
 
-std::string envValue(const char* name) {
-  const DWORD size = ::GetEnvironmentVariableA(name, nullptr, 0);
+// Reads an environment variable as wide text. The 'W' API avoids the active-code-page
+// round-trip the 'A' API would impose, so a path with non-ASCII characters survives.
+std::wstring envValue(const wchar_t* name) {
+  const DWORD size = ::GetEnvironmentVariableW(name, nullptr, 0);
   if (size == 0) {
     return {}; // unset
   }
-  std::string value(size, '\0');
-  const DWORD written = ::GetEnvironmentVariableA(name, value.data(), size);
+  std::wstring value(size, L'\0');
+  const DWORD written = ::GetEnvironmentVariableW(name, value.data(), size);
   value.resize(written); // written excludes the null terminator
   return value;
 }
 
-bool envEquals(const char* name, std::string_view expected) {
+bool envEquals(const wchar_t* name, std::wstring_view expected) {
   return envValue(name) == expected;
-}
-
-std::wstring toWide(std::string_view utf8) {
-  if (utf8.empty()) {
-    return {};
-  }
-  const int length =
-      ::MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()), nullptr, 0);
-  std::wstring wide(static_cast<std::size_t>(length), L'\0');
-  ::MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()), wide.data(),
-                        length);
-  return wide;
 }
 
 /// The test-app executable: the path CMake injected, else a sibling of this test
 /// executable (both land in the same build output directory).
 std::wstring locateTestApp() {
-  if (const std::string fromEnv = envValue("VOX_UIA_TEST_APP"); !fromEnv.empty()) {
-    return toWide(fromEnv);
+  if (std::wstring fromEnv = envValue(L"VOX_UIA_TEST_APP"); !fromEnv.empty()) {
+    return fromEnv;
   }
   std::wstring self(MAX_PATH, L'\0');
   const DWORD count = ::GetModuleFileNameW(nullptr, self.data(), static_cast<DWORD>(self.size()));
@@ -92,7 +82,7 @@ std::wstring locateTestApp() {
 class UiaProviderItest : public ::testing::Test {
 protected:
   static bool uiaRequired() {
-    return envEquals("VOX_REQUIRE_UIA_TREE", "1");
+    return envEquals(L"VOX_REQUIRE_UIA_TREE", L"1");
   }
 
   void SetUp() override {
@@ -142,6 +132,8 @@ private:
     PROCESS_INFORMATION info{};
     if (::CreateProcessW(nullptr, commandLine.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW,
                          nullptr, nullptr, &startup, &info) == 0) {
+      ::CloseHandle(readyEvent_); // don't leak the event if the child never started
+      readyEvent_ = nullptr;
       return false;
     }
     ::CloseHandle(info.hThread);
@@ -155,7 +147,8 @@ private:
 
 // The app focuses its "Speichern" button on startup; the provider must read that
 // focused element through the real UIA stack. Polls briefly so the foreground/
-// focus has time to settle on the runner.
+// focus has time to settle on the runner. When VOX_REQUIRE_UIA_TREE is not set
+// (dev box / no interactive desktop), an unreadable focus skips rather than fails.
 TEST_F(UiaProviderItest, ReadsTheFocusedButton) {
   const UiaProvider provider;
 
@@ -169,11 +162,18 @@ TEST_F(UiaProviderItest, ReadsTheFocusedButton) {
   }
 
   if (!node.has_value()) {
-    ADD_FAILURE() << "Provider read no focused element after polling.";
-    return;
+    if (uiaRequired()) {
+      FAIL() << "VOX_REQUIRE_UIA_TREE is set but the provider read no focused element.";
+    }
+    GTEST_SKIP() << "No focused element to read (no interactive focus on this machine).";
   }
-  EXPECT_EQ(node->role, Role::Button)
-      << "Focused role was " << static_cast<int>(node->role) << ", name='" << node->name << "'.";
+  if (node->role != Role::Button) {
+    if (uiaRequired()) {
+      FAIL() << "VOX_REQUIRE_UIA_TREE is set but the focused element was not the button (role "
+             << static_cast<int>(node->role) << ", name='" << node->name << "').";
+    }
+    GTEST_SKIP() << "Focused element was not the test app's button (no interactive focus?).";
+  }
   EXPECT_EQ(node->name, "Speichern");
 }
 

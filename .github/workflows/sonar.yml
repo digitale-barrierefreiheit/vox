@@ -68,7 +68,7 @@ jobs:
       # JavaScript, write it to the run Summary and a file; the next step posts it as a PR
       # comment. Auxiliary — continue-on-error so a hiccup never fails the gate job.
       - name: SonarCloud summary
-        if: always()
+        if: ${{ !cancelled() }}
         continue-on-error: true
         uses: actions/github-script@v7
         env:
@@ -114,7 +114,7 @@ jobs:
             fs.writeFileSync('sonar-comment.md', body);
             await core.summary.addRaw(body).write();
       - name: Post SonarCloud PR comment
-        if: always() && github.event_name == 'pull_request'
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         continue-on-error: true
         uses: ./.github/actions/upsert-comment
         with:

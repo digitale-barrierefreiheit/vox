@@ -105,7 +105,7 @@ jobs:
           VOX_REQUIRE_AUDIO_DEVICE: "1"
         run: just test ${{ matrix.test_preset }}
       - name: Report test results
-        if: always()
+        if: ${{ !cancelled() }}
         uses: ./.github/actions/test-matrix
         with:
           mode: report
@@ -175,7 +175,7 @@ jobs:
           VOX_REQUIRE_AUDIO_DEVICE: "1"
         run: just test x64-msvc-release
       - name: Report test results
-        if: always()
+        if: ${{ !cancelled() }}
         uses: ./.github/actions/test-matrix
         with:
           mode: report
@@ -213,18 +213,19 @@ jobs:
           CC: clang-18
           CXX: clang++-18
           CLANG_TIDY: run-clang-tidy-18
+      # Post on a real pass/fail, but not when the run was cancelled (e.g. superseded by a
+      # newer push) — a cancelled tidy step is not a clang-tidy failure.
       - name: Build clang-tidy comment
-        if: always() && github.event_name == 'pull_request'
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         continue-on-error: true
         run: |
-          n=$(grep -cE ': (warning|error):' tidy.log || true)
           {
             echo '<!-- vox-clang-tidy run=${{ github.run_id }} -->'
             echo '## 🧹 clang-tidy — run [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})'
             if [ "${{ steps.tidy.outcome }}" = success ]; then
               echo '✅ No issues.'
             else
-              echo "❌ Issues found (${n} diagnostic line(s)):"
+              echo '❌ clang-tidy reported issues:'
               echo ''
               echo '<details><summary>Last 60 lines of output</summary>'
               echo ''
@@ -236,7 +237,7 @@ jobs:
             fi
           } > clang-tidy-comment.md
       - name: Post clang-tidy PR comment
-        if: always() && github.event_name == 'pull_request'
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         continue-on-error: true
         uses: ./.github/actions/upsert-comment
         with:
@@ -274,7 +275,7 @@ jobs:
       - name: Build + test
         run: just test linux-clang-${{ matrix.sanitizer }}
       - name: Report test results
-        if: always()
+        if: ${{ !cancelled() }}
         uses: ./.github/actions/test-matrix
         with:
           mode: report

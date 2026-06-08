@@ -213,6 +213,7 @@ jobs:
           CLANG_TIDY: run-clang-tidy-18
       - name: Build clang-tidy comment
         if: always() && github.event_name == 'pull_request'
+        continue-on-error: true
         run: |
           n=$(grep -cE ': (warning|error):' tidy.log || true)
           {
@@ -234,6 +235,7 @@ jobs:
           } > clang-tidy-comment.md
       - name: Post clang-tidy PR comment
         if: always() && github.event_name == 'pull_request'
+        continue-on-error: true
         uses: ./.github/actions/upsert-comment
         with:
           marker: '<!-- vox-clang-tidy -->'

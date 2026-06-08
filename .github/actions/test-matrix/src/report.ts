@@ -32,13 +32,18 @@ export function summaryMarkdown(job: string, r: ParsedJob): string {
     .map(([name]) => name);
   const head = `### 🧪 Tests — ${job}\n\n✅ ${r.passed} passed · ❌ ${r.failed} failed · ⏭️ ${r.skipped} skipped · ${r.total} total\n`;
   if (failed.length === 0) return head;
-  return `${head}\n#### Failed\n${failed.map((name) => `- ${codeCell(name)}`).join('\n')}\n`;
+  const list = failed.map((name) => `- ${codeCell(name)}`).join('\n');
+  return `${head}\n#### Failed\n${list}\n`;
 }
 
 /** Validate inputs, write the per-job Summary, and (on PRs) fold this job into the comment. */
 export async function run(inputs: Inputs, prNumber: number | undefined, io: Io): Promise<void> {
   if (inputs.mode !== 'init' && inputs.mode !== 'report') {
     io.fail(`Unknown mode '${inputs.mode}' (expected 'init' or 'report').`);
+    return;
+  }
+  if (inputs.mode === 'report' && !inputs.job) {
+    io.fail("report mode requires a non-empty 'job' input.");
     return;
   }
 

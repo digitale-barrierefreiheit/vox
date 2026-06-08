@@ -136,8 +136,12 @@ test('makeClient maps to the octokit issue-comment endpoints', async () => {
     rest: {
       issues: {
         listComments: {},
-        createComment: async (p) => void calls.created.push(p),
-        updateComment: async (p) => void calls.updated.push(p),
+        createComment: async (p) => {
+          calls.created.push(p);
+        },
+        updateComment: async (p) => {
+          calls.updated.push(p);
+        },
       },
     },
   };

@@ -20,9 +20,9 @@ test('summary, failure matrix, full matrix, and embedded state round-trip', () =
 
   const back = parseState(body);
   assert.ok(back);
-  assert.deepEqual(back?.jobOrder, ['x64', 'tsan']);
+  assert.deepEqual(back.jobOrder, ['x64', 'tsan']);
   // Re-rendering from the recovered state is byte-stable (so the retry loop converges).
-  assert.equal(renderComment('run1', back!), body);
+  assert.equal(renderComment('run1', back), body);
 });
 
 test('a later job adding new tests pads earlier columns', () => {
@@ -63,8 +63,9 @@ test('hostile test names are escaped and cannot corrupt the embedded state', () 
   // The embedded state (base64) round-trips the exact name despite the `-->`/pipe/backtick,
   // proving it wasn't corrupted; and re-rendering is byte-stable (so the retry converges).
   const back = parseState(body);
-  assert.equal(back?.testNames[0], evil);
-  assert.equal(renderComment('r', back!), body);
+  assert.ok(back);
+  assert.equal(back.testNames[0], evil);
+  assert.equal(renderComment('r', back), body);
 });
 
 test('parseState rejects a malformed embedded state (falls back to a fresh one)', () => {
@@ -79,6 +80,8 @@ test('parseState rejects state with a malformed job column or missing meta', () 
   const base = { runNumber: '1', runUrl: 'x', commit: 'c', jobOrder: ['x64'], testNames: ['A.a'] };
   // job column missing `status`
   assert.equal(parseState(encode({ ...base, jobs: { x64: { p: 1, f: 0, s: 0 } } })), null);
+  // status length not aligned to testNames (1 test, 2 codes)
+  assert.equal(parseState(encode({ ...base, jobs: { x64: { p: 1, f: 0, s: 0, status: 'PP' } } })), null);
   // missing meta string
   assert.equal(parseState(encode({ ...base, runUrl: undefined, jobs: {} })), null);
   // non-string entry in testNames

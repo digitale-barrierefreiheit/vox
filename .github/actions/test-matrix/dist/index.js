@@ -32788,15 +32788,24 @@ function isJobColumn(v) {
 function hasStringMeta(s) {
     return typeof s.runNumber === 'string' && typeof s.runUrl === 'string' && typeof s.commit === 'string';
 }
-/** Validate the decoded shape (meta strings, string arrays, well-formed job columns) so a
- *  hand-edited / malformed comment reliably falls back to a fresh state instead of throwing
- *  later in mergeJob/renderComment or rendering a confusing header. */
+/** Every job column must be well-formed and carry one status code per test name. */
+function columnsValid(jobs, testCount) {
+    if (typeof jobs !== 'object' || jobs === null)
+        return false;
+    const columns = Object.values(jobs);
+    return columns.every(isJobColumn) && columns.every((c) => c.status.length === testCount);
+}
+/** Validate the decoded shape (meta strings, string arrays, well-formed and aligned job
+ *  columns) so a hand-edited / malformed comment reliably falls back to a fresh state
+ *  instead of throwing later in mergeJob/renderComment or rendering a confusing header. */
 function isMatrixState(v) {
     if (typeof v !== 'object' || v === null)
         return false;
     const s = v;
-    const jobsOk = typeof s.jobs === 'object' && s.jobs !== null && Object.values(s.jobs).every(isJobColumn);
-    return hasStringMeta(s) && isStringArray(s.jobOrder) && isStringArray(s.testNames) && jobsOk;
+    return (hasStringMeta(s) &&
+        isStringArray(s.jobOrder) &&
+        isStringArray(s.testNames) &&
+        columnsValid(s.jobs, s.testNames.length));
 }
 /** Recover the embedded state from a comment body, or null if absent/corrupt/malformed. */
 function parseState(body) {
@@ -32893,12 +32902,17 @@ function summaryMarkdown(job, r) {
     const head = `### 🧪 Tests — ${job}\n\n✅ ${r.passed} passed · ❌ ${r.failed} failed · ⏭️ ${r.skipped} skipped · ${r.total} total\n`;
     if (failed.length === 0)
         return head;
-    return `${head}\n#### Failed\n${failed.map((name) => `- ${(0,_render_js__WEBPACK_IMPORTED_MODULE_0__/* .codeCell */ .MZ)(name)}`).join('\n')}\n`;
+    const list = failed.map((name) => `- ${(0,_render_js__WEBPACK_IMPORTED_MODULE_0__/* .codeCell */ .MZ)(name)}`).join('\n');
+    return `${head}\n#### Failed\n${list}\n`;
 }
 /** Validate inputs, write the per-job Summary, and (on PRs) fold this job into the comment. */
 async function run(inputs, prNumber, io) {
     if (inputs.mode !== 'init' && inputs.mode !== 'report') {
         io.fail(`Unknown mode '${inputs.mode}' (expected 'init' or 'report').`);
+        return;
+    }
+    if (inputs.mode === 'report' && !inputs.job) {
+        io.fail("report mode requires a non-empty 'job' input.");
         return;
     }
     const result = inputs.mode === 'report' ? io.readResults(inputs.reportPath) : null;

@@ -71,14 +71,25 @@ function hasStringMeta(s: Record<string, unknown>): boolean {
   return typeof s.runNumber === 'string' && typeof s.runUrl === 'string' && typeof s.commit === 'string';
 }
 
-/** Validate the decoded shape (meta strings, string arrays, well-formed job columns) so a
- *  hand-edited / malformed comment reliably falls back to a fresh state instead of throwing
- *  later in mergeJob/renderComment or rendering a confusing header. */
+/** Every job column must be well-formed and carry one status code per test name. */
+function columnsValid(jobs: unknown, testCount: number): boolean {
+  if (typeof jobs !== 'object' || jobs === null) return false;
+  const columns = Object.values(jobs);
+  return columns.every(isJobColumn) && columns.every((c) => (c as JobColumn).status.length === testCount);
+}
+
+/** Validate the decoded shape (meta strings, string arrays, well-formed and aligned job
+ *  columns) so a hand-edited / malformed comment reliably falls back to a fresh state
+ *  instead of throwing later in mergeJob/renderComment or rendering a confusing header. */
 function isMatrixState(v: unknown): v is MatrixState {
   if (typeof v !== 'object' || v === null) return false;
   const s = v as Record<string, unknown>;
-  const jobsOk = typeof s.jobs === 'object' && s.jobs !== null && Object.values(s.jobs).every(isJobColumn);
-  return hasStringMeta(s) && isStringArray(s.jobOrder) && isStringArray(s.testNames) && jobsOk;
+  return (
+    hasStringMeta(s) &&
+    isStringArray(s.jobOrder) &&
+    isStringArray(s.testNames) &&
+    columnsValid(s.jobs, (s.testNames as string[]).length)
+  );
 }
 
 /** Recover the embedded state from a comment body, or null if absent/corrupt/malformed. */

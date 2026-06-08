@@ -6,6 +6,9 @@ import * as core from '@actions/core';
 import * as github from '@actions/github';
 import { emptyState, parseState, renderComment, runMarker, type MatrixState } from './render.js';
 
+/** The run header fields, kept in one alias (used by runMeta, stateFrom, and upsertWith). */
+type RunMeta = Pick<MatrixState, 'runNumber' | 'runUrl' | 'commit'>;
+
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 // Escalating backoff with jitter to de-sync parallel jobs retrying on the same comment.
@@ -14,7 +17,7 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 const backoff = (attempt: number): number => 200 + randomInt(0, 400 * (attempt + 1));
 
 /** The run's header metadata from the GitHub Actions environment. */
-export function runMeta(): Pick<MatrixState, 'runNumber' | 'runUrl' | 'commit'> {
+export function runMeta(): RunMeta {
   const { GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_RUN_ID, GITHUB_RUN_NUMBER, GITHUB_SHA } =
     process.env;
   return {
@@ -40,7 +43,7 @@ const findByMarker = (comments: Comment[], marker: string): Comment | undefined 
 /** Recover the run's state from its comment, or a fresh one if absent/unparseable. */
 function stateFrom(
   existing: Comment | undefined,
-  meta: Pick<MatrixState, 'runNumber' | 'runUrl' | 'commit'>,
+  meta: RunMeta,
 ): MatrixState {
   return (existing?.body && parseState(existing.body)) || emptyState(meta);
 }
@@ -56,7 +59,7 @@ export async function upsertWith(
     runId: string;
     prNumber: number;
     merge: (state: MatrixState) => void;
-    meta: Pick<MatrixState, 'runNumber' | 'runUrl' | 'commit'>;
+    meta: RunMeta;
     /** Only the init step creates the comment; report steps update-only (see below). */
     create: boolean;
     sleep?: (ms: number) => Promise<void>;

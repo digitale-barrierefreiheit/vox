@@ -18,11 +18,21 @@ function fakeIo(overrides: Partial<Io> = {}) {
   };
   const io: Io = {
     readResults: () => RESULT,
-    writeSummary: async (md) => void calls.summary.push(md),
-    upsertComment: async (create, job, prNumber, res) => void calls.comment.push({ create, job, prNumber, res }),
-    warn: (m) => void calls.warn.push(m),
-    info: (m) => void calls.info.push(m),
-    fail: (m) => void calls.fail.push(m),
+    writeSummary: async (md) => {
+      calls.summary.push(md);
+    },
+    upsertComment: async (create, job, prNumber, res) => {
+      calls.comment.push({ create, job, prNumber, res });
+    },
+    warn: (m) => {
+      calls.warn.push(m);
+    },
+    info: (m) => {
+      calls.info.push(m);
+    },
+    fail: (m) => {
+      calls.fail.push(m);
+    },
     ...overrides,
   };
   return { io, calls };
@@ -73,6 +83,13 @@ test('run rejects an unknown mode without side effects', async () => {
   await run(inputs({ mode: 'bogus' }), 7, io);
   assert.equal(calls.fail.length, 1);
   assert.equal(calls.summary.length, 0);
+  assert.equal(calls.comment.length, 0);
+});
+
+test('run(report) requires a non-empty job', async () => {
+  const { io, calls } = fakeIo();
+  await run(inputs({ job: '' }), 7, io);
+  assert.equal(calls.fail.length, 1);
   assert.equal(calls.comment.length, 0);
 });
 

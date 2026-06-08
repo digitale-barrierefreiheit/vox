@@ -1,0 +1,27 @@
+# Vox test-results matrix comment. Maintains ONE PR comment per CI run that shows a
+# live test x job matrix: an `init` step posts the comment at the start of the run, and
+# each test job's `report` step folds its column in as it finishes (parallel-safe via a
+# fetch-merge-write retry on the comment's embedded state). New run id -> new comment.
+# TypeScript source under src/, bundled to dist/index.js with ncc. (Action YAML is exempt
+# from the SPDX-header check.)
+name: Test results matrix comment
+description: Post/update a single PR comment with a live test x job results matrix.
+inputs:
+  mode:
+    description: '"init" (create the run comment) or "report" (fold in this job''s column).'
+    required: true
+  job:
+    description: 'Column label for this job (report mode), e.g. x64, de-DE, asan.'
+    required: false
+    default: ''
+  report-path:
+    description: 'Path to this job''s JUnit XML file (report mode).'
+    required: false
+    default: 'test-results.xml'
+  token:
+    description: 'GITHUB_TOKEN with pull-requests: write.'
+    required: false
+    default: ${{ github.token }}
+runs:
+  using: node24
+  main: dist/index.js

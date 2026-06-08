@@ -79,6 +79,17 @@ compile_commands.json
 /coverage.xml
 
 # ---------------------------------------------------------------------------
+# CI test results (JUnit from `just test`, consumed by the test-matrix action)
+# ---------------------------------------------------------------------------
+/test-results.xml
+
+# ---------------------------------------------------------------------------
+# Node action build deps (the test-matrix action; its bundled dist/ IS committed)
+# ---------------------------------------------------------------------------
+.github/actions/*/node_modules/
+.github/actions/*/coverage/
+
+# ---------------------------------------------------------------------------
 # Generated documentation (Doxygen)
 # ---------------------------------------------------------------------------
 /doc/reference/

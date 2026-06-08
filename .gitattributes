@@ -25,6 +25,10 @@
 *.toml  text eol=lf
 *.py    text eol=lf
 *.sh    text eol=lf
+# The test-matrix GitHub Action's TypeScript source + ncc bundle build/run on Linux;
+# keep them LF so the bundle is byte-stable for the dist-sync check across platforms.
+*.ts    text eol=lf
+*.js    text eol=lf
 # The justfile is parsed by `just` and its Linux recipes run in sh/WSL bash, which
 # need LF — a CRLF checkout on Windows would break them.
 justfile text eol=lf
@@ -56,3 +60,6 @@ justfile text eol=lf
 # ---------------------------------------------------------------------------
 doc/**          linguist-documentation
 third_party/**  linguist-vendored
+# The node action's ncc bundle is generated, not authored — keep it out of language stats
+# and out of code-health analysis (CodeScene/Sonar), like vendored code.
+.github/actions/*/dist/**  linguist-generated

@@ -88,13 +88,15 @@ jobs:
                 return {};
               }
             };
-            const gate = (await get(`/qualitygates/project_status?projectKey=vox${pr}`)).projectStatus?.status ?? '';
-            const measures = (await get(`/measures/component?component=vox&metricKeys=new_coverage${pr}`)).component?.measures ?? [];
-            // new_coverage is a new-code metric: the value is under period.value (not value).
-            const raw = measures[0]?.period?.value ?? measures[0]?.value;
-            const cov = raw !== undefined ? `${raw}%` : 'n/a';
+            const gateData = await get(`/qualitygates/project_status?projectKey=vox${pr}`);
+            const status = gateData.projectStatus?.status ?? '';
+            // new_coverage's value comes from the gate condition (actualValue, already
+            // rounded); the measures API returns it under `periods`, not the new-code value.
+            const conditions = gateData.projectStatus?.conditions ?? [];
+            const covCond = conditions.find((c) => c.metricKey === 'new_coverage');
+            const cov = covCond ? `${covCond.actualValue}%` : 'n/a';
             const issues = (await get(`/issues/search?componentKeys=vox${pr}&resolved=false&ps=1`)).total ?? 0;
-            const badge = { OK: '✅ Passed', ERROR: '❌ Failed' }[gate] ?? `❔ ${gate || 'unknown'}`;
+            const badge = { OK: '✅ Passed', ERROR: '❌ Failed' }[status] ?? `❔ ${status || 'unknown'}`;
             // Run-specific marker so each run gets its own comment instead of updating the last.
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const body = [

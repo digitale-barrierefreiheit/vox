@@ -51,7 +51,9 @@ function stateFrom(
 /**
  * Find-or-create the run's comment and apply `merge` to its state, then write it back.
  * Parallel jobs race on one comment, so retry: re-read, re-merge, re-write until our
- * write sticks (last writer with the freshest state wins). Pure of octokit/env for tests.
+ * write sticks (last writer with the freshest state wins). Takes an injected client (no
+ * live octokit) so the logic is unit-tested with a fake; only `core.warning` logging uses
+ * the Actions toolkit.
  */
 export async function upsertWith(
   client: CommentClient,

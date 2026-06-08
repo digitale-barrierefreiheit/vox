@@ -206,7 +206,9 @@ jobs:
       # pin that exact parallel, versioned wrapper explicitly for CI.
       - name: Run clang-tidy
         id: tidy
-        run: just tidy 2>&1 | tee tidy.log
+        run: |
+          set -o pipefail  # explicit: the step must fail on tidy issues, not mask them via tee
+          just tidy 2>&1 | tee tidy.log
         env:
           CC: clang-18
           CXX: clang++-18

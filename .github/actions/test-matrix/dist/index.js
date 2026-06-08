@@ -32636,10 +32636,13 @@ function loadResult() {
         return null;
     }
 }
+// addList writes raw <li> markup, so HTML-escape the JUnit-sourced names and flatten any
+// newlines before listing them.
+const escapeListItem = (s) => s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll(/[\r\n]+/g, ' ');
 function writeJobSummary(job, r) {
     const failed = Object.entries(r.tests)
         .filter(([, s]) => s === 'failed')
-        .map(([n]) => n);
+        .map(([n]) => escapeListItem(n));
     _actions_core__WEBPACK_IMPORTED_MODULE_1__.summary
         .addHeading(`🧪 Tests — ${job}`, 3)
         .addRaw(`✅ ${r.passed} passed · ❌ ${r.failed} failed · ⏭️ ${r.skipped} skipped · ${r.total} total`, true);
@@ -32796,7 +32799,15 @@ const STATE_CLOSE = '-->';
 // comment early and corrupt it. encode/decode are symmetric.
 const encodeState = (state) => Buffer.from(JSON.stringify(state), 'utf8').toString('base64');
 const decodeState = (s) => JSON.parse(Buffer.from(s, 'base64').toString('utf8'));
-/** Recover the embedded state from a comment body, or null if absent/corrupt. */
+/** Validate the decoded shape so a hand-edited / malformed comment falls back to a fresh
+ *  state instead of throwing later in mergeJob/renderComment. */
+function isMatrixState(v) {
+    if (typeof v !== 'object' || v === null)
+        return false;
+    const s = v;
+    return Array.isArray(s.jobOrder) && Array.isArray(s.testNames) && typeof s.jobs === 'object' && s.jobs !== null;
+}
+/** Recover the embedded state from a comment body, or null if absent/corrupt/malformed. */
 function parseState(body) {
     const open = body.indexOf(STATE_OPEN);
     if (open < 0)
@@ -32806,7 +32817,8 @@ function parseState(body) {
     if (end < 0)
         return null;
     try {
-        return decodeState(body.slice(start, end).trim());
+        const decoded = decodeState(body.slice(start, end).trim());
+        return isMatrixState(decoded) ? decoded : null;
     }
     catch {
         return null;

@@ -57,10 +57,17 @@ export { runMarker };
 // comment early and corrupt it. encode/decode are symmetric.
 const encodeState = (state: MatrixState): string =>
   Buffer.from(JSON.stringify(state), 'utf8').toString('base64');
-const decodeState = (s: string): MatrixState =>
-  JSON.parse(Buffer.from(s, 'base64').toString('utf8')) as MatrixState;
+const decodeState = (s: string): unknown => JSON.parse(Buffer.from(s, 'base64').toString('utf8'));
 
-/** Recover the embedded state from a comment body, or null if absent/corrupt. */
+/** Validate the decoded shape so a hand-edited / malformed comment falls back to a fresh
+ *  state instead of throwing later in mergeJob/renderComment. */
+function isMatrixState(v: unknown): v is MatrixState {
+  if (typeof v !== 'object' || v === null) return false;
+  const s = v as Record<string, unknown>;
+  return Array.isArray(s.jobOrder) && Array.isArray(s.testNames) && typeof s.jobs === 'object' && s.jobs !== null;
+}
+
+/** Recover the embedded state from a comment body, or null if absent/corrupt/malformed. */
 export function parseState(body: string): MatrixState | null {
   const open = body.indexOf(STATE_OPEN);
   if (open < 0) return null;
@@ -68,7 +75,8 @@ export function parseState(body: string): MatrixState | null {
   const end = body.indexOf(STATE_CLOSE, start);
   if (end < 0) return null;
   try {
-    return decodeState(body.slice(start, end).trim());
+    const decoded = decodeState(body.slice(start, end).trim());
+    return isMatrixState(decoded) ? decoded : null;
   } catch {
     return null;
   }

@@ -20,10 +20,15 @@ function loadResult(): ParsedJob | null {
   }
 }
 
+// addList writes raw <li> markup, so HTML-escape the JUnit-sourced names and flatten any
+// newlines before listing them.
+const escapeListItem = (s: string): string =>
+  s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll(/[\r\n]+/g, ' ');
+
 function writeJobSummary(job: string, r: ParsedJob): Promise<unknown> {
   const failed = Object.entries(r.tests)
     .filter(([, s]) => s === 'failed')
-    .map(([n]) => n);
+    .map(([n]) => escapeListItem(n));
   core.summary
     .addHeading(`🧪 Tests — ${job}`, 3)
     .addRaw(`✅ ${r.passed} passed · ❌ ${r.failed} failed · ⏭️ ${r.skipped} skipped · ${r.total} total`, true);

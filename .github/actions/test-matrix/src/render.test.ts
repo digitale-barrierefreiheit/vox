@@ -66,3 +66,9 @@ test('hostile test names are escaped and cannot corrupt the embedded state', () 
   assert.equal(back?.testNames[0], evil);
   assert.equal(renderComment('r', back!), body);
 });
+
+test('parseState rejects a malformed embedded state (falls back to a fresh one)', () => {
+  const bad = Buffer.from(JSON.stringify({ not: 'a state' })).toString('base64');
+  const body = `<!-- vox-test-matrix run=r -->\n<!-- vox-test-matrix-state: ${bad} -->`;
+  assert.equal(parseState(body), null);
+});

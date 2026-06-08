@@ -52,11 +52,31 @@ test('a report (create=false) updates the same comment to fold in its column', a
   assert.deepEqual(parseState(comments[0].body)?.jobOrder, ['x64', 'tsan']);
 });
 
-test('a report (create=false) never creates — avoids the parallel-create race', async () => {
+test('a report (create=false) never creates, even after retrying — avoids the create race', async () => {
   const { client, comments, calls } = fakeClient();
   await upsertWith(client, { runId: 'r1', prNumber: 1, meta, sleep: noSleep, create: false, merge: fold('x64', 'A.a') });
   assert.equal(calls.create, 0);
-  assert.equal(comments.length, 0); // init was "skipped"; the report skips quietly
+  assert.equal(comments.length, 0); // init never created one; the report gives up after retries
+  assert.ok(calls.list >= 2); // it polled rather than skipping on the first miss
+});
+
+test('a report waits for a late init comment instead of skipping', async () => {
+  const comments: { id: number; body: string }[] = [];
+  let list = 0;
+  const client: CommentClient = {
+    list: async () => {
+      list++;
+      if (list === 2) comments.push({ id: 1, body: '<!-- vox-test-matrix run=r1 -->' }); // init finishes late
+      return comments.map((c) => ({ ...c }));
+    },
+    create: async () => assert.fail('a report must not create'),
+    update: async (id, body) => {
+      const c = comments.find((x) => x.id === id);
+      if (c) c.body = body;
+    },
+  };
+  await upsertWith(client, { runId: 'r1', prNumber: 1, meta, sleep: noSleep, create: false, merge: fold('x64', 'A.a') });
+  assert.ok(parseState(comments[0].body)?.jobOrder.includes('x64')); // found the late comment and folded in
 });
 
 test('a different run id gets its own comment', async () => {

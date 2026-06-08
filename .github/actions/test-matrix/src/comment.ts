@@ -61,13 +61,13 @@ export async function upsertWith(
   for (let attempt = 0; attempt < 8; attempt++) {
     const existing = findByMarker(await client.list(opts.prNumber), marker);
 
-    // Only the init step may create. Report steps run in parallel, so if they could create
-    // too, two racing jobs (both seeing no comment) would each create one and break the
-    // "one comment per run" guarantee. Init runs first (at the start of the run), so by the
-    // time reports run the comment exists; if it doesn't, init was skipped — skip quietly.
+    // Only the init step may create — if reports could create too, two parallel reports both
+    // seeing no comment would each create one and break "one comment per run". But init and
+    // report jobs start in parallel, so a fast report can arrive before init has created the
+    // comment; wait and retry rather than skipping permanently (which would drop its column).
     if (!existing && !opts.create) {
-      core.warning('test-matrix: run comment not found (init step skipped?); skipping update.');
-      return;
+      await wait(200 + Math.random() * 400 * (attempt + 1));
+      continue;
     }
 
     const state = stateFrom(existing, opts.meta);
@@ -83,7 +83,7 @@ export async function upsertWith(
     if (findByMarker(await client.list(opts.prNumber), marker)?.body === body) return; // our write stuck
     await wait(200 + Math.random() * 400 * (attempt + 1)); // a concurrent job clobbered us
   }
-  core.warning('test-matrix: comment update did not converge after retries.');
+  core.warning('test-matrix: comment not available / update did not converge after retries.');
 }
 
 /** Wire `upsertWith` to the live GitHub PR-comment API. */

@@ -84,10 +84,18 @@ export function parseState(body: string): MatrixState | null {
 
 const codeAt = (col: JobColumn, i: number): Code => (col.status[i] as Code) ?? '-';
 
-// Escape a value for a Markdown table cell: `|` breaks the column, a backtick breaks the
-// inline-code span, and a newline breaks the row.
-const cell = (s: string): string =>
-  s.replaceAll('|', String.raw`\|`).replaceAll('`', 'ˋ').replaceAll(/\r?\n/g, ' ');
+// Plain Markdown table cell (job labels): `|` breaks the column, newlines break the row.
+const cell = (s: string): string => s.replaceAll('|', String.raw`\|`).replaceAll(/\r?\n/g, ' ');
+
+// A faithful code span for a test name: escape the table-breaking chars, then fence with
+// more backticks than any run inside it so the real name (backticks and all) displays as-is.
+const codeCell = (s: string): string => {
+  const safe = cell(s);
+  const longest = (safe.match(/`+/g) ?? []).reduce((max, run) => Math.max(max, run.length), 0);
+  const fence = '`'.repeat(longest + 1);
+  const pad = safe.startsWith('`') || safe.endsWith('`') ? ' ' : '';
+  return `${fence}${pad}${safe}${pad}${fence}`;
+};
 
 /** The one-line headline: running, some-failed, or all-passed. */
 function renderStatusLine(jobCount: number, totals: { p: number; f: number; s: number }): string {
@@ -119,7 +127,7 @@ export function renderComment(runId: string, state: MatrixState): string {
 
   const colHead = `| Test | ${jobs.map(cell).join(' | ')} |\n|---|${jobs.map(() => ':-:').join('|')}|`;
   const row = (i: number): string =>
-    `| \`${cell(state.testNames[i])}\` | ${jobs.map((j) => ICON[codeAt(state.jobs[j], i)]).join(' | ')} |`;
+    `| ${codeCell(state.testNames[i])} | ${jobs.map((j) => ICON[codeAt(state.jobs[j], i)]).join(' | ')} |`;
 
   const failedIdx = state.testNames
     .map((_, i) => i)

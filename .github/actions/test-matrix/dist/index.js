@@ -32545,13 +32545,13 @@ async function upsertWith(client, opts) {
     const marker = (0,_render_js__WEBPACK_IMPORTED_MODULE_2__/* .runMarker */ .qW)(opts.runId);
     for (let attempt = 0; attempt < 8; attempt++) {
         const existing = findByMarker(await client.list(opts.prNumber), marker);
-        // Only the init step may create. Report steps run in parallel, so if they could create
-        // too, two racing jobs (both seeing no comment) would each create one and break the
-        // "one comment per run" guarantee. Init runs first (at the start of the run), so by the
-        // time reports run the comment exists; if it doesn't, init was skipped — skip quietly.
+        // Only the init step may create — if reports could create too, two parallel reports both
+        // seeing no comment would each create one and break "one comment per run". But init and
+        // report jobs start in parallel, so a fast report can arrive before init has created the
+        // comment; wait and retry rather than skipping permanently (which would drop its column).
         if (!existing && !opts.create) {
-            _actions_core__WEBPACK_IMPORTED_MODULE_0__.warning('test-matrix: run comment not found (init step skipped?); skipping update.');
-            return;
+            await wait(200 + Math.random() * 400 * (attempt + 1));
+            continue;
         }
         const state = stateFrom(existing, opts.meta);
         opts.merge(state);
@@ -32565,7 +32565,7 @@ async function upsertWith(client, opts) {
             return; // our write stuck
         await wait(200 + Math.random() * 400 * (attempt + 1)); // a concurrent job clobbered us
     }
-    _actions_core__WEBPACK_IMPORTED_MODULE_0__.warning('test-matrix: comment update did not converge after retries.');
+    _actions_core__WEBPACK_IMPORTED_MODULE_0__.warning('test-matrix: comment not available / update did not converge after retries.');
 }
 /** Wire `upsertWith` to the live GitHub PR-comment API. */
 async function upsert(opts) {
@@ -32825,9 +32825,17 @@ function parseState(body) {
     }
 }
 const codeAt = (col, i) => col.status[i] ?? '-';
-// Escape a value for a Markdown table cell: `|` breaks the column, a backtick breaks the
-// inline-code span, and a newline breaks the row.
-const cell = (s) => s.replaceAll('|', String.raw `\|`).replaceAll('`', 'ˋ').replaceAll(/\r?\n/g, ' ');
+// Plain Markdown table cell (job labels): `|` breaks the column, newlines break the row.
+const cell = (s) => s.replaceAll('|', String.raw `\|`).replaceAll(/\r?\n/g, ' ');
+// A faithful code span for a test name: escape the table-breaking chars, then fence with
+// more backticks than any run inside it so the real name (backticks and all) displays as-is.
+const codeCell = (s) => {
+    const safe = cell(s);
+    const longest = (safe.match(/`+/g) ?? []).reduce((max, run) => Math.max(max, run.length), 0);
+    const fence = '`'.repeat(longest + 1);
+    const pad = safe.startsWith('`') || safe.endsWith('`') ? ' ' : '';
+    return `${fence}${pad}${safe}${pad}${fence}`;
+};
 /** The one-line headline: running, some-failed, or all-passed. */
 function renderStatusLine(jobCount, totals) {
     if (jobCount === 0)
@@ -32851,7 +32859,7 @@ function renderComment(runId, state) {
         summary += `| ${cell(j)} | ${c.p} | ${c.f} | ${c.s} | ${c.p + c.f + c.s} |\n`;
     }
     const colHead = `| Test | ${jobs.map(cell).join(' | ')} |\n|---|${jobs.map(() => ':-:').join('|')}|`;
-    const row = (i) => `| \`${cell(state.testNames[i])}\` | ${jobs.map((j) => ICON[codeAt(state.jobs[j], i)]).join(' | ')} |`;
+    const row = (i) => `| ${codeCell(state.testNames[i])} | ${jobs.map((j) => ICON[codeAt(state.jobs[j], i)]).join(' | ')} |`;
     const failedIdx = state.testNames
         .map((_, i) => i)
         .filter((i) => jobs.some((j) => codeAt(state.jobs[j], i) === 'F'));

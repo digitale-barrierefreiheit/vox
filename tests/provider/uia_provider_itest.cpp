@@ -9,42 +9,61 @@
 /// app as a child process and reads the focused element through the live
 /// `IUIAutomation` stack, so it exercises the path the mock-COM unit tests cannot.
 ///
-/// Dry-run scope: the app focuses a single labelled button and this asserts the
-/// provider reads it — proving that keyboard focus and UIA reads work on the
-/// hosted CI runner before the full control tree + UIA-driven focus are built.
-///
-/// Gated like the other *_itest: the Windows CI jobs set `VOX_REQUIRE_UIA_TREE=1`,
-/// under which a missing app or an unreadable focus is a hard failure; without the
-/// flag (dev box / non-interactive runner) the test skips, so those stay green.
+/// The app cycles keyboard focus through its focusable controls; this polls the
+/// provider's focused element to collect each one, then asserts the mapped role,
+/// name, state, and value. Gated like the other *_itest: the Windows CI jobs set
+/// `VOX_REQUIRE_UIA_TREE=1`, under which a missing app or unreadable controls are a
+/// hard failure; without the flag (dev box / non-interactive runner) the test skips.
 /// CMake passes the freshly built app path via the `VOX_UIA_TEST_APP` environment.
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
 
+#include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
+#include <vector>
 
 #include <gtest/gtest.h>
 
 #include <vox/model/accessible_node.hpp>
 #include <vox/model/role.hpp>
+#include <vox/model/state.hpp>
 #include <vox/provider/uia_provider.hpp>
 
 namespace {
 
 using vox::model::AccessibleNode;
 using vox::model::Role;
+using vox::model::State;
 using vox::provider::UiaProvider;
 
 constexpr DWORD ReadyTimeoutMs = 10000;
 
-// Reads an environment variable as wide text. The 'W' API avoids the active-code-page
-// round-trip the 'A' API would impose, so a path with non-ASCII characters survives.
+// One expected control. An empty `name` matches by role alone (the edit has no
+// accessible name); `state`, if set, must be present; a non-empty `value` must match.
+struct ExpectedControl {
+  Role role;
+  std::string_view name;
+  std::optional<State> state;
+  std::string_view value;
+};
+
+// The focusable controls the app exposes (one per focusable, provider-mappable role).
+constexpr std::array<ExpectedControl, 5> ExpectedControls{{
+    {.role = Role::Button, .name = "Speichern", .state = std::nullopt, .value = ""},
+    {.role = Role::Checkbox, .name = "Kapitel anzeigen", .state = State::Checked, .value = ""},
+    {.role = Role::Checkbox, .name = "Teilauswahl", .state = State::Mixed, .value = ""},
+    {.role = Role::RadioButton, .name = "Deutsch", .state = State::Selected, .value = ""},
+    {.role = Role::Edit, .name = "", .state = std::nullopt, .value = "Hallo"},
+}};
+
 std::wstring envValue(const wchar_t* name) {
   const DWORD size = ::GetEnvironmentVariableW(name, nullptr, 0);
   if (size == 0) {
@@ -59,12 +78,8 @@ std::wstring envValue(const wchar_t* name) {
   return value;
 }
 
-bool envEquals(const wchar_t* name, std::wstring_view expected) {
-  return envValue(name) == expected;
-}
-
 bool uiaTreeRequired() {
-  return envEquals(L"VOX_REQUIRE_UIA_TREE", L"1");
+  return envValue(L"VOX_REQUIRE_UIA_TREE") == L"1";
 }
 
 /// The test-app executable: the path CMake injected, else a sibling of this test
@@ -86,21 +101,37 @@ std::wstring locateTestApp() {
   return self.substr(0, slash + 1) + L"uia_test_app.exe";
 }
 
-bool isSpeichernButton(const std::optional<AccessibleNode>& node) {
-  return node.has_value() && node->role == Role::Button && node->name == "Speichern";
-}
-
-std::string describe(const std::optional<AccessibleNode>& node) {
-  if (!node.has_value()) {
-    return "no focused element";
+// Finds a collected control by role (and name, unless the expected name is empty).
+std::optional<AccessibleNode> find(const std::vector<AccessibleNode>& seen, Role role,
+                                   std::string_view name) {
+  for (const AccessibleNode& node : seen) {
+    if (node.role == role && (name.empty() || node.name == name)) {
+      return node;
+    }
   }
-  return "role=" + std::to_string(static_cast<int>(node->role)) + " name='" + node->name + "'";
+  return std::nullopt;
 }
 
-// Fails when VOX_REQUIRE_UIA_TREE demands a working tree, otherwise skips — the shared
-// reaction for every "couldn't read the focused button" path. Keeping it here flattens
-// the call sites (no `if-required-else-skip` nested in each guard).
-void skipOrFail(const char* failMessage, const std::string& skipMessage) {
+// Adds a control unless one with the same role + name was already collected.
+void addDistinct(std::vector<AccessibleNode>& seen, const AccessibleNode& node) {
+  if (!find(seen, node.role, node.name).has_value()) {
+    seen.push_back(node);
+  }
+}
+
+bool haveAllExpected(const std::vector<AccessibleNode>& seen) {
+  return std::ranges::all_of(ExpectedControls, [&seen](const ExpectedControl& expected) {
+    return find(seen, expected.role, expected.name).has_value();
+  });
+}
+
+std::string describe(const AccessibleNode& node) {
+  return "role=" + std::to_string(static_cast<int>(node.role)) + " name='" + node.name +
+         "' value='" + node.value.value_or("<none>") + "'";
+}
+
+// Fails when VOX_REQUIRE_UIA_TREE demands a working tree, otherwise skips.
+void skipOrFail(const std::string& failMessage, const std::string& skipMessage) {
   if (uiaTreeRequired()) {
     FAIL() << failMessage; // fatal — returns, so the skip below is the not-required path
   }
@@ -165,24 +196,43 @@ private:
   HANDLE readyEvent_ = nullptr;
 };
 
-// The app focuses its "Speichern" button on startup; the provider must read exactly
-// that element through the real UIA stack. Polls until it appears (focus can take a
-// moment to settle, especially on x86). A miss skips unless VOX_REQUIRE_UIA_TREE=1.
-TEST_F(UiaProviderItest, ReadsTheFocusedButton) {
-  const UiaProvider provider;
-
-  std::optional<AccessibleNode> node = provider.focusedElement();
-  for (int attempt = 0; attempt < 50 && !isSpeichernButton(node); ++attempt) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    node = provider.focusedElement();
+// Polls the focused element while the app cycles focus, collecting each distinct
+// control until all expected appear or the budget (~10s) runs out.
+std::vector<AccessibleNode> collectFocusedControls(const UiaProvider& provider) {
+  std::vector<AccessibleNode> seen;
+  for (int attempt = 0; attempt < 200 && !haveAllExpected(seen); ++attempt) {
+    if (std::optional<AccessibleNode> node = provider.focusedElement(); node.has_value()) {
+      addDistinct(seen, *node);
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
+  return seen;
+}
 
-  if (isSpeichernButton(node)) {
-    SUCCEED() << "Provider read the focused \"Speichern\" button.";
+TEST_F(UiaProviderItest, ReadsEachFocusableControl) {
+  const UiaProvider provider;
+  const std::vector<AccessibleNode> seen = collectFocusedControls(provider);
+
+  if (!haveAllExpected(seen)) {
+    skipOrFail("VOX_REQUIRE_UIA_TREE is set but the provider did not read every focusable control.",
+               "Did not read all focusable controls (no interactive focus on this machine?).");
     return;
   }
-  skipOrFail("VOX_REQUIRE_UIA_TREE is set but the provider never read the focused button.",
-             "Could not read the test app's button (focused: " + describe(node) + ").");
+
+  for (const ExpectedControl& expected : ExpectedControls) {
+    const std::optional<AccessibleNode> node = find(seen, expected.role, expected.name);
+    if (!node.has_value()) {
+      continue; // haveAllExpected guaranteed presence; this guard keeps the access checked
+    }
+    if (expected.state.has_value()) {
+      EXPECT_TRUE(node->states.test(*expected.state))
+          << "missing state " << static_cast<int>(*expected.state) << " on " << describe(*node);
+    }
+    if (!expected.value.empty()) {
+      EXPECT_EQ(node->value.value_or(""), expected.value)
+          << "value mismatch on " << describe(*node);
+    }
+  }
 }
 
 } // namespace

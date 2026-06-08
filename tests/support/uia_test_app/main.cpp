@@ -2,15 +2,17 @@
 // SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
 
 /// @file
-/// @brief A tiny Win32 app with a known control tree, for the UIA provider's
+/// @brief A small Win32 app with a known control tree, for the UIA provider's
 ///        integration tests (#40).
 ///
-/// Dry-run scope: it exposes a single labelled push button, gives it the
-/// keyboard focus, then signals the launching test via a named "ready" event
-/// (whose name it receives as `argv[1]`) and pumps messages until terminated.
-/// Standard common controls expose UI Automation through the system's default
-/// provider, so this app writes no UIA code of its own. The full known tree
-/// (one control per mapped Role) is built out once CI confirms focus works.
+/// It exposes one control per provider-mappable, *focusable* role with known names
+/// and initial states, and cycles keyboard focus through them on a timer (via the
+/// Win32 tab order) so a UIA client (the integration test) sees a focus-changed
+/// event for each. Non-focusable roles (static text, a disabled control) and popup
+/// menu items can't be reached through the focus path and stay unit-tested. It
+/// signals a named "ready" event (name in argv[1]) once the first control is
+/// focused, then pumps messages until terminated. Standard common controls expose
+/// UI Automation through the system's default provider, so this app writes no UIA code.
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -23,8 +25,18 @@ namespace {
 constexpr const wchar_t* WindowClassName = L"VoxUiaTestAppWindow";
 constexpr const wchar_t* WindowTitle = L"Vox UIA Test App";
 constexpr int EventNameBufferChars = 256;
+constexpr UINT_PTR FocusCycleTimerId = 1;
+constexpr UINT FocusCycleMs = 200;
 
 LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+  if (message == WM_TIMER) {
+    // Advance focus to the next tab-stop control, wrapping at the end.
+    if (HWND next = ::GetNextDlgTabItem(window, ::GetFocus(), FALSE)) {
+      ::SetForegroundWindow(window);
+      ::SetFocus(next);
+    }
+    return 0;
+  }
   if (message == WM_DESTROY) {
     ::PostQuitMessage(0);
     return 0;
@@ -32,9 +44,52 @@ LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
   return ::DefWindowProcW(window, message, wParam, lParam);
 }
 
-HWND createButton(HWND parent, const wchar_t* text) {
-  return ::CreateWindowExW(0, L"BUTTON", text, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-                           10, 10, 160, 30, parent, nullptr, ::GetModuleHandleW(nullptr), nullptr);
+struct ControlSpec {
+  const wchar_t* className;
+  const wchar_t* text;
+  DWORD style;
+  int top;
+};
+
+HWND addControl(HWND parent, const ControlSpec& spec) {
+  return ::CreateWindowExW(0, spec.className, spec.text, WS_CHILD | WS_VISIBLE | spec.style, 10,
+                           spec.top, 260, 28, parent, nullptr, ::GetModuleHandleW(nullptr),
+                           nullptr);
+}
+
+// Builds the known focusable control tree and returns the first control (the initial
+// focus). Each control's window text is its accessible name; checkboxes/radio get an
+// explicit checked/indeterminate state; the edit's text is its value (it has no name).
+HWND buildControlTree(HWND parent) {
+  HWND firstButton = addControl(parent, {.className = L"BUTTON",
+                                         .text = L"Speichern",
+                                         .style = WS_TABSTOP | BS_PUSHBUTTON,
+                                         .top = 10});
+
+  HWND checkedBox = addControl(parent, {.className = L"BUTTON",
+                                        .text = L"Kapitel anzeigen",
+                                        .style = WS_TABSTOP | BS_AUTOCHECKBOX,
+                                        .top = 44});
+  ::SendMessageW(checkedBox, BM_SETCHECK, BST_CHECKED, 0);
+
+  HWND triStateBox = addControl(parent, {.className = L"BUTTON",
+                                         .text = L"Teilauswahl",
+                                         .style = WS_TABSTOP | BS_AUTO3STATE,
+                                         .top = 78});
+  ::SendMessageW(triStateBox, BM_SETCHECK, BST_INDETERMINATE, 0);
+
+  HWND radio = addControl(parent, {.className = L"BUTTON",
+                                   .text = L"Deutsch",
+                                   .style = WS_TABSTOP | WS_GROUP | BS_AUTORADIOBUTTON,
+                                   .top = 112});
+  ::SendMessageW(radio, BM_SETCHECK, BST_CHECKED, 0);
+
+  addControl(parent, {.className = L"EDIT",
+                      .text = L"Hallo",
+                      .style = WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
+                      .top = 146});
+
+  return firstButton;
 }
 
 // Signals the launcher's ready event once startup is done — the window is created and
@@ -72,19 +127,20 @@ int main(int argc, char** argv) {
 
   HWND window =
       ::CreateWindowExW(0, WindowClassName, WindowTitle, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT,
-                        CW_USEDEFAULT, 400, 200, nullptr, nullptr, instance, nullptr);
+                        CW_USEDEFAULT, 320, 260, nullptr, nullptr, instance, nullptr);
   if (window == nullptr) {
     return 1;
   }
 
-  HWND saveButton = createButton(window, L"Speichern");
-  if (saveButton == nullptr) {
+  HWND firstControl = buildControlTree(window);
+  if (firstControl == nullptr) {
     return 1;
   }
 
   ::ShowWindow(window, SW_SHOWNORMAL);
   ::SetForegroundWindow(window);
-  ::SetFocus(saveButton);
+  ::SetFocus(firstControl);
+  ::SetTimer(window, FocusCycleTimerId, FocusCycleMs, nullptr);
 
   if (argc > 1) {
     signalReady(argv[1]);

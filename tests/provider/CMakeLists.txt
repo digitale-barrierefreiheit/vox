@@ -28,4 +28,24 @@ if(WIN32)
     PROPERTIES LABELS "unit"
     DISCOVERY_MODE PRE_TEST)
   set_target_properties(provider_uia_test PROPERTIES FOLDER "tests")
+
+  # Integration test driving the real UiaProvider against the purpose-built UIA
+  # test app (#40). Labelled "integration"; it skips without an interactive
+  # desktop and fails instead when VOX_REQUIRE_UIA_TREE=1 (the Windows CI jobs).
+  # The test-app path is injected via the test environment so the test launches
+  # the exe this build just produced.
+  add_executable(provider_uia_itest uia_provider_itest.cpp)
+  vox_configure_target(provider_uia_itest)
+  target_link_libraries(provider_uia_itest PRIVATE
+    vox::provider
+    GTest::gtest
+    GTest::gmock
+    GTest::gtest_main)
+  add_dependencies(provider_uia_itest uia_test_app)
+  gtest_discover_tests(provider_uia_itest
+    PROPERTIES
+      LABELS "integration"
+      ENVIRONMENT "VOX_UIA_TEST_APP=$<TARGET_FILE:uia_test_app>"
+    DISCOVERY_MODE PRE_TEST)
+  set_target_properties(provider_uia_itest PROPERTIES FOLDER "tests")
 endif()

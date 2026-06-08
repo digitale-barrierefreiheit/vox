@@ -32504,6 +32504,346 @@ function wrappy (fn, cb) {
 
 /***/ }),
 
+/***/ 2246:
+/***/ ((__unused_webpack_module, __webpack_exports__, __nccwpck_require__) => {
+
+/* harmony export */ __nccwpck_require__.d(__webpack_exports__, {
+/* harmony export */   e: () => (/* binding */ upsert)
+/* harmony export */ });
+/* unused harmony export upsertWith */
+/* harmony import */ var _actions_core__WEBPACK_IMPORTED_MODULE_0__ = __nccwpck_require__(7484);
+/* harmony import */ var _actions_core__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__nccwpck_require__.n(_actions_core__WEBPACK_IMPORTED_MODULE_0__);
+/* harmony import */ var _actions_github__WEBPACK_IMPORTED_MODULE_1__ = __nccwpck_require__(3228);
+/* harmony import */ var _actions_github__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__nccwpck_require__.n(_actions_github__WEBPACK_IMPORTED_MODULE_1__);
+/* harmony import */ var _render_js__WEBPACK_IMPORTED_MODULE_2__ = __nccwpck_require__(7055);
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
+
+
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+function runMeta() {
+    const { GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_RUN_ID, GITHUB_RUN_NUMBER, GITHUB_SHA } = process.env;
+    return {
+        runNumber: GITHUB_RUN_NUMBER ?? '?',
+        runUrl: `${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}`,
+        commit: (GITHUB_SHA ?? '').slice(0, 7),
+    };
+}
+/**
+ * Find-or-create the run's comment and apply `merge` to its state, then write it back.
+ * Parallel jobs race on one comment, so retry: re-read, re-merge, re-write until our
+ * write sticks (last writer with the freshest state wins). Pure of octokit/env for tests.
+ */
+async function upsertWith(client, opts) {
+    const wait = opts.sleep ?? sleep;
+    const marker = (0,_render_js__WEBPACK_IMPORTED_MODULE_2__/* .runMarker */ .qW)(opts.runId);
+    const find = (cs) => cs.find((c) => c.body.includes(marker));
+    for (let attempt = 0; attempt < 8; attempt++) {
+        const existing = find(await client.list(opts.prNumber));
+        const state = (existing?.body && (0,_render_js__WEBPACK_IMPORTED_MODULE_2__/* .parseState */ .Bu)(existing.body)) || (0,_render_js__WEBPACK_IMPORTED_MODULE_2__/* .emptyState */ .p$)(opts.meta);
+        opts.merge(state);
+        const body = (0,_render_js__WEBPACK_IMPORTED_MODULE_2__/* .renderComment */ .wQ)(opts.runId, state);
+        if (!existing) {
+            await client.create(opts.prNumber, body);
+            return;
+        }
+        await client.update(existing.id, body);
+        if (find(await client.list(opts.prNumber))?.body === body)
+            return; // our write stuck
+        await wait(200 + Math.random() * 400 * (attempt + 1)); // a concurrent job clobbered us
+    }
+    _actions_core__WEBPACK_IMPORTED_MODULE_0__.warning('test-matrix: comment update did not converge after retries.');
+}
+/** Wire `upsertWith` to the live GitHub PR-comment API. */
+async function upsert(opts) {
+    const octokit = _actions_github__WEBPACK_IMPORTED_MODULE_1__.getOctokit(opts.token);
+    const { owner, repo } = _actions_github__WEBPACK_IMPORTED_MODULE_1__.context.repo;
+    const client = {
+        list: async (prNumber) => {
+            const out = [];
+            const it = octokit.paginate.iterator(octokit.rest.issues.listComments, {
+                owner,
+                repo,
+                issue_number: prNumber,
+                per_page: 100,
+            });
+            for await (const { data } of it)
+                out.push(...data.map((c) => ({ id: c.id, body: c.body ?? '' })));
+            return out;
+        },
+        create: async (prNumber, body) => {
+            await octokit.rest.issues.createComment({ owner, repo, issue_number: prNumber, body });
+        },
+        update: async (commentId, body) => {
+            await octokit.rest.issues.updateComment({ owner, repo, comment_id: commentId, body });
+        },
+    };
+    await upsertWith(client, { runId: opts.runId, prNumber: opts.prNumber, merge: opts.merge, meta: runMeta() });
+}
+
+
+/***/ }),
+
+/***/ 9407:
+/***/ ((module, __unused_webpack___webpack_exports__, __nccwpck_require__) => {
+
+__nccwpck_require__.a(module, async (__webpack_handle_async_dependencies__, __webpack_async_result__) => { try {
+/* harmony import */ var node_fs__WEBPACK_IMPORTED_MODULE_0__ = __nccwpck_require__(3024);
+/* harmony import */ var node_fs__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__nccwpck_require__.n(node_fs__WEBPACK_IMPORTED_MODULE_0__);
+/* harmony import */ var _actions_core__WEBPACK_IMPORTED_MODULE_1__ = __nccwpck_require__(7484);
+/* harmony import */ var _actions_core__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__nccwpck_require__.n(_actions_core__WEBPACK_IMPORTED_MODULE_1__);
+/* harmony import */ var _actions_github__WEBPACK_IMPORTED_MODULE_2__ = __nccwpck_require__(3228);
+/* harmony import */ var _actions_github__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__nccwpck_require__.n(_actions_github__WEBPACK_IMPORTED_MODULE_2__);
+/* harmony import */ var _junit_js__WEBPACK_IMPORTED_MODULE_3__ = __nccwpck_require__(4831);
+/* harmony import */ var _render_js__WEBPACK_IMPORTED_MODULE_4__ = __nccwpck_require__(7055);
+/* harmony import */ var _comment_js__WEBPACK_IMPORTED_MODULE_5__ = __nccwpck_require__(2246);
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
+
+
+
+
+
+
+/** Read + parse this job's JUnit file; on any error (e.g. the build failed before it was
+ *  produced) warn and return null rather than throwing and masking the real failure. */
+function loadResult() {
+    const path = _actions_core__WEBPACK_IMPORTED_MODULE_1__.getInput('report-path') || 'test-results.xml';
+    try {
+        return (0,_junit_js__WEBPACK_IMPORTED_MODULE_3__/* .parseJunit */ .k)((0,node_fs__WEBPACK_IMPORTED_MODULE_0__.readFileSync)(path, 'utf8'));
+    }
+    catch (err) {
+        _actions_core__WEBPACK_IMPORTED_MODULE_1__.warning(`test-matrix: could not read ${path} (${err instanceof Error ? err.message : err}); skipping report.`);
+        return null;
+    }
+}
+function writeJobSummary(job, r) {
+    const failed = Object.entries(r.tests)
+        .filter(([, s]) => s === 'failed')
+        .map(([n]) => n);
+    _actions_core__WEBPACK_IMPORTED_MODULE_1__.summary
+        .addHeading(`🧪 Tests — ${job}`, 3)
+        .addRaw(`✅ ${r.passed} passed · ❌ ${r.failed} failed · ⏭️ ${r.skipped} skipped · ${r.total} total`, true);
+    if (failed.length > 0)
+        _actions_core__WEBPACK_IMPORTED_MODULE_1__.summary.addHeading('Failed', 4).addList(failed);
+    return _actions_core__WEBPACK_IMPORTED_MODULE_1__.summary.write();
+}
+/** Upsert the run's comment. PR-comment writes 403 on restricted contexts (fork PRs get a
+ *  read-only token) — treat that as non-fatal so the test job's own status stays the signal. */
+async function postComment(prNumber, job, result) {
+    const token = _actions_core__WEBPACK_IMPORTED_MODULE_1__.getInput('token') || process.env.GITHUB_TOKEN || '';
+    const runId = process.env.GITHUB_RUN_ID ?? '';
+    try {
+        await (0,_comment_js__WEBPACK_IMPORTED_MODULE_5__/* .upsert */ .e)({
+            token,
+            runId,
+            prNumber,
+            merge: (state) => {
+                if (result)
+                    (0,_render_js__WEBPACK_IMPORTED_MODULE_4__/* .mergeJob */ .aF)(state, job, result);
+            },
+        });
+    }
+    catch (err) {
+        _actions_core__WEBPACK_IMPORTED_MODULE_1__.warning(`test-matrix: could not update the PR comment (${err instanceof Error ? err.message : err}).`);
+    }
+}
+async function run() {
+    const mode = _actions_core__WEBPACK_IMPORTED_MODULE_1__.getInput('mode', { required: true });
+    if (mode !== 'init' && mode !== 'report') {
+        _actions_core__WEBPACK_IMPORTED_MODULE_1__.setFailed(`Unknown mode '${mode}' (expected 'init' or 'report').`);
+        return;
+    }
+    const job = mode === 'report' ? _actions_core__WEBPACK_IMPORTED_MODULE_1__.getInput('job', { required: true }) : '';
+    const result = mode === 'report' ? loadResult() : null;
+    if (result)
+        await writeJobSummary(job, result);
+    const prNumber = _actions_github__WEBPACK_IMPORTED_MODULE_2__.context.payload.pull_request?.number;
+    if (prNumber) {
+        await postComment(prNumber, job, result);
+    }
+    else {
+        _actions_core__WEBPACK_IMPORTED_MODULE_1__.info('Not a pull_request event — wrote the run Summary only.');
+    }
+}
+try {
+    await run();
+}
+catch (err) {
+    _actions_core__WEBPACK_IMPORTED_MODULE_1__.setFailed(err instanceof Error ? err.message : String(err));
+}
+
+__webpack_async_result__();
+} catch(e) { __webpack_async_result__(e); } }, 1);
+
+/***/ }),
+
+/***/ 4831:
+/***/ ((__unused_webpack_module, __webpack_exports__, __nccwpck_require__) => {
+
+/* harmony export */ __nccwpck_require__.d(__webpack_exports__, {
+/* harmony export */   k: () => (/* binding */ parseJunit)
+/* harmony export */ });
+/* harmony import */ var fast_xml_parser__WEBPACK_IMPORTED_MODULE_0__ = __nccwpck_require__(9741);
+/* harmony import */ var fast_xml_parser__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__nccwpck_require__.n(fast_xml_parser__WEBPACK_IMPORTED_MODULE_0__);
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
+
+const parser = new fast_xml_parser__WEBPACK_IMPORTED_MODULE_0__.XMLParser({
+    ignoreAttributes: false,
+    attributeNamePrefix: '@_',
+    // CTest emits a single <testsuite>; some tools wrap in <testsuites>. Force arrays so a
+    // single suite/case parses the same as many.
+    isArray: (name) => name === 'testsuite' || name === 'testcase',
+});
+/** Classify one `<testcase>`: a <failure>/<error> child is failed, <skipped>/disabled is
+ *  skipped, otherwise passed. */
+function classify(tc) {
+    if (tc.failure !== undefined || tc.error !== undefined)
+        return 'failed';
+    if (tc.skipped !== undefined || tc['@_status'] === 'disabled')
+        return 'skipped';
+    return 'passed';
+}
+/** The testcase name attribute, defended against a non-string parse (avoids stringifying
+ *  an object to "[object Object]"). */
+function nameOf(tc) {
+    const raw = tc['@_name'];
+    if (typeof raw === 'string')
+        return raw;
+    if (typeof raw === 'number')
+        return String(raw);
+    return 'unknown';
+}
+/** Parse a CTest (`--output-junit`) JUnit XML string into one job's results. */
+function parseJunit(xml) {
+    const doc = parser.parse(xml);
+    const suites = doc.testsuite ?? doc.testsuites?.testsuite ?? [];
+    const tests = {};
+    const counts = { passed: 0, failed: 0, skipped: 0 };
+    for (const suite of suites) {
+        for (const tc of (suite.testcase ?? [])) {
+            const status = classify(tc);
+            tests[nameOf(tc)] = status;
+            counts[status]++;
+        }
+    }
+    return { ...counts, total: counts.passed + counts.failed + counts.skipped, tests };
+}
+
+
+/***/ }),
+
+/***/ 7055:
+/***/ ((__unused_webpack_module, __webpack_exports__, __nccwpck_require__) => {
+
+/* harmony export */ __nccwpck_require__.d(__webpack_exports__, {
+/* harmony export */   Bu: () => (/* binding */ parseState),
+/* harmony export */   aF: () => (/* binding */ mergeJob),
+/* harmony export */   p$: () => (/* binding */ emptyState),
+/* harmony export */   qW: () => (/* binding */ runMarker),
+/* harmony export */   wQ: () => (/* binding */ renderComment)
+/* harmony export */ });
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
+const CODE = { passed: 'P', failed: 'F', skipped: 'S' };
+const ICON = { P: '✅', F: '❌', S: '⏭️', '-': '—' };
+function emptyState(meta) {
+    return { ...meta, jobOrder: [], testNames: [], jobs: {} };
+}
+/** Fold one job's results into the state (idempotent — re-reporting replaces the column). */
+function mergeJob(state, job, parsed) {
+    // Extend the shared test-name list; pad existing columns for any new names.
+    for (const name of Object.keys(parsed.tests)) {
+        if (!state.testNames.includes(name)) {
+            state.testNames.push(name);
+            for (const col of Object.values(state.jobs))
+                col.status += '-';
+        }
+    }
+    const status = state.testNames
+        .map((name) => (parsed.tests[name] ? CODE[parsed.tests[name]] : '-'))
+        .join('');
+    state.jobs[job] = { p: parsed.passed, f: parsed.failed, s: parsed.skipped, status };
+    if (!state.jobOrder.includes(job))
+        state.jobOrder.push(job);
+}
+const runMarker = (runId) => `<!-- vox-test-matrix run=${runId} -->`;
+const STATE_OPEN = '<!-- vox-test-matrix-state:';
+const STATE_CLOSE = '-->';
+
+// The embedded state is base64 so a value containing `-->` can't terminate the HTML
+// comment early and corrupt it. encode/decode are symmetric.
+const encodeState = (state) => Buffer.from(JSON.stringify(state), 'utf8').toString('base64');
+const decodeState = (s) => JSON.parse(Buffer.from(s, 'base64').toString('utf8'));
+/** Recover the embedded state from a comment body, or null if absent/corrupt. */
+function parseState(body) {
+    const open = body.indexOf(STATE_OPEN);
+    if (open < 0)
+        return null;
+    const start = open + STATE_OPEN.length;
+    const end = body.indexOf(STATE_CLOSE, start);
+    if (end < 0)
+        return null;
+    try {
+        return decodeState(body.slice(start, end).trim());
+    }
+    catch {
+        return null;
+    }
+}
+const codeAt = (col, i) => col.status[i] ?? '-';
+// Escape a value for a Markdown table cell: `|` breaks the column, a backtick breaks the
+// inline-code span, and a newline breaks the row.
+const cell = (s) => s.replace(/\|/g, '\\|').replace(/`/g, 'ˋ').replace(/\r?\n/g, ' ');
+/** The one-line headline: running, some-failed, or all-passed. */
+function renderStatusLine(jobCount, totals) {
+    if (jobCount === 0)
+        return '⏳ Tests running… results appear as each job finishes.';
+    if (totals.f > 0)
+        return `❌ **${totals.f} failed**, ${totals.p} passed, ${totals.s} skipped — ${jobCount} job(s) reported`;
+    return `✅ **All ${totals.p} passed** (${totals.s} skipped) — ${jobCount} job(s) reported`;
+}
+/** Render the whole comment body (marker + tables + embedded state). */
+function renderComment(runId, state) {
+    const jobs = state.jobOrder;
+    const totals = jobs.reduce((a, j) => {
+        const c = state.jobs[j];
+        return { p: a.p + c.p, f: a.f + c.f, s: a.s + c.s };
+    }, { p: 0, f: 0, s: 0 });
+    const header = `### 🧪 Test results — run [#${state.runNumber}](${state.runUrl}) \`${state.commit}\``;
+    const statusLine = renderStatusLine(jobs.length, totals);
+    let summary = '| Job | ✅ | ❌ | ⏭️ | Total |\n|---|--:|--:|--:|--:|\n';
+    for (const j of jobs) {
+        const c = state.jobs[j];
+        summary += `| ${cell(j)} | ${c.p} | ${c.f} | ${c.s} | ${c.p + c.f + c.s} |\n`;
+    }
+    const colHead = `| Test | ${jobs.map(cell).join(' | ')} |\n|---|${jobs.map(() => ':-:').join('|')}|`;
+    const row = (i) => `| \`${cell(state.testNames[i])}\` | ${jobs.map((j) => ICON[codeAt(state.jobs[j], i)]).join(' | ')} |`;
+    const failedIdx = state.testNames
+        .map((_, i) => i)
+        .filter((i) => jobs.some((j) => codeAt(state.jobs[j], i) === 'F'));
+    const failures = failedIdx.length > 0 ? `\n#### ❌ Failed tests\n${colHead}\n${failedIdx.map(row).join('\n')}\n` : '';
+    const full = state.testNames.length > 0
+        ? `\n<details><summary>Full test matrix (${state.testNames.length} tests × ${jobs.length} jobs)</summary>\n\n${colHead}\n${state.testNames
+            .map((_, i) => row(i))
+            .join('\n')}\n\n</details>\n`
+        : '';
+    return [
+        runMarker(runId),
+        header,
+        '',
+        statusLine,
+        '',
+        summary + failures + full,
+        `${STATE_OPEN} ${encodeState(state)} ${STATE_CLOSE}`,
+    ].join('\n');
+}
+
+
+/***/ }),
+
 /***/ 2613:
 /***/ ((module) => {
 
@@ -32606,6 +32946,13 @@ module.exports = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:crypto"
 /***/ ((module) => {
 
 module.exports = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:events");
+
+/***/ }),
+
+/***/ 3024:
+/***/ ((module) => {
+
+module.exports = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:fs");
 
 /***/ }),
 
@@ -34367,282 +34714,113 @@ module.exports = parseParams
 /******/ }
 /******/ 
 /************************************************************************/
+/******/ /* webpack/runtime/async module */
+/******/ (() => {
+/******/ 	var webpackQueues = typeof Symbol === "function" ? Symbol("webpack queues") : "__webpack_queues__";
+/******/ 	var webpackExports = typeof Symbol === "function" ? Symbol("webpack exports") : "__webpack_exports__";
+/******/ 	var webpackError = typeof Symbol === "function" ? Symbol("webpack error") : "__webpack_error__";
+/******/ 	var resolveQueue = (queue) => {
+/******/ 		if(queue && queue.d < 1) {
+/******/ 			queue.d = 1;
+/******/ 			queue.forEach((fn) => (fn.r--));
+/******/ 			queue.forEach((fn) => (fn.r-- ? fn.r++ : fn()));
+/******/ 		}
+/******/ 	}
+/******/ 	var wrapDeps = (deps) => (deps.map((dep) => {
+/******/ 		if(dep !== null && typeof dep === "object") {
+/******/ 			if(dep[webpackQueues]) return dep;
+/******/ 			if(dep.then) {
+/******/ 				var queue = [];
+/******/ 				queue.d = 0;
+/******/ 				dep.then((r) => {
+/******/ 					obj[webpackExports] = r;
+/******/ 					resolveQueue(queue);
+/******/ 				}, (e) => {
+/******/ 					obj[webpackError] = e;
+/******/ 					resolveQueue(queue);
+/******/ 				});
+/******/ 				var obj = {};
+/******/ 				obj[webpackQueues] = (fn) => (fn(queue));
+/******/ 				return obj;
+/******/ 			}
+/******/ 		}
+/******/ 		var ret = {};
+/******/ 		ret[webpackQueues] = x => {};
+/******/ 		ret[webpackExports] = dep;
+/******/ 		return ret;
+/******/ 	}));
+/******/ 	__nccwpck_require__.a = (module, body, hasAwait) => {
+/******/ 		var queue;
+/******/ 		hasAwait && ((queue = []).d = -1);
+/******/ 		var depQueues = new Set();
+/******/ 		var exports = module.exports;
+/******/ 		var currentDeps;
+/******/ 		var outerResolve;
+/******/ 		var reject;
+/******/ 		var promise = new Promise((resolve, rej) => {
+/******/ 			reject = rej;
+/******/ 			outerResolve = resolve;
+/******/ 		});
+/******/ 		promise[webpackExports] = exports;
+/******/ 		promise[webpackQueues] = (fn) => (queue && fn(queue), depQueues.forEach(fn), promise["catch"](x => {}));
+/******/ 		module.exports = promise;
+/******/ 		body((deps) => {
+/******/ 			currentDeps = wrapDeps(deps);
+/******/ 			var fn;
+/******/ 			var getResult = () => (currentDeps.map((d) => {
+/******/ 				if(d[webpackError]) throw d[webpackError];
+/******/ 				return d[webpackExports];
+/******/ 			}))
+/******/ 			var promise = new Promise((resolve) => {
+/******/ 				fn = () => (resolve(getResult));
+/******/ 				fn.r = 0;
+/******/ 				var fnQueue = (q) => (q !== queue && !depQueues.has(q) && (depQueues.add(q), q && !q.d && (fn.r++, q.push(fn))));
+/******/ 				currentDeps.map((dep) => (dep[webpackQueues](fnQueue)));
+/******/ 			});
+/******/ 			return fn.r ? promise : getResult();
+/******/ 		}, (err) => ((err ? reject(promise[webpackError] = err) : outerResolve(exports)), resolveQueue(queue)));
+/******/ 		queue && queue.d < 0 && (queue.d = 0);
+/******/ 	};
+/******/ })();
+/******/ 
+/******/ /* webpack/runtime/compat get default export */
+/******/ (() => {
+/******/ 	// getDefaultExport function for compatibility with non-harmony modules
+/******/ 	__nccwpck_require__.n = (module) => {
+/******/ 		var getter = module && module.__esModule ?
+/******/ 			() => (module['default']) :
+/******/ 			() => (module);
+/******/ 		__nccwpck_require__.d(getter, { a: getter });
+/******/ 		return getter;
+/******/ 	};
+/******/ })();
+/******/ 
+/******/ /* webpack/runtime/define property getters */
+/******/ (() => {
+/******/ 	// define getter functions for harmony exports
+/******/ 	__nccwpck_require__.d = (exports, definition) => {
+/******/ 		for(var key in definition) {
+/******/ 			if(__nccwpck_require__.o(definition, key) && !__nccwpck_require__.o(exports, key)) {
+/******/ 				Object.defineProperty(exports, key, { enumerable: true, get: definition[key] });
+/******/ 			}
+/******/ 		}
+/******/ 	};
+/******/ })();
+/******/ 
+/******/ /* webpack/runtime/hasOwnProperty shorthand */
+/******/ (() => {
+/******/ 	__nccwpck_require__.o = (obj, prop) => (Object.prototype.hasOwnProperty.call(obj, prop))
+/******/ })();
+/******/ 
 /******/ /* webpack/runtime/compat */
 /******/ 
 /******/ if (typeof __nccwpck_require__ !== 'undefined') __nccwpck_require__.ab = new URL('.', import.meta.url).pathname.slice(import.meta.url.match(/^file:\/\/\/\w:/) ? 1 : 0, -1) + "/";
 /******/ 
 /************************************************************************/
-var __webpack_exports__ = {};
-
-;// CONCATENATED MODULE: external "node:fs"
-const external_node_fs_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:fs");
-// EXTERNAL MODULE: ./node_modules/@actions/core/lib/core.js
-var core = __nccwpck_require__(7484);
-// EXTERNAL MODULE: ./node_modules/@actions/github/lib/github.js
-var github = __nccwpck_require__(3228);
-// EXTERNAL MODULE: ./node_modules/fast-xml-parser/src/fxp.js
-var fxp = __nccwpck_require__(9741);
-;// CONCATENATED MODULE: ./src/junit.ts
-// SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
-
-const parser = new fxp.XMLParser({
-    ignoreAttributes: false,
-    attributeNamePrefix: '@_',
-    // CTest emits a single <testsuite>; some tools wrap in <testsuites>. Force arrays so a
-    // single suite/case parses the same as many.
-    isArray: (name) => name === 'testsuite' || name === 'testcase',
-});
-/** Classify one `<testcase>`: a <failure>/<error> child is failed, <skipped>/disabled is
- *  skipped, otherwise passed. */
-function classify(tc) {
-    if (tc.failure !== undefined || tc.error !== undefined)
-        return 'failed';
-    if (tc.skipped !== undefined || tc['@_status'] === 'disabled')
-        return 'skipped';
-    return 'passed';
-}
-/** Parse a CTest (`--output-junit`) JUnit XML string into one job's results. */
-function parseJunit(xml) {
-    const doc = parser.parse(xml);
-    const suites = doc.testsuite ?? doc.testsuites?.testsuite ?? [];
-    const tests = {};
-    const counts = { passed: 0, failed: 0, skipped: 0 };
-    for (const suite of suites) {
-        for (const tc of (suite.testcase ?? [])) {
-            const name = String(tc['@_name'] ?? 'unknown');
-            const status = classify(tc);
-            tests[name] = status;
-            counts[status]++;
-        }
-    }
-    return { ...counts, total: counts.passed + counts.failed + counts.skipped, tests };
-}
-
-;// CONCATENATED MODULE: ./src/render.ts
-// SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
-const CODE = { passed: 'P', failed: 'F', skipped: 'S' };
-const ICON = { P: '✅', F: '❌', S: '⏭️', '-': '—' };
-function emptyState(meta) {
-    return { ...meta, jobOrder: [], testNames: [], jobs: {} };
-}
-/** Fold one job's results into the state (idempotent — re-reporting replaces the column). */
-function mergeJob(state, job, parsed) {
-    // Extend the shared test-name list; pad existing columns for any new names.
-    for (const name of Object.keys(parsed.tests)) {
-        if (!state.testNames.includes(name)) {
-            state.testNames.push(name);
-            for (const col of Object.values(state.jobs))
-                col.status += '-';
-        }
-    }
-    const status = state.testNames
-        .map((name) => (parsed.tests[name] ? CODE[parsed.tests[name]] : '-'))
-        .join('');
-    state.jobs[job] = { p: parsed.passed, f: parsed.failed, s: parsed.skipped, status };
-    if (!state.jobOrder.includes(job))
-        state.jobOrder.push(job);
-}
-const runMarker = (runId) => `<!-- vox-test-matrix run=${runId} -->`;
-const STATE_OPEN = '<!-- vox-test-matrix-state:';
-const STATE_CLOSE = '-->';
-
-/** Recover the embedded state from a comment body, or null if absent/corrupt. */
-function parseState(body) {
-    const open = body.indexOf(STATE_OPEN);
-    if (open < 0)
-        return null;
-    const start = open + STATE_OPEN.length;
-    const end = body.indexOf(STATE_CLOSE, start);
-    if (end < 0)
-        return null;
-    try {
-        return JSON.parse(body.slice(start, end).trim());
-    }
-    catch {
-        return null;
-    }
-}
-const codeAt = (col, i) => col.status[i] ?? '-';
-/** The one-line headline: running, some-failed, or all-passed. */
-function renderStatusLine(jobCount, totals) {
-    if (jobCount === 0)
-        return '⏳ Tests running… results appear as each job finishes.';
-    if (totals.f > 0)
-        return `❌ **${totals.f} failed**, ${totals.p} passed, ${totals.s} skipped — ${jobCount} job(s) reported`;
-    return `✅ **All ${totals.p} passed** (${totals.s} skipped) — ${jobCount} job(s) reported`;
-}
-/** Render the whole comment body (marker + tables + embedded state). */
-function renderComment(runId, state) {
-    const jobs = state.jobOrder;
-    const totals = jobs.reduce((a, j) => {
-        const c = state.jobs[j];
-        return { p: a.p + c.p, f: a.f + c.f, s: a.s + c.s };
-    }, { p: 0, f: 0, s: 0 });
-    const header = `### 🧪 Test results — run [#${state.runNumber}](${state.runUrl}) \`${state.commit}\``;
-    const statusLine = renderStatusLine(jobs.length, totals);
-    let summary = '| Job | ✅ | ❌ | ⏭️ | Total |\n|---|--:|--:|--:|--:|\n';
-    for (const j of jobs) {
-        const c = state.jobs[j];
-        summary += `| ${j} | ${c.p} | ${c.f} | ${c.s} | ${c.p + c.f + c.s} |\n`;
-    }
-    const colHead = `| Test | ${jobs.join(' | ')} |\n|---|${jobs.map(() => ':-:').join('|')}|`;
-    const row = (i) => `| \`${state.testNames[i]}\` | ${jobs.map((j) => ICON[codeAt(state.jobs[j], i)]).join(' | ')} |`;
-    const failedIdx = state.testNames
-        .map((_, i) => i)
-        .filter((i) => jobs.some((j) => codeAt(state.jobs[j], i) === 'F'));
-    const failures = failedIdx.length > 0 ? `\n#### ❌ Failed tests\n${colHead}\n${failedIdx.map(row).join('\n')}\n` : '';
-    const full = state.testNames.length > 0
-        ? `\n<details><summary>Full test matrix (${state.testNames.length} tests × ${jobs.length} jobs)</summary>\n\n${colHead}\n${state.testNames
-            .map((_, i) => row(i))
-            .join('\n')}\n\n</details>\n`
-        : '';
-    return [
-        runMarker(runId),
-        header,
-        '',
-        statusLine,
-        '',
-        summary + failures + full,
-        `${STATE_OPEN} ${JSON.stringify(state)} ${STATE_CLOSE}`,
-    ].join('\n');
-}
-
-;// CONCATENATED MODULE: ./src/comment.ts
-// SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
-
-
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-function runMeta() {
-    const { GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_RUN_ID, GITHUB_RUN_NUMBER, GITHUB_SHA } = process.env;
-    return {
-        runNumber: GITHUB_RUN_NUMBER ?? '?',
-        runUrl: `${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}`,
-        commit: (GITHUB_SHA ?? '').slice(0, 7),
-    };
-}
-async function findComment(octokit, prNumber, runId) {
-    const { owner, repo } = github.context.repo;
-    const marker = runMarker(runId);
-    const it = octokit.paginate.iterator(octokit.rest.issues.listComments, {
-        owner,
-        repo,
-        issue_number: prNumber,
-        per_page: 100,
-    });
-    for await (const { data } of it) {
-        const hit = data.find((c) => c.body?.includes(marker));
-        if (hit)
-            return hit;
-    }
-    return undefined;
-}
-/**
- * Find-or-create the run's comment and apply `merge` to its state, then write it back.
- * Parallel jobs race on one comment, so retry: re-read, re-merge, re-write until our
- * write sticks (last writer with the freshest state wins).
- */
-async function upsert(opts) {
-    const octokit = github.getOctokit(opts.token);
-    const { owner, repo } = github.context.repo;
-    for (let attempt = 0; attempt < 8; attempt++) {
-        const existing = await findComment(octokit, opts.prNumber, opts.runId);
-        const state = (existing?.body && parseState(existing.body)) || emptyState(runMeta());
-        opts.merge(state);
-        const body = renderComment(opts.runId, state);
-        if (!existing) {
-            await octokit.rest.issues.createComment({ owner, repo, issue_number: opts.prNumber, body });
-            return;
-        }
-        await octokit.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
-        const after = await findComment(octokit, opts.prNumber, opts.runId);
-        if (after?.body === body)
-            return; // our write stuck
-        await sleep(200 + Math.random() * 400 * (attempt + 1)); // a concurrent job clobbered us
-    }
-    core.warning('test-matrix: comment update did not converge after retries.');
-}
-
-;// CONCATENATED MODULE: ./src/index.ts
-// SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
-
-
-
-
-
-
-/** Read + parse this job's JUnit file; on any error (e.g. the build failed before it was
- *  produced) warn and return null rather than throwing and masking the real failure. */
-function loadResult() {
-    const path = core.getInput('report-path') || 'test-results.xml';
-    try {
-        return parseJunit((0,external_node_fs_namespaceObject.readFileSync)(path, 'utf8'));
-    }
-    catch (err) {
-        core.warning(`test-matrix: could not read ${path} (${err instanceof Error ? err.message : err}); skipping report.`);
-        return null;
-    }
-}
-function writeJobSummary(job, r) {
-    const failed = Object.entries(r.tests)
-        .filter(([, s]) => s === 'failed')
-        .map(([n]) => n);
-    core.summary
-        .addHeading(`🧪 Tests — ${job}`, 3)
-        .addRaw(`✅ ${r.passed} passed · ❌ ${r.failed} failed · ⏭️ ${r.skipped} skipped · ${r.total} total`, true);
-    if (failed.length > 0)
-        core.summary.addHeading('Failed', 4).addList(failed);
-    return core.summary.write();
-}
-/** Upsert the run's comment. PR-comment writes 403 on restricted contexts (fork PRs get a
- *  read-only token) — treat that as non-fatal so the test job's own status stays the signal. */
-async function postComment(prNumber, job, result) {
-    const token = core.getInput('token') || process.env.GITHUB_TOKEN || '';
-    const runId = process.env.GITHUB_RUN_ID ?? '';
-    try {
-        await upsert({
-            token,
-            runId,
-            prNumber,
-            merge: (state) => {
-                if (result)
-                    mergeJob(state, job, result);
-            },
-        });
-    }
-    catch (err) {
-        core.warning(`test-matrix: could not update the PR comment (${err instanceof Error ? err.message : err}).`);
-    }
-}
-async function run() {
-    const mode = core.getInput('mode', { required: true });
-    if (mode !== 'init' && mode !== 'report') {
-        core.setFailed(`Unknown mode '${mode}' (expected 'init' or 'report').`);
-        return;
-    }
-    const job = mode === 'report' ? core.getInput('job', { required: true }) : '';
-    const result = mode === 'report' ? loadResult() : null;
-    if (result)
-        await writeJobSummary(job, result);
-    const prNumber = github.context.payload.pull_request?.number;
-    if (prNumber) {
-        await postComment(prNumber, job, result);
-    }
-    else {
-        core.info('Not a pull_request event — wrote the run Summary only.');
-    }
-}
-async function main() {
-    try {
-        await run();
-    }
-    catch (err) {
-        core.setFailed(err instanceof Error ? err.message : String(err));
-    }
-}
-void main();
-
+/******/ 
+/******/ // startup
+/******/ // Load entry module and return exports
+/******/ // This entry module used 'module' so it can't be inlined
+/******/ var __webpack_exports__ = __nccwpck_require__(9407);
+/******/ __webpack_exports__ = await __webpack_exports__;
+/******/ 

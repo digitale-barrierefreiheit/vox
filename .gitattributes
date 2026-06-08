@@ -60,3 +60,6 @@ justfile text eol=lf
 # ---------------------------------------------------------------------------
 doc/**          linguist-documentation
 third_party/**  linguist-vendored
+# The node action's ncc bundle is generated, not authored — keep it out of language stats
+# and out of code-health analysis (CodeScene/Sonar), like vendored code.
+.github/actions/*/dist/**  linguist-generated

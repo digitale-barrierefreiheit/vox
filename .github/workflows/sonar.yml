@@ -57,24 +57,28 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
         run: |
-          api="https://sonarcloud.io/api"
-          pr="${PR:+&pullRequest=$PR}"
-          gate=$(curl -sf -u "$SONAR_TOKEN:" "$api/qualitygates/project_status?projectKey=vox${pr}" \
-                 | grep -o '"status":"[A-Z]*"' | head -1 | cut -d'"' -f4 || true)
-          cov=$(curl -sf -u "$SONAR_TOKEN:" "$api/measures/component?component=vox&metricKeys=new_coverage${pr}" \
-                 | grep -o '"value":"[0-9.]*"' | head -1 | cut -d'"' -f4 || true)
-          case "$gate" in
-            OK) badge="✅ Passed" ;;
-            ERROR) badge="❌ Failed" ;;
-            *) badge="❔ ${gate:-unknown}" ;;
-          esac
-          {
-            echo "## 🔍 SonarQube"
-            echo "| Metric | Result |"
-            echo "|---|---|"
-            echo "| Quality gate | $badge |"
-            echo "| New-code coverage | ${cov:-n/a}% |"
-            echo ""
-            echo "[SonarCloud new-code dashboard](https://sonarcloud.io/summary/new_code?id=vox)"
-          } >> "$GITHUB_STEP_SUMMARY"
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import base64, json, os, urllib.request
+          api = "https://sonarcloud.io/api"
+          pr = os.environ.get("PR", "")
+          q = f"&pullRequest={pr}" if pr else ""
+          auth = {"Authorization": "Basic " + base64.b64encode(f"{os.environ['SONAR_TOKEN']}:".encode()).decode()}
+          def get(url):
+              try:
+                  with urllib.request.urlopen(urllib.request.Request(url, headers=auth), timeout=20) as r:
+                      return json.load(r)
+              except Exception:
+                  return {}
+          gate = get(f"{api}/qualitygates/project_status?projectKey=vox{q}").get("projectStatus", {}).get("status", "")
+          measures = get(f"{api}/measures/component?component=vox&metricKeys=new_coverage{q}").get("component", {}).get("measures", [])
+          cov = measures[0]["value"] if measures else "n/a"
+          badge = {"OK": "✅ Passed", "ERROR": "❌ Failed"}.get(gate, f"❔ {gate or 'unknown'}")
+          print("## 🔍 SonarQube")
+          print("| Metric | Result |")
+          print("|---|---|")
+          print(f"| Quality gate | {badge} |")
+          print(f"| New-code coverage | {cov}% |")
+          print("")
+          print("[SonarCloud new-code dashboard](https://sonarcloud.io/summary/new_code?id=vox)")
+          PY
 

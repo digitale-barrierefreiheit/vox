@@ -53,6 +53,13 @@ const STATE_CLOSE = '-->';
 
 export { runMarker };
 
+// The embedded state is base64 so a value containing `-->` can't terminate the HTML
+// comment early and corrupt it. encode/decode are symmetric.
+const encodeState = (state: MatrixState): string =>
+  Buffer.from(JSON.stringify(state), 'utf8').toString('base64');
+const decodeState = (s: string): MatrixState =>
+  JSON.parse(Buffer.from(s, 'base64').toString('utf8')) as MatrixState;
+
 /** Recover the embedded state from a comment body, or null if absent/corrupt. */
 export function parseState(body: string): MatrixState | null {
   const open = body.indexOf(STATE_OPEN);
@@ -61,13 +68,17 @@ export function parseState(body: string): MatrixState | null {
   const end = body.indexOf(STATE_CLOSE, start);
   if (end < 0) return null;
   try {
-    return JSON.parse(body.slice(start, end).trim()) as MatrixState;
+    return decodeState(body.slice(start, end).trim());
   } catch {
     return null;
   }
 }
 
 const codeAt = (col: JobColumn, i: number): Code => (col.status[i] as Code) ?? '-';
+
+// Escape a value for a Markdown table cell: `|` breaks the column, a backtick breaks the
+// inline-code span, and a newline breaks the row.
+const cell = (s: string): string => s.replace(/\|/g, '\\|').replace(/`/g, 'ˋ').replace(/\r?\n/g, ' ');
 
 /** The one-line headline: running, some-failed, or all-passed. */
 function renderStatusLine(jobCount: number, totals: { p: number; f: number; s: number }): string {
@@ -94,12 +105,12 @@ export function renderComment(runId: string, state: MatrixState): string {
   let summary = '| Job | ✅ | ❌ | ⏭️ | Total |\n|---|--:|--:|--:|--:|\n';
   for (const j of jobs) {
     const c = state.jobs[j];
-    summary += `| ${j} | ${c.p} | ${c.f} | ${c.s} | ${c.p + c.f + c.s} |\n`;
+    summary += `| ${cell(j)} | ${c.p} | ${c.f} | ${c.s} | ${c.p + c.f + c.s} |\n`;
   }
 
-  const colHead = `| Test | ${jobs.join(' | ')} |\n|---|${jobs.map(() => ':-:').join('|')}|`;
+  const colHead = `| Test | ${jobs.map(cell).join(' | ')} |\n|---|${jobs.map(() => ':-:').join('|')}|`;
   const row = (i: number): string =>
-    `| \`${state.testNames[i]}\` | ${jobs.map((j) => ICON[codeAt(state.jobs[j], i)]).join(' | ')} |`;
+    `| \`${cell(state.testNames[i])}\` | ${jobs.map((j) => ICON[codeAt(state.jobs[j], i)]).join(' | ')} |`;
 
   const failedIdx = state.testNames
     .map((_, i) => i)
@@ -121,6 +132,6 @@ export function renderComment(runId: string, state: MatrixState): string {
     statusLine,
     '',
     summary + failures + full,
-    `${STATE_OPEN} ${JSON.stringify(state)} ${STATE_CLOSE}`,
+    `${STATE_OPEN} ${encodeState(state)} ${STATE_CLOSE}`,
   ].join('\n');
 }

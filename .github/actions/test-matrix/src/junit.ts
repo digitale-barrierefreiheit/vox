@@ -31,6 +31,15 @@ function classify(tc: Record<string, unknown>): Status {
   return 'passed';
 }
 
+/** The testcase name attribute, defended against a non-string parse (avoids stringifying
+ *  an object to "[object Object]"). */
+function nameOf(tc: Record<string, unknown>): string {
+  const raw = tc['@_name'];
+  if (typeof raw === 'string') return raw;
+  if (typeof raw === 'number') return String(raw);
+  return 'unknown';
+}
+
 /** Parse a CTest (`--output-junit`) JUnit XML string into one job's results. */
 export function parseJunit(xml: string): ParsedJob {
   const doc = parser.parse(xml) as Record<string, any>;
@@ -40,9 +49,8 @@ export function parseJunit(xml: string): ParsedJob {
 
   for (const suite of suites) {
     for (const tc of (suite.testcase ?? []) as Record<string, unknown>[]) {
-      const name = String(tc['@_name'] ?? 'unknown');
       const status = classify(tc);
-      tests[name] = status;
+      tests[nameOf(tc)] = status;
       counts[status]++;
     }
   }

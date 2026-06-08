@@ -69,12 +69,8 @@ async function run(): Promise<void> {
   }
 }
 
-async function main(): Promise<void> {
-  try {
-    await run();
-  } catch (err) {
-    core.setFailed(err instanceof Error ? err.message : String(err));
-  }
+try {
+  await run();
+} catch (err) {
+  core.setFailed(err instanceof Error ? err.message : String(err));
 }
-
-void main();

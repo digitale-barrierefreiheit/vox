@@ -88,7 +88,8 @@ function isMatrixState(v: unknown): v is MatrixState {
     hasStringMeta(s) &&
     isStringArray(s.jobOrder) &&
     isStringArray(s.testNames) &&
-    columnsValid(s.jobs, (s.testNames as string[]).length)
+    columnsValid(s.jobs, (s.testNames as string[]).length) &&
+    (s.jobOrder as string[]).every((j) => Object.hasOwn(s.jobs as object, j))
   );
 }
 

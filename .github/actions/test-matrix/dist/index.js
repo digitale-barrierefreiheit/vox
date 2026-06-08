@@ -32807,7 +32807,8 @@ function isMatrixState(v) {
     return (hasStringMeta(s) &&
         isStringArray(s.jobOrder) &&
         isStringArray(s.testNames) &&
-        columnsValid(s.jobs, s.testNames.length));
+        columnsValid(s.jobs, s.testNames.length) &&
+        s.jobOrder.every((j) => Object.hasOwn(s.jobs, j)));
 }
 /** Recover the embedded state from a comment body, or null if absent/corrupt/malformed. */
 function parseState(body) {

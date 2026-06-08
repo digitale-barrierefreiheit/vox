@@ -25,6 +25,19 @@ export interface CommentClient {
   update(commentId: number, body: string): Promise<void>;
 }
 
+type Comment = { id: number; body: string };
+
+const findByMarker = (comments: Comment[], marker: string): Comment | undefined =>
+  comments.find((c) => c.body.includes(marker));
+
+/** Recover the run's state from its comment, or a fresh one if absent/unparseable. */
+function stateFrom(
+  existing: Comment | undefined,
+  meta: Pick<MatrixState, 'runNumber' | 'runUrl' | 'commit'>,
+): MatrixState {
+  return (existing?.body && parseState(existing.body)) || emptyState(meta);
+}
+
 /**
  * Find-or-create the run's comment and apply `merge` to its state, then write it back.
  * Parallel jobs race on one comment, so retry: re-read, re-merge, re-write until our
@@ -44,10 +57,9 @@ export async function upsertWith(
 ): Promise<void> {
   const wait = opts.sleep ?? sleep;
   const marker = runMarker(opts.runId);
-  const find = (cs: { id: number; body: string }[]) => cs.find((c) => c.body.includes(marker));
 
   for (let attempt = 0; attempt < 8; attempt++) {
-    const existing = find(await client.list(opts.prNumber));
+    const existing = findByMarker(await client.list(opts.prNumber), marker);
 
     // Only the init step may create. Report steps run in parallel, so if they could create
     // too, two racing jobs (both seeing no comment) would each create one and break the
@@ -58,7 +70,7 @@ export async function upsertWith(
       return;
     }
 
-    const state = (existing?.body && parseState(existing.body)) || emptyState(opts.meta);
+    const state = stateFrom(existing, opts.meta);
     opts.merge(state);
     const body = renderComment(opts.runId, state);
 
@@ -68,7 +80,7 @@ export async function upsertWith(
     }
     await client.update(existing.id, body);
 
-    if (find(await client.list(opts.prNumber))?.body === body) return; // our write stuck
+    if (findByMarker(await client.list(opts.prNumber), marker)?.body === body) return; // our write stuck
     await wait(200 + Math.random() * 400 * (attempt + 1)); // a concurrent job clobbered us
   }
   core.warning('test-matrix: comment update did not converge after retries.');

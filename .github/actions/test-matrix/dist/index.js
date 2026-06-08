@@ -32530,6 +32530,11 @@ function runMeta() {
         commit: (GITHUB_SHA ?? '').slice(0, 7),
     };
 }
+const findByMarker = (comments, marker) => comments.find((c) => c.body.includes(marker));
+/** Recover the run's state from its comment, or a fresh one if absent/unparseable. */
+function stateFrom(existing, meta) {
+    return (existing?.body && (0,_render_js__WEBPACK_IMPORTED_MODULE_2__/* .parseState */ .Bu)(existing.body)) || (0,_render_js__WEBPACK_IMPORTED_MODULE_2__/* .emptyState */ .p$)(meta);
+}
 /**
  * Find-or-create the run's comment and apply `merge` to its state, then write it back.
  * Parallel jobs race on one comment, so retry: re-read, re-merge, re-write until our
@@ -32538,9 +32543,8 @@ function runMeta() {
 async function upsertWith(client, opts) {
     const wait = opts.sleep ?? sleep;
     const marker = (0,_render_js__WEBPACK_IMPORTED_MODULE_2__/* .runMarker */ .qW)(opts.runId);
-    const find = (cs) => cs.find((c) => c.body.includes(marker));
     for (let attempt = 0; attempt < 8; attempt++) {
-        const existing = find(await client.list(opts.prNumber));
+        const existing = findByMarker(await client.list(opts.prNumber), marker);
         // Only the init step may create. Report steps run in parallel, so if they could create
         // too, two racing jobs (both seeing no comment) would each create one and break the
         // "one comment per run" guarantee. Init runs first (at the start of the run), so by the
@@ -32549,7 +32553,7 @@ async function upsertWith(client, opts) {
             _actions_core__WEBPACK_IMPORTED_MODULE_0__.warning('test-matrix: run comment not found (init step skipped?); skipping update.');
             return;
         }
-        const state = (existing?.body && (0,_render_js__WEBPACK_IMPORTED_MODULE_2__/* .parseState */ .Bu)(existing.body)) || (0,_render_js__WEBPACK_IMPORTED_MODULE_2__/* .emptyState */ .p$)(opts.meta);
+        const state = stateFrom(existing, opts.meta);
         opts.merge(state);
         const body = (0,_render_js__WEBPACK_IMPORTED_MODULE_2__/* .renderComment */ .wQ)(opts.runId, state);
         if (!existing) {
@@ -32557,7 +32561,7 @@ async function upsertWith(client, opts) {
             return;
         }
         await client.update(existing.id, body);
-        if (find(await client.list(opts.prNumber))?.body === body)
+        if (findByMarker(await client.list(opts.prNumber), marker)?.body === body)
             return; // our write stuck
         await wait(200 + Math.random() * 400 * (attempt + 1)); // a concurrent job clobbered us
     }

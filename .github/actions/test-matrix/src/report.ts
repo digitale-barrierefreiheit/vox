@@ -41,16 +41,22 @@ export function unavailableMarkdown(job: string): string {
   return `### 🧪 Tests — ${job}\n\n⚠️ Results unavailable — no JUnit report (the build may have failed before tests ran).\n`;
 }
 
-/** Validate inputs, write the per-job Summary, and (on PRs) fold this job into the comment. */
-export async function run(inputs: Inputs, prNumber: number | undefined, io: Io): Promise<void> {
+/** Reject an unknown mode or a report with no job (fails the step), else true. */
+function validInputs(inputs: Inputs, io: Io): boolean {
   if (inputs.mode !== 'init' && inputs.mode !== 'report') {
     io.fail(`Unknown mode '${inputs.mode}' (expected 'init' or 'report').`);
-    return;
+    return false;
   }
   if (inputs.mode === 'report' && !inputs.job) {
     io.fail("report mode requires a non-empty 'job' input.");
-    return;
+    return false;
   }
+  return true;
+}
+
+/** Validate inputs, write the per-job Summary, and (on PRs) fold this job into the comment. */
+export async function run(inputs: Inputs, prNumber: number | undefined, io: Io): Promise<void> {
+  if (!validInputs(inputs, io)) return;
 
   const result = inputs.mode === 'report' ? io.readResults(inputs.reportPath) : null;
   // Always write a per-job Summary in report mode — a "results unavailable" note when the

@@ -32909,16 +32909,22 @@ function summaryMarkdown(job, r) {
 function unavailableMarkdown(job) {
     return `### 🧪 Tests — ${job}\n\n⚠️ Results unavailable — no JUnit report (the build may have failed before tests ran).\n`;
 }
-/** Validate inputs, write the per-job Summary, and (on PRs) fold this job into the comment. */
-async function run(inputs, prNumber, io) {
+/** Reject an unknown mode or a report with no job (fails the step), else true. */
+function validInputs(inputs, io) {
     if (inputs.mode !== 'init' && inputs.mode !== 'report') {
         io.fail(`Unknown mode '${inputs.mode}' (expected 'init' or 'report').`);
-        return;
+        return false;
     }
     if (inputs.mode === 'report' && !inputs.job) {
         io.fail("report mode requires a non-empty 'job' input.");
-        return;
+        return false;
     }
+    return true;
+}
+/** Validate inputs, write the per-job Summary, and (on PRs) fold this job into the comment. */
+async function run(inputs, prNumber, io) {
+    if (!validInputs(inputs, io))
+        return;
     const result = inputs.mode === 'report' ? io.readResults(inputs.reportPath) : null;
     // Always write a per-job Summary in report mode — a "results unavailable" note when the
     // JUnit is missing is clearer than an empty Summary.

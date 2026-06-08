@@ -10,6 +10,9 @@ jobs:
   build:
     name: Analyze
     runs-on: windows-latest
+    permissions:
+      contents: read
+      pull-requests: write # post the SonarQube summary comment on PRs
     steps:
       - uses: actions/checkout@v6
         with:
@@ -39,6 +42,19 @@ jobs:
         run: just coverage x64-msvc-debug
         env:
           VOX_OCC: C:\Program Files\OpenCppCoverage\OpenCppCoverage.exe
+      # The TypeScript test-matrix action is covered by its own node:test suite; produce its
+      # lcov here (CI's dist-sync job runs the tests but not under coverage) and rebase the
+      # paths to the repo root so Sonar matches them to the files it analyzes.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: TypeScript action coverage (lcov for Sonar)
+        shell: bash
+        working-directory: .github/actions/test-matrix
+        run: |
+          npm ci --ignore-scripts
+          npm run coverage
+          sed -i 's#\\#/#g; s#^SF:src/#SF:.github/actions/test-matrix/src/#' coverage/lcov.info
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
         env:
@@ -48,16 +64,16 @@ jobs:
         timeout-minutes: 10
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      # Write the actual quality-gate status + new-code coverage into the run Summary by
-      # querying SonarCloud's API (the same values SonarCloud posts as PR decoration).
-      - name: Quality gate summary
+      # Build a SonarQube summary (gate + new-code coverage + open issues) from the API and
+      # write it to the run Summary and a file; the next step posts it as a PR comment.
+      - name: SonarQube summary
         if: always()
         shell: bash
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
         run: |
-          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          python - <<'PY' > sonar-comment.md
           import base64, json, os, urllib.request
           api = "https://sonarcloud.io/api"
           pr = os.environ.get("PR", "")
@@ -72,13 +88,23 @@ jobs:
           gate = get(f"{api}/qualitygates/project_status?projectKey=vox{q}").get("projectStatus", {}).get("status", "")
           measures = get(f"{api}/measures/component?component=vox&metricKeys=new_coverage{q}").get("component", {}).get("measures", [])
           cov = f"{measures[0]['value']}%" if measures else "n/a"
+          issues = get(f"{api}/issues/search?componentKeys=vox{q}&resolved=false&ps=1").get("total", 0)
           badge = {"OK": "✅ Passed", "ERROR": "❌ Failed"}.get(gate, f"❔ {gate or 'unknown'}")
-          print("## 🔍 SonarQube")
+          print("<!-- vox-sonar -->")
+          print("## 🔍 SonarCloud")
           print("| Metric | Result |")
           print("|---|---|")
           print(f"| Quality gate | {badge} |")
           print(f"| New-code coverage | {cov} |")
+          print(f"| Open issues | {issues} |")
           print("")
           print("[SonarCloud new-code dashboard](https://sonarcloud.io/summary/new_code?id=vox)")
           PY
+          cat sonar-comment.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Post SonarQube PR comment
+        if: always() && github.event_name == 'pull_request'
+        uses: ./.github/actions/upsert-comment
+        with:
+          marker: '<!-- vox-sonar -->'
+          body-file: sonar-comment.md
 

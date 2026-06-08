@@ -1,13 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
 
+import { randomInt } from 'node:crypto';
 import * as core from '@actions/core';
 import * as github from '@actions/github';
 import { emptyState, parseState, renderComment, runMarker, type MatrixState } from './render.js';
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-function runMeta(): Pick<MatrixState, 'runNumber' | 'runUrl' | 'commit'> {
+// Escalating backoff with jitter to de-sync parallel jobs retrying on the same comment.
+// randomInt (CSPRNG) rather than Math.random so it isn't flagged as weak crypto — the
+// randomness only needs to scatter retries, not be unpredictable.
+const backoff = (attempt: number): number => 200 + randomInt(0, 400 * (attempt + 1));
+
+/** The run's header metadata from the GitHub Actions environment. */
+export function runMeta(): Pick<MatrixState, 'runNumber' | 'runUrl' | 'commit'> {
   const { GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_RUN_ID, GITHUB_RUN_NUMBER, GITHUB_SHA } =
     process.env;
   return {
@@ -66,7 +73,7 @@ export async function upsertWith(
     // report jobs start in parallel, so a fast report can arrive before init has created the
     // comment; wait and retry rather than skipping permanently (which would drop its column).
     if (!existing && !opts.create) {
-      await wait(200 + Math.random() * 400 * (attempt + 1));
+      await wait(backoff(attempt));
       continue;
     }
 
@@ -81,30 +88,31 @@ export async function upsertWith(
     await client.update(existing.id, body);
 
     if (findByMarker(await client.list(opts.prNumber), marker)?.body === body) return; // our write stuck
-    await wait(200 + Math.random() * 400 * (attempt + 1)); // a concurrent job clobbered us
+    await wait(backoff(attempt)); // a concurrent job clobbered us
   }
   core.warning('test-matrix: comment not available / update did not converge after retries.');
 }
 
-/** Wire `upsertWith` to the live GitHub PR-comment API. */
-export async function upsert(opts: {
-  token: string;
-  runId: string;
-  prNumber: number;
-  create: boolean;
-  merge: (state: MatrixState) => void;
-}): Promise<void> {
-  const octokit = github.getOctokit(opts.token);
-  const { owner, repo } = github.context.repo;
-  const client: CommentClient = {
+/** The slice of octokit `makeClient` uses — so it can be tested against a fake. */
+export interface OctokitLike {
+  paginate: {
+    iterator: (route: unknown, params: object) => AsyncIterable<{ data: { id: number; body?: string | null }[] }>;
+  };
+  rest: {
+    issues: {
+      listComments: unknown;
+      createComment: (params: object) => Promise<unknown>;
+      updateComment: (params: object) => Promise<unknown>;
+    };
+  };
+}
+
+/** Adapt octokit's issue-comment API (PR comments are issue comments) to CommentClient. */
+export function makeClient(octokit: OctokitLike, owner: string, repo: string): CommentClient {
+  return {
     list: async (prNumber) => {
       const out: { id: number; body: string }[] = [];
-      const it = octokit.paginate.iterator(octokit.rest.issues.listComments, {
-        owner,
-        repo,
-        issue_number: prNumber,
-        per_page: 100,
-      });
+      const it = octokit.paginate.iterator(octokit.rest.issues.listComments, { owner, repo, issue_number: prNumber, per_page: 100 });
       for await (const { data } of it) out.push(...data.map((c) => ({ id: c.id, body: c.body ?? '' })));
       return out;
     },
@@ -115,11 +123,17 @@ export async function upsert(opts: {
       await octokit.rest.issues.updateComment({ owner, repo, comment_id: commentId, body });
     },
   };
-  await upsertWith(client, {
-    runId: opts.runId,
-    prNumber: opts.prNumber,
-    merge: opts.merge,
-    meta: runMeta(),
-    create: opts.create,
-  });
+}
+
+/** Wire `upsertWith` to the live GitHub PR-comment API. */
+export async function upsert(opts: {
+  token: string;
+  runId: string;
+  prNumber: number;
+  create: boolean;
+  merge: (state: MatrixState) => void;
+}): Promise<void> {
+  const { owner, repo } = github.context.repo;
+  const client = makeClient(github.getOctokit(opts.token) as unknown as OctokitLike, owner, repo);
+  await upsertWith(client, { runId: opts.runId, prNumber: opts.prNumber, merge: opts.merge, meta: runMeta(), create: opts.create });
 }

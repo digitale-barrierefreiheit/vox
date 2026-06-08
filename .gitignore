@@ -87,6 +87,7 @@ compile_commands.json
 # Node action build deps (the test-matrix action; its bundled dist/ IS committed)
 # ---------------------------------------------------------------------------
 .github/actions/*/node_modules/
+.github/actions/*/coverage/
 
 # ---------------------------------------------------------------------------
 # Generated documentation (Doxygen)

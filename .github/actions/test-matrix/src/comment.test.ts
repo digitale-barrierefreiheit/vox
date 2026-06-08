@@ -3,7 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { upsertWith, type CommentClient } from './comment.js';
+import { makeClient, runMeta, upsertWith, type CommentClient, type OctokitLike } from './comment.js';
 import { mergeJob, parseState, type MatrixState } from './render.js';
 import type { ParsedJob } from './junit.js';
 
@@ -106,4 +106,48 @@ test('retries when a concurrent write clobbers ours', async () => {
   await upsertWith(client, { runId: 'r1', prNumber: 1, meta, sleep: noSleep, create: false, merge: fold('x64', 'A.a') });
   assert.ok(list >= 4); // attempt 1 (list+verify) clobbered -> attempt 2 (list+verify) sticks
   assert.ok(parseState(comments[0].body)?.jobOrder.includes('x64'));
+});
+
+test('runMeta builds the header metadata from the Actions environment', () => {
+  const keys = ['GITHUB_SERVER_URL', 'GITHUB_REPOSITORY', 'GITHUB_RUN_ID', 'GITHUB_RUN_NUMBER', 'GITHUB_SHA'] as const;
+  const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  Object.assign(process.env, {
+    GITHUB_SERVER_URL: 'https://gh',
+    GITHUB_REPOSITORY: 'o/r',
+    GITHUB_RUN_ID: '99',
+    GITHUB_RUN_NUMBER: '7',
+    GITHUB_SHA: 'abcdef1234567',
+  });
+  try {
+    assert.deepEqual(runMeta(), { runNumber: '7', runUrl: 'https://gh/o/r/actions/runs/99', commit: 'abcdef1' });
+  } finally {
+    Object.assign(process.env, saved);
+  }
+});
+
+test('makeClient maps to the octokit issue-comment endpoints', async () => {
+  const calls = { created: [] as object[], updated: [] as object[] };
+  const octokit: OctokitLike = {
+    paginate: {
+      iterator: async function* () {
+        yield { data: [{ id: 5, body: 'hello' }, { id: 6, body: null }] };
+      },
+    },
+    rest: {
+      issues: {
+        listComments: {},
+        createComment: async (p) => void calls.created.push(p),
+        updateComment: async (p) => void calls.updated.push(p),
+      },
+    },
+  };
+  const client = makeClient(octokit, 'o', 'r');
+  assert.deepEqual(await client.list(1), [
+    { id: 5, body: 'hello' },
+    { id: 6, body: '' }, // null body coerced to ''
+  ]);
+  await client.create(1, 'B');
+  assert.deepEqual(calls.created, [{ owner: 'o', repo: 'r', issue_number: 1, body: 'B' }]);
+  await client.update(5, 'U');
+  assert.deepEqual(calls.updated, [{ owner: 'o', repo: 'r', comment_id: 5, body: 'U' }]);
 });

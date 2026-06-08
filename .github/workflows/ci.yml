@@ -187,6 +187,9 @@ jobs:
   clang-tidy:
     name: clang-tidy
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write # post the clang-tidy summary comment on PRs
     steps:
       - uses: actions/checkout@v6
       - uses: lukka/get-cmake@591817e96fcad43505fb4eae36172462abb3a42e # v4.3.3
@@ -202,11 +205,39 @@ jobs:
       # run-clang-tidy-18 — the justfile's Linux default. CLANG_TIDY is set here only to
       # pin that exact parallel, versioned wrapper explicitly for CI.
       - name: Run clang-tidy
-        run: just tidy
+        id: tidy
+        run: just tidy 2>&1 | tee tidy.log
         env:
           CC: clang-18
           CXX: clang++-18
           CLANG_TIDY: run-clang-tidy-18
+      - name: Build clang-tidy comment
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          n=$(grep -cE ': (warning|error):' tidy.log || true)
+          {
+            echo '<!-- vox-clang-tidy -->'
+            echo '## 🧹 clang-tidy'
+            if [ "${{ steps.tidy.outcome }}" = success ]; then
+              echo '✅ No issues.'
+            else
+              echo "❌ Issues found (${n} diagnostic line(s)):"
+              echo ''
+              echo '<details><summary>Last 60 lines of output</summary>'
+              echo ''
+              echo '```'
+              tail -n 60 tidy.log
+              echo '```'
+              echo ''
+              echo '</details>'
+            fi
+          } > clang-tidy-comment.md
+      - name: Post clang-tidy PR comment
+        if: always() && github.event_name == 'pull_request'
+        uses: ./.github/actions/upsert-comment
+        with:
+          marker: '<!-- vox-clang-tidy -->'
+          body-file: clang-tidy-comment.md
 
   # ---------------------------------------------------------------------------
   # Sanitizer matrix on the OS-independent cores (ASan+UBSan, TSan) — ADR-14.

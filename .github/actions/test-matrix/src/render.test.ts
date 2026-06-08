@@ -72,3 +72,15 @@ test('parseState rejects a malformed embedded state (falls back to a fresh one)'
   const body = `<!-- vox-test-matrix run=r -->\n<!-- vox-test-matrix-state: ${bad} -->`;
   assert.equal(parseState(body), null);
 });
+
+test('parseState rejects state with a malformed job column or missing meta', () => {
+  const encode = (o: unknown): string =>
+    `<!-- vox-test-matrix-state: ${Buffer.from(JSON.stringify(o)).toString('base64')} -->`;
+  const base = { runNumber: '1', runUrl: 'x', commit: 'c', jobOrder: ['x64'], testNames: ['A.a'] };
+  // job column missing `status`
+  assert.equal(parseState(encode({ ...base, jobs: { x64: { p: 1, f: 0, s: 0 } } })), null);
+  // missing meta string
+  assert.equal(parseState(encode({ ...base, runUrl: undefined, jobs: {} })), null);
+  // non-string entry in testNames
+  assert.equal(parseState(encode({ ...base, testNames: [1], jobs: {} })), null);
+});

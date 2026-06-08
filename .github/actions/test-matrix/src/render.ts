@@ -59,12 +59,26 @@ const encodeState = (state: MatrixState): string =>
   Buffer.from(JSON.stringify(state), 'utf8').toString('base64');
 const decodeState = (s: string): unknown => JSON.parse(Buffer.from(s, 'base64').toString('utf8'));
 
-/** Validate the decoded shape so a hand-edited / malformed comment falls back to a fresh
- *  state instead of throwing later in mergeJob/renderComment. */
+const isStringArray = (v: unknown): boolean => Array.isArray(v) && v.every((x) => typeof x === 'string');
+
+function isJobColumn(v: unknown): boolean {
+  if (typeof v !== 'object' || v === null) return false;
+  const c = v as Record<string, unknown>;
+  return typeof c.p === 'number' && typeof c.f === 'number' && typeof c.s === 'number' && typeof c.status === 'string';
+}
+
+function hasStringMeta(s: Record<string, unknown>): boolean {
+  return typeof s.runNumber === 'string' && typeof s.runUrl === 'string' && typeof s.commit === 'string';
+}
+
+/** Validate the decoded shape (meta strings, string arrays, well-formed job columns) so a
+ *  hand-edited / malformed comment reliably falls back to a fresh state instead of throwing
+ *  later in mergeJob/renderComment or rendering a confusing header. */
 function isMatrixState(v: unknown): v is MatrixState {
   if (typeof v !== 'object' || v === null) return false;
   const s = v as Record<string, unknown>;
-  return Array.isArray(s.jobOrder) && Array.isArray(s.testNames) && typeof s.jobs === 'object' && s.jobs !== null;
+  const jobsOk = typeof s.jobs === 'object' && s.jobs !== null && Object.values(s.jobs).every(isJobColumn);
+  return hasStringMeta(s) && isStringArray(s.jobOrder) && isStringArray(s.testNames) && jobsOk;
 }
 
 /** Recover the embedded state from a comment body, or null if absent/corrupt/malformed. */
@@ -89,7 +103,7 @@ const cell = (s: string): string => s.replaceAll('|', String.raw`\|`).replaceAll
 
 // A faithful code span for a test name: escape the table-breaking chars, then fence with
 // more backticks than any run inside it so the real name (backticks and all) displays as-is.
-const codeCell = (s: string): string => {
+export const codeCell = (s: string): string => {
   const safe = cell(s);
   const longest = (safe.match(/`+/g) ?? []).reduce((max, run) => Math.max(max, run.length), 0);
   const fence = '`'.repeat(longest + 1);

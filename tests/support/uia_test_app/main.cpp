@@ -37,10 +37,12 @@ HWND createButton(HWND parent, const wchar_t* text) {
                            10, 10, 160, 30, parent, nullptr, ::GetModuleHandleW(nullptr), nullptr);
 }
 
-// Signals the launcher's ready event so it knows the window is up and focused. The
-// event name arrives as a narrow argv (the CRT decoded it from the wide command line
-// via the active code page), so decode it back with CP_ACP and open the Unicode-named
-// event the launcher created with CreateEventW. A missing/un-openable event is not fatal.
+// Signals the launcher's ready event once startup is done — the window is created and
+// foreground + focus have been requested (whether focus actually lands is what the
+// launcher polls for, since SetForegroundWindow/SetFocus can be refused). The event
+// name arrives as a narrow argv (the CRT decoded it from the wide command line via the
+// active code page), so decode it back with CP_ACP and open the Unicode-named event the
+// launcher created with CreateEventW. An un-openable event is not fatal.
 void signalReady(const char* eventName) {
   std::array<wchar_t, EventNameBufferChars> wide{};
   const int written =

@@ -60,7 +60,8 @@ struct ExpectedControl {
   std::string_view name;
 };
 
-// The focusable controls the app exposes (one per focusable, provider-mappable role).
+// The focusable controls the app exposes: the covered roles (Button, Checkbox,
+// RadioButton, Edit), with two checkboxes for the checked and tri-state cases.
 constexpr std::array<ExpectedControl, 5> ExpectedControls{{
     {.role = Role::Button, .name = "Speichern"},
     {.role = Role::Checkbox, .name = "Kapitel anzeigen"},
@@ -133,6 +134,21 @@ bool haveAllExpected(const std::vector<AccessibleNode>& seen) {
 
 std::string describe(const AccessibleNode& node) {
   return "role=" + std::to_string(static_cast<int>(node.role)) + " name='" + node.name + "'";
+}
+
+// Joins the collected controls into a diagnostic string (CI triage of focus/UIA issues).
+std::string summarize(const std::vector<AccessibleNode>& seen) {
+  if (seen.empty()) {
+    return "(none)";
+  }
+  std::string out;
+  for (const AccessibleNode& node : seen) {
+    if (!out.empty()) {
+      out += "; ";
+    }
+    out += describe(node);
+  }
+  return out;
 }
 
 // Fails when VOX_REQUIRE_UIA_TREE demands a working tree, otherwise skips.
@@ -226,8 +242,11 @@ TEST_F(UiaProviderItest, ReadsEachFocusableControl) {
   const std::vector<AccessibleNode> seen = collectFocusedControls(provider);
 
   if (!haveAllExpected(seen)) {
-    skipOrFail("VOX_REQUIRE_UIA_TREE is set but the provider did not read every focusable control.",
-               "Did not read all focusable controls (no interactive focus on this machine?).");
+    const std::string observed = "Observed: " + summarize(seen);
+    skipOrFail("VOX_REQUIRE_UIA_TREE is set but the provider did not read every focusable "
+               "control. " +
+                   observed,
+               "Did not read all focusable controls (no interactive focus?). " + observed);
     return;
   }
 

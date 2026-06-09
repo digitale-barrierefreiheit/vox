@@ -5,14 +5,15 @@
 /// @brief A small Win32 app with a known control tree, for the UIA provider's
 ///        integration tests (#40).
 ///
-/// It exposes one control per provider-mappable, *focusable* role with known names
-/// and initial states, and cycles keyboard focus through them on a timer (via the
-/// Win32 tab order) so a UIA client (the integration test) sees a focus-changed
-/// event for each. Non-focusable roles (static text, a disabled control) and popup
-/// menu items can't be reached through the focus path and stay unit-tested. It
-/// signals a named "ready" event (name in argv[1]) once the first control is
-/// focused, then pumps messages until terminated. Standard common controls expose
-/// UI Automation through the system's default provider, so this app writes no UIA code.
+/// It exposes focusable controls for several mapped roles (button, checkboxes, radio,
+/// edit) with known names and initial states, and cycles keyboard focus through them on
+/// a timer (via the Win32 tab order) so a UIA client (the integration test) sees a
+/// focus-changed event for each. Non-focusable roles (static text, a disabled control)
+/// and popup menu items can't be reached through the focus path and stay unit-tested. It
+/// signals a named "ready" event (name in argv[1]) once startup is done — foreground and
+/// focus requested for the first control — then pumps messages until terminated. Standard
+/// common controls expose UI Automation through the system's default provider, so this
+/// app writes no UIA code.
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX

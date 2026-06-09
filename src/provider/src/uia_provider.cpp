@@ -161,11 +161,12 @@ UiaElementData extract(IUIAutomationElement* element) {
 
   if (ComPtr<IUIAutomationValuePattern> value;
       SUCCEEDED(element->GetCachedPatternAs(UIA_ValuePatternId, IID_PPV_ARGS(&value))) && value) {
-    // The pattern's presence (and its read-only-ness) is independent of whether
-    // the value text reads — capture it regardless.
-    data.hasValuePattern = true;
+    // Record read-only-ness only once IsReadOnly actually reads (independent of whether
+    // the value text reads), so a failed IsReadOnly read can fall back to the legacy state
+    // bits rather than being assumed not-read-only.
     BOOL readOnly = FALSE;
     if (SUCCEEDED(value->get_CachedIsReadOnly(&readOnly))) {
+      data.hasReadOnly = true;
       data.isReadOnly = readOnly != FALSE;
     }
     // Mark the value *present* only once it actually reads, so a failed read

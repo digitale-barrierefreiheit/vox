@@ -84,10 +84,10 @@ void applySelected(StateSet& states, const UiaElementData& data) {
   }
 }
 
-// ReadOnly from the ValuePattern when present, else the legacy MSAA state bit.
+// ReadOnly from the ValuePattern's IsReadOnly when it was read, else the legacy state bit.
 void applyReadOnly(StateSet& states, const UiaElementData& data) {
   const bool readOnly =
-      data.hasValuePattern ? data.isReadOnly : (data.legacyState & UiaLegacyStateReadOnly) != 0U;
+      data.hasReadOnly ? data.isReadOnly : (data.legacyState & UiaLegacyStateReadOnly) != 0U;
   if (readOnly) {
     states.set(ReadOnly);
   }

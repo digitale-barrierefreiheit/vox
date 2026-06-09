@@ -17,6 +17,7 @@
 
 #  include <vox/model/accessible_node.hpp>
 #  include <vox/model/state.hpp>
+#  include <vox/provider/uia_ids.hpp>
 #  include <vox/provider/uia_provider.hpp>
 #  include <vox/provider/uia_test_seam.hpp>
 
@@ -184,13 +185,14 @@ protected:
     };
   }
 
-  /// A GetCachedPropertyValue action: an I4 @p state for the legacy State property, else empty.
-  static auto legacyState(LONG state) {
+  /// A GetCachedPropertyValue action: the MSAA state bits @p state for the legacy State
+  /// property, else empty.
+  static auto legacyState(unsigned state) {
     return [state](PROPERTYID id, VARIANT* out) {
       ::VariantInit(out);
       if (id == UIA_LegacyIAccessibleStatePropertyId) {
         out->vt = VT_I4;
-        out->lVal = state;
+        out->lVal = static_cast<LONG>(state);
       }
       return S_OK;
     };
@@ -207,6 +209,15 @@ protected:
       }
       return S_OK;
     };
+  }
+
+  /// Reads the focused node through a fresh provider (via the installed seam), asserting
+  /// one was returned; yields a default node on failure so callers can still assert fields.
+  AccessibleNode focusedNodeOrFail() {
+    const UiaProvider provider;
+    const std::optional<AccessibleNode> node = provider.focusedElement();
+    EXPECT_TRUE(node.has_value());
+    return node.value_or(AccessibleNode{});
   }
 
   IUIAutomationFocusChangedEventHandler* capturedHandler_{nullptr};
@@ -262,11 +273,9 @@ TEST_F(UiaProviderTest, ReadsCheckedFromLegacyStatePropertyWhenTogglePatternAbse
   ON_CALL(element_, GetCachedPatternAs(_, _, _))
       .WillByDefault(
           vox::provider::testing::patternDispatch(nullptr, &expand_, &selection_, nullptr));
-  ON_CALL(element_, GetCachedPropertyValue(_, _)).WillByDefault(legacyState(0x10)); // CHECKED
-  const UiaProvider provider;
-  const std::optional<AccessibleNode> node = provider.focusedElement();
-  ASSERT_TRUE(node.has_value());
-  EXPECT_TRUE(node->states.test(vox::model::State::Checked));
+  ON_CALL(element_, GetCachedPropertyValue(_, _))
+      .WillByDefault(legacyState(vox::provider::UiaLegacyStateChecked));
+  EXPECT_TRUE(focusedNodeOrFail().states.test(vox::model::State::Checked));
 }
 
 // With no Value pattern, an edit's value comes from the legacy IAccessible value property.
@@ -276,11 +285,7 @@ TEST_F(UiaProviderTest, ReadsValueFromLegacyValuePropertyWhenValuePatternAbsent)
       .WillByDefault(
           vox::provider::testing::patternDispatch(&toggle_, &expand_, &selection_, nullptr));
   ON_CALL(element_, GetCachedPropertyValue(_, _)).WillByDefault(legacyValue(L"Hallo"));
-  const UiaProvider provider;
-  const std::optional<AccessibleNode> node = provider.focusedElement();
-  ASSERT_TRUE(node.has_value());
-  ASSERT_TRUE(node->value.has_value());
-  EXPECT_EQ(*node->value, "Hallo");
+  EXPECT_EQ(focusedNodeOrFail().value.value_or(""), "Hallo");
 }
 
 TEST_F(UiaProviderTest, StartForwardsFocusEventsToTheCallback) {

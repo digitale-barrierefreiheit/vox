@@ -123,7 +123,7 @@ TEST(Mapper, SelectedFromSelectionItem) {
 
 TEST(Mapper, ReadOnlyFromValuePattern) {
   UiaElementData data;
-  data.hasValuePattern = true;
+  data.hasReadOnly = true;
   data.isReadOnly = true;
   EXPECT_TRUE(mapElement(data).states.test(State::ReadOnly));
 
@@ -135,7 +135,7 @@ TEST(Mapper, ReadOnlyFromValuePattern) {
 // text itself was unreadable (then the value is absent, not a spurious empty).
 TEST(Mapper, ReadOnlyReportedEvenWhenValueTextAbsent) {
   UiaElementData data;
-  data.hasValuePattern = true;
+  data.hasReadOnly = true;
   data.isReadOnly = true;
   data.hasValue = false;
   const auto node = mapElement(data);
@@ -206,7 +206,7 @@ TEST(Mapper, SelectionItemTakesPrecedenceOverLegacyState) {
 // stray legacy read-only bit.
 TEST(Mapper, ValuePatternReadOnlyTakesPrecedenceOverLegacyState) {
   UiaElementData data;
-  data.hasValuePattern = true;
+  data.hasReadOnly = true;
   data.isReadOnly = false;
   data.legacyState = vp::UiaLegacyStateReadOnly;
   EXPECT_FALSE(mapElement(data).states.test(State::ReadOnly));
@@ -214,7 +214,7 @@ TEST(Mapper, ValuePatternReadOnlyTakesPrecedenceOverLegacyState) {
 
 TEST(Mapper, ReadOnlyFromLegacyStateWithoutValuePattern) {
   UiaElementData data;
-  data.hasValuePattern = false;
+  data.hasReadOnly = false;
   data.legacyState = vp::UiaLegacyStateReadOnly;
   EXPECT_TRUE(mapElement(data).states.test(State::ReadOnly));
 }

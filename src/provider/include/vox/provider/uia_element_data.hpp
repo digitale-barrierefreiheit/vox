@@ -9,9 +9,10 @@
 /// COM types is what lets the mapping be unit-tested and sanitizer-covered.
 /// Each `has*` flag means the corresponding value was successfully *extracted*
 /// (the pattern was present and the property read), so "absent or unreadable"
-/// stays distinguishable from "present". The one exception is `hasValuePattern`,
-/// which records pattern presence alone (read-only-ness is captured even when
-/// the value text does not read).
+/// stays distinguishable from "present". The one nuance is `hasReadOnly`, which
+/// records that the ValuePattern's IsReadOnly was read successfully (so read-only-ness
+/// is captured even when the value text does not read, and a failed IsReadOnly read
+/// can fall back to the legacy state bits rather than being assumed not-read-only).
 #ifndef VOX_PROVIDER_UIA_ELEMENT_DATA_HPP
 #define VOX_PROVIDER_UIA_ELEMENT_DATA_HPP
 
@@ -32,7 +33,7 @@ struct UiaElementData {
   int expandCollapseState{0};      ///< ExpandCollapseState when hasExpandCollapse.
   bool hasSelectionItem{false};    ///< SelectionItemPattern present and IsSelected read.
   bool isSelected{false};          ///< IsSelected when hasSelectionItem.
-  bool hasValuePattern{false};     ///< ValuePattern present (gates ReadOnly).
+  bool hasReadOnly{false};         ///< IsReadOnly read (gates ReadOnly vs the legacy bit).
   bool isReadOnly{false};          ///< ValuePattern IsReadOnly (-> ReadOnly).
   bool hasValue{false};            ///< Value text readable (-> AccessibleNode value).
   std::string value;               ///< ValuePattern Value when hasValue.

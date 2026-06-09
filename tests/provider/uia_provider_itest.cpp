@@ -215,6 +215,7 @@ protected:
       releaseApp(); // a SetUp skip/fail does not run TearDown — release the child here
       skipOrFail("VOX_REQUIRE_UIA_TREE is set but the UIA test app never signalled ready.",
                  "UIA test app did not signal ready in time.");
+      return; // skipOrFail's FAIL()/GTEST_SKIP() only returns from skipOrFail, not SetUp
     }
   }
 

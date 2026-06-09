@@ -34,6 +34,15 @@ inline constexpr int UiaExpandCollapseStateExpanded = 1;
 inline constexpr int UiaExpandCollapseStatePartiallyExpanded = 2;
 inline constexpr int UiaExpandCollapseStateLeafNode = 3;
 
+/// MSAA `STATE_SYSTEM_*` bits (oleacc.h), used as a fallback for standard Win32
+/// controls: they reach UIA through the legacy bridge, which exposes state via
+/// `LegacyIAccessiblePattern` (these bits) rather than the modern Toggle/Value/
+/// SelectionItem patterns. Mirrored here so the pure mapper stays Windows-free.
+inline constexpr unsigned UiaLegacyStateSelected = 0x0002U;
+inline constexpr unsigned UiaLegacyStateChecked = 0x0010U;
+inline constexpr unsigned UiaLegacyStateMixed = 0x0020U; // == STATE_SYSTEM_INDETERMINATE
+inline constexpr unsigned UiaLegacyStateReadOnly = 0x0040U;
+
 } // namespace vox::provider
 
 #endif // VOX_PROVIDER_UIA_IDS_HPP

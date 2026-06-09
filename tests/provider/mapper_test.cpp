@@ -158,4 +158,72 @@ TEST(Mapper, ValuePresentEmptyVersusAbsent) {
   EXPECT_EQ(mapElement(filled).value, "hallo");
 }
 
+// --- LegacyIAccessiblePattern fallback ---------------------------------------
+// Standard Win32 controls reach UIA through the MSAA bridge, which exposes state
+// via the legacy state bits rather than the modern Toggle/Value/SelectionItem
+// patterns. The mapper falls back to those bits when the modern pattern is absent.
+
+TEST(Mapper, CheckedFromLegacyStateWithoutTogglePattern) {
+  UiaElementData data;
+  data.hasToggle = false; // a standard Win32 checkbox exposes no modern Toggle pattern
+  data.legacyState = vp::UiaLegacyStateChecked;
+  EXPECT_TRUE(mapElement(data).states.test(State::Checked));
+  EXPECT_FALSE(mapElement(data).states.test(State::Mixed));
+}
+
+TEST(Mapper, MixedFromLegacyState) {
+  UiaElementData data;
+  data.legacyState = vp::UiaLegacyStateMixed;
+  EXPECT_TRUE(mapElement(data).states.test(State::Mixed));
+  EXPECT_FALSE(mapElement(data).states.test(State::Checked));
+}
+
+TEST(Mapper, TogglePatternTakesPrecedenceOverLegacyState) {
+  UiaElementData data;
+  data.hasToggle = true;
+  data.toggleState = vp::UiaToggleStateOff;     // modern says off...
+  data.legacyState = vp::UiaLegacyStateChecked; // ...legacy says checked; modern wins
+  EXPECT_FALSE(mapElement(data).states.test(State::Checked));
+}
+
+TEST(Mapper, SelectedFromLegacyStateWithoutSelectionItem) {
+  UiaElementData data;
+  data.legacyState = vp::UiaLegacyStateSelected;
+  EXPECT_TRUE(mapElement(data).states.test(State::Selected));
+}
+
+TEST(Mapper, ReadOnlyFromLegacyStateWithoutValuePattern) {
+  UiaElementData data;
+  data.hasValuePattern = false;
+  data.legacyState = vp::UiaLegacyStateReadOnly;
+  EXPECT_TRUE(mapElement(data).states.test(State::ReadOnly));
+}
+
+TEST(Mapper, ValueFromLegacyForValueBearingRole) {
+  UiaElementData data;
+  data.controlTypeId = vp::UiaEditControlTypeId; // Edit -> value-bearing
+  data.hasValue = false;                         // no modern Value pattern text
+  data.hasLegacyValue = true;
+  data.legacyValue = "Hallo";
+  EXPECT_EQ(mapElement(data).value, "Hallo");
+}
+
+TEST(Mapper, LegacyValueIgnoredForNonValueRole) {
+  UiaElementData data;
+  data.controlTypeId = vp::UiaButtonControlTypeId; // a button has no value concept
+  data.hasLegacyValue = true;
+  data.legacyValue = ""; // must not become a spurious empty AccessibleNode value
+  EXPECT_FALSE(mapElement(data).value.has_value());
+}
+
+TEST(Mapper, ValuePatternTakesPrecedenceOverLegacyValue) {
+  UiaElementData data;
+  data.controlTypeId = vp::UiaEditControlTypeId;
+  data.hasValue = true;
+  data.value = "modern";
+  data.hasLegacyValue = true;
+  data.legacyValue = "legacy";
+  EXPECT_EQ(mapElement(data).value, "modern");
+}
+
 } // namespace

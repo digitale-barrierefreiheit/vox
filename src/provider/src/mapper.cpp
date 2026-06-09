@@ -16,6 +16,7 @@ namespace {
 
 using vox::model::Role;
 using vox::model::State;
+using vox::model::StateSet;
 
 Role mapRole(int controlTypeId) {
   using enum Role;
@@ -43,6 +44,67 @@ Role mapRole(int controlTypeId) {
   }
 }
 
+// Checked/Mixed from the modern Toggle pattern, else the legacy MSAA state bits
+// (standard Win32 controls expose state only through the legacy bridge). legacyState
+// is 0 when unread, so the bit tests are safely no-ops then.
+void applyToggle(StateSet& states, const UiaElementData& data) {
+  if (data.hasToggle) {
+    if (data.toggleState == UiaToggleStateOn) {
+      states.set(State::Checked);
+    } else if (data.toggleState == UiaToggleStateIndeterminate) {
+      states.set(State::Mixed);
+    }
+    return;
+  }
+  if ((data.legacyState & UiaLegacyStateMixed) != 0U) {
+    states.set(State::Mixed);
+  } else if ((data.legacyState & UiaLegacyStateChecked) != 0U) {
+    states.set(State::Checked);
+  }
+}
+
+void applyExpandCollapse(StateSet& states, const UiaElementData& data) {
+  if (!data.hasExpandCollapse || data.expandCollapseState == UiaExpandCollapseStateLeafNode) {
+    return;
+  }
+  states.set(State::Expandable);
+  if (data.expandCollapseState == UiaExpandCollapseStateExpanded ||
+      data.expandCollapseState == UiaExpandCollapseStatePartiallyExpanded) {
+    states.set(State::Expanded);
+  }
+}
+
+// Selected from the modern SelectionItem pattern, else the legacy MSAA state bit.
+void applySelected(StateSet& states, const UiaElementData& data) {
+  const bool modernSelected = data.hasSelectionItem && data.isSelected;
+  const bool legacySelected = (data.legacyState & UiaLegacyStateSelected) != 0U;
+  if (modernSelected || legacySelected) {
+    states.set(State::Selected);
+  }
+}
+
+// ReadOnly from the ValuePattern when present, else the legacy MSAA state bit.
+void applyReadOnly(StateSet& states, const UiaElementData& data) {
+  const bool readOnly =
+      data.hasValuePattern ? data.isReadOnly : (data.legacyState & UiaLegacyStateReadOnly) != 0U;
+  if (readOnly) {
+    states.set(State::ReadOnly);
+  }
+}
+
+// Value from the ValuePattern, else the legacy value — but only for value-bearing roles,
+// so a button's empty legacy value never becomes a spurious empty AccessibleNode value.
+void applyValue(vox::model::AccessibleNode& node, const UiaElementData& data) {
+  if (data.hasValue) {
+    node.value = data.value; // present even when empty; absent stays nullopt
+    return;
+  }
+  const bool valueBearing = node.role == Role::Edit || node.role == Role::Combobox;
+  if (data.hasLegacyValue && valueBearing) {
+    node.value = data.legacyValue;
+  }
+}
+
 } // namespace
 
 vox::model::AccessibleNode mapElement(const UiaElementData& data) {
@@ -60,29 +122,11 @@ vox::model::AccessibleNode mapElement(const UiaElementData& data) {
   if (data.isKeyboardFocusable) {
     node.states.set(Focusable);
   }
-  if (data.hasToggle) {
-    if (data.toggleState == UiaToggleStateOn) {
-      node.states.set(Checked);
-    } else if (data.toggleState == UiaToggleStateIndeterminate) {
-      node.states.set(Mixed);
-    }
-  }
-  if (data.hasExpandCollapse && data.expandCollapseState != UiaExpandCollapseStateLeafNode) {
-    node.states.set(Expandable);
-    if (data.expandCollapseState == UiaExpandCollapseStateExpanded ||
-        data.expandCollapseState == UiaExpandCollapseStatePartiallyExpanded) {
-      node.states.set(Expanded);
-    }
-  }
-  if (data.hasSelectionItem && data.isSelected) {
-    node.states.set(Selected);
-  }
-  if (data.hasValuePattern && data.isReadOnly) {
-    node.states.set(ReadOnly); // read-only-ness is independent of the text
-  }
-  if (data.hasValue) {
-    node.value = data.value; // present even when empty; absent stays nullopt
-  }
+  applyToggle(node.states, data);
+  applyExpandCollapse(node.states, data);
+  applySelected(node.states, data);
+  applyReadOnly(node.states, data);
+  applyValue(node, data);
 
   return node;
 }

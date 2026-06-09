@@ -74,10 +74,11 @@ struct ExpectedControl {
   std::string_view utterance;
 };
 
-// The focusable controls the app exposes: the covered roles (Button, Checkbox, RadioButton,
-// Edit), with two checkboxes for the checked and tri-state cases. A checked Win32 radio
-// reports STATE_SYSTEM_CHECKED (-> Checked), not Selected.
-constexpr std::array<ExpectedControl, 5> ExpectedControls{{
+// The focusable controls the app exposes: Button, Checkbox (checked + tri-state), RadioButton,
+// and three labelled Edits (a value, an empty one -> "leer", and a read-only one). A checked
+// Win32 radio reports STATE_SYSTEM_CHECKED (-> Checked), not Selected; a labelled edit takes
+// its accessible name from the preceding STATIC.
+constexpr std::array<ExpectedControl, 7> ExpectedControls{{
     {.role = Role::Button,
      .name = "Speichern",
      .state = std::nullopt,
@@ -98,7 +99,21 @@ constexpr std::array<ExpectedControl, 5> ExpectedControls{{
      .state = State::Checked,
      .value = "",
      .utterance = "Optionsfeld, Deutsch, aktiviert"},
-    {.role = Role::Edit, .name = "", .state = std::nullopt, .value = "Hallo", .utterance = ""},
+    {.role = Role::Edit,
+     .name = "Name",
+     .state = std::nullopt,
+     .value = "Hallo",
+     .utterance = "Eingabefeld, Name, Hallo"},
+    {.role = Role::Edit,
+     .name = "Suche",
+     .state = std::nullopt,
+     .value = "",
+     .utterance = "Eingabefeld, Suche, leer"},
+    {.role = Role::Edit,
+     .name = "Pfad",
+     .state = State::ReadOnly,
+     .value = "system32",
+     .utterance = "Eingabefeld, Pfad, schreibgeschützt, system32"},
 }};
 
 std::wstring envValue(const wchar_t* name) {

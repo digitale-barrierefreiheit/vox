@@ -67,9 +67,24 @@ HWND addControl(HWND parent, const ControlSpec& spec) {
                            nullptr);
 }
 
-// Builds the known focusable control tree and returns the first control (the initial
-// focus). Each control's window text is its accessible name; checkboxes/radio get an
-// explicit checked/indeterminate state; the edit's text is its value (it has no name).
+// Creates a STATIC label and an EDIT on one row, the label first so the MSAA/UIA bridge
+// derives the edit's accessible name from the label text (a preceding-static label). The
+// edit's window text is its value. Returns the edit (the focusable control the test reads).
+HWND addLabeledEdit(HWND parent, int top, const wchar_t* label, const wchar_t* text,
+                    DWORD extraStyle) {
+  HINSTANCE instance = ::GetModuleHandleW(nullptr);
+  ::CreateWindowExW(0, L"STATIC", label, WS_CHILD | WS_VISIBLE, 10, top + 4, 70, 20, parent,
+                    nullptr, instance, nullptr);
+  return ::CreateWindowExW(0, L"EDIT", text,
+                           WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL |
+                               extraStyle,
+                           85, top, 220, 24, parent, nullptr, instance, nullptr);
+}
+
+// Builds the known control tree and returns the first control (the initial focus). Each
+// button/checkbox/radio's window text is its accessible name; checkboxes/radio get an
+// explicit checked/indeterminate state. The edits are labelled (a preceding STATIC), so the
+// accessible name is the label and the window text is the value (empty / read-only cases too).
 HWND buildControlTree(HWND parent) {
   HWND firstButton = addControl(parent, {.className = L"BUTTON",
                                          .text = L"Speichern",
@@ -94,10 +109,9 @@ HWND buildControlTree(HWND parent) {
                                    .top = 112});
   ::SendMessageW(radio, BM_SETCHECK, BST_CHECKED, 0);
 
-  addControl(parent, {.className = L"EDIT",
-                      .text = L"Hallo",
-                      .style = WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
-                      .top = 146});
+  addLabeledEdit(parent, 146, L"Name", L"Hallo", 0);
+  addLabeledEdit(parent, 180, L"Suche", L"", 0);
+  addLabeledEdit(parent, 214, L"Pfad", L"system32", ES_READONLY);
 
   return firstButton;
 }
@@ -136,7 +150,7 @@ int main(int argc, char** argv) {
   }
 
   HWND window = ::CreateWindowExW(WS_EX_CONTROLPARENT, WindowClassName, WindowTitle,
-                                  WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 320, 260,
+                                  WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 360, 320,
                                   nullptr, nullptr, instance, nullptr);
   if (window == nullptr) {
     return 1;

@@ -10,13 +10,12 @@
 /// `IUIAutomation` stack, so it exercises the path the mock-COM unit tests cannot.
 ///
 /// The app cycles keyboard focus through its focusable controls; this polls the
-/// provider's focused element to collect each one, then asserts the mapped role,
-/// name, and focus states. The pattern-derived states (Checked/Mixed/Selected/
-/// ReadOnly) and the edit's value are deliberately NOT asserted: standard Win32
-/// controls reach UIA via the legacy MSAA bridge, which surfaces role/name/focus
-/// (core properties) but not the modern Toggle/Value/SelectionItem patterns the
-/// mapper reads — those are unit-tested with mock COM. (Reading legacy patterns
-/// from real Win32 apps is a separate provider concern; see the PR discussion.)
+/// provider's focused element to collect each one, then asserts the mapped role, name,
+/// focus, and state/value. Standard Win32 controls reach UIA via the legacy MSAA bridge,
+/// which exposes state/value through LegacyIAccessiblePattern (the IAccessible state bits
+/// + value) rather than the modern Toggle/Value/SelectionItem patterns — so the provider's
+/// mapper falls back to the legacy path, which this exercises end to end against a real
+/// tree (the mock-COM unit tests cover the mapping in isolation).
 ///
 /// Gated like the other *_itest: the Windows CI jobs set `VOX_REQUIRE_UIA_TREE=1`,
 /// under which a missing app or unreadable controls are a hard failure; without the
@@ -56,21 +55,26 @@ constexpr DWORD ReadyTimeoutMs = 10000;
 constexpr int MaxPollAttempts = 200; // ~10s of polling at PollIntervalMs while focus cycles
 constexpr int PollIntervalMs = 50;
 
-// One expected control. An empty `name` matches by role alone (the edit has no
-// accessible name, so it is identified by its unique Edit role).
+// One expected control. An empty `name` matches by role alone (the edit has no accessible
+// name); `state`, if set, must be present; a non-empty `value` must match. The states and
+// value come from the legacy MSAA bridge (standard Win32 controls expose them there, not
+// via the modern Toggle/Value patterns) — see the provider's mapper fallback.
 struct ExpectedControl {
   Role role;
   std::string_view name;
+  std::optional<State> state;
+  std::string_view value;
 };
 
-// The focusable controls the app exposes: the covered roles (Button, Checkbox,
-// RadioButton, Edit), with two checkboxes for the checked and tri-state cases.
+// The focusable controls the app exposes: the covered roles (Button, Checkbox, RadioButton,
+// Edit), with two checkboxes for the checked and tri-state cases. A checked Win32 radio
+// reports STATE_SYSTEM_CHECKED (-> Checked), not Selected.
 constexpr std::array<ExpectedControl, 5> ExpectedControls{{
-    {.role = Role::Button, .name = "Speichern"},
-    {.role = Role::Checkbox, .name = "Kapitel anzeigen"},
-    {.role = Role::Checkbox, .name = "Teilauswahl"},
-    {.role = Role::RadioButton, .name = "Deutsch"},
-    {.role = Role::Edit, .name = ""},
+    {.role = Role::Button, .name = "Speichern", .state = std::nullopt, .value = ""},
+    {.role = Role::Checkbox, .name = "Kapitel anzeigen", .state = State::Checked, .value = ""},
+    {.role = Role::Checkbox, .name = "Teilauswahl", .state = State::Mixed, .value = ""},
+    {.role = Role::RadioButton, .name = "Deutsch", .state = State::Checked, .value = ""},
+    {.role = Role::Edit, .name = "", .state = std::nullopt, .value = "Hallo"},
 }};
 
 std::wstring envValue(const wchar_t* name) {
@@ -271,6 +275,14 @@ TEST_F(UiaProviderItest, ReadsEachFocusableControl) {
     }
     EXPECT_TRUE(node->states.test(State::Focusable)) << "not focusable: " << describe(*node);
     EXPECT_TRUE(node->states.test(State::Focused)) << "not focused when read: " << describe(*node);
+    if (expected.state.has_value()) {
+      EXPECT_TRUE(node->states.test(*expected.state))
+          << "expected state not read on " << describe(*node);
+    }
+    if (!expected.value.empty()) {
+      EXPECT_EQ(node->value.value_or(""), expected.value)
+          << "value mismatch on " << describe(*node);
+    }
   }
 }
 

@@ -805,8 +805,9 @@ public:
 inline auto patternDispatch(IUIAutomationTogglePattern* toggle,
                             IUIAutomationExpandCollapsePattern* expand,
                             IUIAutomationSelectionItemPattern* selection,
-                            IUIAutomationValuePattern* value) {
-  return [toggle, expand, selection, value](PATTERNID id, REFIID, void** out) {
+                            IUIAutomationValuePattern* value,
+                            IUIAutomationLegacyIAccessiblePattern* legacy) {
+  return [toggle, expand, selection, value, legacy](PATTERNID id, REFIID, void** out) {
     switch (id) {
     case UIA_TogglePatternId:
       *out = toggle;
@@ -819,6 +820,9 @@ inline auto patternDispatch(IUIAutomationTogglePattern* toggle,
       break;
     case UIA_ValuePatternId:
       *out = value;
+      break;
+    case UIA_LegacyIAccessiblePatternId:
+      *out = legacy;
       break;
     default:
       *out = nullptr;
@@ -916,6 +920,114 @@ public:
               (override, Calltype(STDMETHODCALLTYPE)));
   MOCK_METHOD(HRESULT, get_CachedIsReadOnly, (__RPC__out BOOL * retVal),
               (override, Calltype(STDMETHODCALLTYPE)));
+};
+
+/// Mock `IUIAutomationLegacyIAccessiblePattern` (the MSAA-bridge fallback). Only the
+/// cached State + Value the provider reads are gmock'd; the rest are E_NOTIMPL stubs.
+class MockUiLegacyPattern : public ComMockBase<IUIAutomationLegacyIAccessiblePattern> {
+public:
+  HRESULT STDMETHODCALLTYPE Select(long flagsSelect) override {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE DoDefaultAction() override {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE SetValue(__RPC__in LPCWSTR szValue) override {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE get_CurrentChildId(__RPC__out int* pRetVal) override {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE get_CurrentName(__RPC__deref_out_opt BSTR* pszName) override {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE get_CurrentValue(__RPC__deref_out_opt BSTR* pszValue) override {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  get_CurrentDescription(__RPC__deref_out_opt BSTR* pszDescription) override {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE get_CurrentRole(__RPC__out DWORD* pdwRole) override {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE get_CurrentState(__RPC__out DWORD* pdwState) override {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE get_CurrentHelp(__RPC__deref_out_opt BSTR* pszHelp) override {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  get_CurrentKeyboardShortcut(__RPC__deref_out_opt BSTR* pszKeyboardShortcut) override {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE GetCurrentSelection(
+      __RPC__deref_out_opt IUIAutomationElementArray** pvarSelectedChildren) override {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  get_CurrentDefaultAction(__RPC__deref_out_opt BSTR* pszDefaultAction) override {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE get_CachedChildId(__RPC__out int* pRetVal) override {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE get_CachedName(__RPC__deref_out_opt BSTR* pszName) override {
+    return E_NOTIMPL;
+  }
+
+  MOCK_METHOD(HRESULT, get_CachedValue, (__RPC__deref_out_opt BSTR * pszValue),
+              (override, Calltype(STDMETHODCALLTYPE)));
+
+  HRESULT STDMETHODCALLTYPE
+  get_CachedDescription(__RPC__deref_out_opt BSTR* pszDescription) override {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE get_CachedRole(__RPC__out DWORD* pdwRole) override {
+    return E_NOTIMPL;
+  }
+
+  MOCK_METHOD(HRESULT, get_CachedState, (__RPC__out DWORD * pdwState),
+              (override, Calltype(STDMETHODCALLTYPE)));
+
+  HRESULT STDMETHODCALLTYPE get_CachedHelp(__RPC__deref_out_opt BSTR* pszHelp) override {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  get_CachedKeyboardShortcut(__RPC__deref_out_opt BSTR* pszKeyboardShortcut) override {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE GetCachedSelection(
+      __RPC__deref_out_opt IUIAutomationElementArray** pvarSelectedChildren) override {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  get_CachedDefaultAction(__RPC__deref_out_opt BSTR* pszDefaultAction) override {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  GetIAccessible(__RPC__deref_out_opt IAccessible** ppAccessible) override {
+    return E_NOTIMPL;
+  }
 };
 
 } // namespace vox::provider::testing

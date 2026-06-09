@@ -16,6 +16,7 @@
 #  include <gtest/gtest.h>
 
 #  include <vox/model/accessible_node.hpp>
+#  include <vox/model/state.hpp>
 #  include <vox/provider/uia_provider.hpp>
 #  include <vox/provider/uia_test_seam.hpp>
 
@@ -30,6 +31,7 @@ using vox::provider::testing::MockUiAutomation;
 using vox::provider::testing::MockUiCacheRequest;
 using vox::provider::testing::MockUiElement;
 using vox::provider::testing::MockUiExpandCollapsePattern;
+using vox::provider::testing::MockUiLegacyPattern;
 using vox::provider::testing::MockUiSelectionItemPattern;
 using vox::provider::testing::MockUiTogglePattern;
 using vox::provider::testing::MockUiValuePattern;
@@ -139,8 +141,8 @@ protected:
     // The dispatch helper (in the mock header) maps each id to its pattern mock,
     // keeping the COM void** out-param out of this test.
     ON_CALL(element_, GetCachedPatternAs(_, _, _))
-        .WillByDefault(
-            vox::provider::testing::patternDispatch(&toggle_, &expand_, &selection_, &value_));
+        .WillByDefault(vox::provider::testing::patternDispatch(&toggle_, &expand_, &selection_,
+                                                               &value_, &legacy_));
   }
 
   /// The four supported patterns: toggled-on, expanded, selected, value "hello".
@@ -159,6 +161,13 @@ protected:
       return S_OK;
     });
     ON_CALL(value_, get_CachedIsReadOnly(_)).WillByDefault(setBool(FALSE));
+    // The legacy pattern reports no state and no value by default (the modern patterns
+    // above provide them on this happy-path button); the fallback tests override these.
+    ON_CALL(legacy_, get_CachedState(_)).WillByDefault([](DWORD* out) {
+      *out = 0;
+      return S_OK;
+    });
+    ON_CALL(legacy_, get_CachedValue(_)).WillByDefault(Return(ErrorFail));
   }
 
   /// A default action that writes @p value into a `BOOL*` out-param and succeeds.
@@ -177,6 +186,7 @@ protected:
   NiceMock<MockUiExpandCollapsePattern> expand_;
   NiceMock<MockUiSelectionItemPattern> selection_;
   NiceMock<MockUiValuePattern> value_;
+  NiceMock<MockUiLegacyPattern> legacy_;
 };
 
 TEST_F(UiaProviderTest, FocusedElementExtractsNameAndValue) {
@@ -212,6 +222,46 @@ TEST_F(UiaProviderTest, ValueIsAbsentWhenTheValueReadFails) {
   const std::optional<AccessibleNode> node = provider.focusedElement();
   ASSERT_TRUE(node.has_value());
   EXPECT_FALSE(node->value.has_value());
+}
+
+// Standard Win32 controls reach UIA through the MSAA bridge, which exposes state via the
+// legacy pattern, not Toggle. With no Toggle pattern, the checked state comes from there.
+TEST_F(UiaProviderTest, ReadsCheckedFromLegacyPatternWhenTogglePatternAbsent) {
+  ON_CALL(element_, get_CachedControlType(_)).WillByDefault([](CONTROLTYPEID* out) {
+    *out = UIA_CheckBoxControlTypeId;
+    return S_OK;
+  });
+  ON_CALL(element_, GetCachedPatternAs(_, _, _))
+      .WillByDefault(vox::provider::testing::patternDispatch(nullptr, &expand_, &selection_,
+                                                             nullptr, &legacy_));
+  ON_CALL(legacy_, get_CachedState(_)).WillByDefault([](DWORD* out) {
+    *out = 0x10; // STATE_SYSTEM_CHECKED
+    return S_OK;
+  });
+  const UiaProvider provider;
+  const std::optional<AccessibleNode> node = provider.focusedElement();
+  ASSERT_TRUE(node.has_value());
+  EXPECT_TRUE(node->states.test(vox::model::State::Checked));
+}
+
+// With no Value pattern, an edit's value comes from the legacy pattern.
+TEST_F(UiaProviderTest, ReadsValueFromLegacyPatternWhenValuePatternAbsent) {
+  ON_CALL(element_, get_CachedControlType(_)).WillByDefault([](CONTROLTYPEID* out) {
+    *out = UIA_EditControlTypeId;
+    return S_OK;
+  });
+  ON_CALL(element_, GetCachedPatternAs(_, _, _))
+      .WillByDefault(vox::provider::testing::patternDispatch(&toggle_, &expand_, &selection_,
+                                                             nullptr, &legacy_));
+  ON_CALL(legacy_, get_CachedValue(_)).WillByDefault([](BSTR* out) {
+    *out = bstr(L"Hallo");
+    return S_OK;
+  });
+  const UiaProvider provider;
+  const std::optional<AccessibleNode> node = provider.focusedElement();
+  ASSERT_TRUE(node.has_value());
+  ASSERT_TRUE(node->value.has_value());
+  EXPECT_EQ(*node->value, "Hallo");
 }
 
 TEST_F(UiaProviderTest, StartForwardsFocusEventsToTheCallback) {

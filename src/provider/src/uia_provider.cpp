@@ -79,6 +79,25 @@ std::string toUtf8(BSTR text) {
   return out;
 }
 
+// LegacyIAccessiblePattern fallback: standard Win32 controls reach UIA through the MSAA
+// bridge and expose state/value here, not via the modern patterns. The pure mapper uses
+// these only when the corresponding modern pattern is absent.
+void extractLegacy(UiaElementData& data, IUIAutomationElement* element) {
+  if (ComPtr<IUIAutomationLegacyIAccessiblePattern> legacy;
+      SUCCEEDED(
+          element->GetCachedPatternAs(UIA_LegacyIAccessiblePatternId, IID_PPV_ARGS(&legacy))) &&
+      legacy) {
+    if (DWORD state = 0; SUCCEEDED(legacy->get_CachedState(&state))) {
+      data.legacyState = static_cast<unsigned>(state);
+    }
+    if (BSTR text = nullptr; SUCCEEDED(legacy->get_CachedValue(&text))) {
+      data.hasLegacyValue = true;
+      data.legacyValue = toUtf8(text); // toUtf8 treats null as ""
+      ::SysFreeString(text);
+    }
+  }
+}
+
 /// Pulls the cached properties/patterns of @p element into a plain snapshot.
 UiaElementData extract(IUIAutomationElement* element) {
   UiaElementData data;
@@ -158,6 +177,8 @@ UiaElementData extract(IUIAutomationElement* element) {
     }
   }
 
+  extractLegacy(data, element);
+
   return data;
 }
 
@@ -215,6 +236,9 @@ public:
     added &= SUCCEEDED(cacheRequest_->AddPattern(UIA_ExpandCollapsePatternId));
     added &= SUCCEEDED(cacheRequest_->AddPattern(UIA_SelectionItemPatternId));
     added &= SUCCEEDED(cacheRequest_->AddPattern(UIA_ValuePatternId));
+    // Fallback for standard Win32 controls (the MSAA->UIA bridge), which surface state/
+    // value through LegacyIAccessiblePattern rather than the modern patterns above.
+    added &= SUCCEEDED(cacheRequest_->AddPattern(UIA_LegacyIAccessiblePatternId));
     if (!added) {
       // Don't run with a partially populated cache request (that would look like
       // spurious "missing properties"); degrade to no reads instead.

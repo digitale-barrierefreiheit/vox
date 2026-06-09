@@ -15,8 +15,8 @@ namespace vox::provider {
 namespace {
 
 using vox::model::Role;
-using vox::model::State;
 using vox::model::StateSet;
+using enum vox::model::State;
 
 Role mapRole(int controlTypeId) {
   using enum Role;
@@ -50,16 +50,16 @@ Role mapRole(int controlTypeId) {
 void applyToggle(StateSet& states, const UiaElementData& data) {
   if (data.hasToggle) {
     if (data.toggleState == UiaToggleStateOn) {
-      states.set(State::Checked);
+      states.set(Checked);
     } else if (data.toggleState == UiaToggleStateIndeterminate) {
-      states.set(State::Mixed);
+      states.set(Mixed);
     }
     return;
   }
   if ((data.legacyState & UiaLegacyStateMixed) != 0U) {
-    states.set(State::Mixed);
+    states.set(Mixed);
   } else if ((data.legacyState & UiaLegacyStateChecked) != 0U) {
-    states.set(State::Checked);
+    states.set(Checked);
   }
 }
 
@@ -67,19 +67,20 @@ void applyExpandCollapse(StateSet& states, const UiaElementData& data) {
   if (!data.hasExpandCollapse || data.expandCollapseState == UiaExpandCollapseStateLeafNode) {
     return;
   }
-  states.set(State::Expandable);
+  states.set(Expandable);
   if (data.expandCollapseState == UiaExpandCollapseStateExpanded ||
       data.expandCollapseState == UiaExpandCollapseStatePartiallyExpanded) {
-    states.set(State::Expanded);
+    states.set(Expanded);
   }
 }
 
-// Selected from the modern SelectionItem pattern, else the legacy MSAA state bit.
+// Selected from the modern SelectionItem pattern when present (so it can authoritatively
+// say "not selected"), else the legacy MSAA state bit.
 void applySelected(StateSet& states, const UiaElementData& data) {
-  const bool modernSelected = data.hasSelectionItem && data.isSelected;
-  const bool legacySelected = (data.legacyState & UiaLegacyStateSelected) != 0U;
-  if (modernSelected || legacySelected) {
-    states.set(State::Selected);
+  const bool selected =
+      data.hasSelectionItem ? data.isSelected : (data.legacyState & UiaLegacyStateSelected) != 0U;
+  if (selected) {
+    states.set(Selected);
   }
 }
 
@@ -88,7 +89,7 @@ void applyReadOnly(StateSet& states, const UiaElementData& data) {
   const bool readOnly =
       data.hasValuePattern ? data.isReadOnly : (data.legacyState & UiaLegacyStateReadOnly) != 0U;
   if (readOnly) {
-    states.set(State::ReadOnly);
+    states.set(ReadOnly);
   }
 }
 
@@ -108,7 +109,6 @@ void applyValue(vox::model::AccessibleNode& node, const UiaElementData& data) {
 } // namespace
 
 vox::model::AccessibleNode mapElement(const UiaElementData& data) {
-  using enum State;
   vox::model::AccessibleNode node;
   node.role = mapRole(data.controlTypeId);
   node.name = data.name;

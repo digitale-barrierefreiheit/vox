@@ -192,6 +192,26 @@ TEST(Mapper, SelectedFromLegacyStateWithoutSelectionItem) {
   EXPECT_TRUE(mapElement(data).states.test(State::Selected));
 }
 
+// When the modern SelectionItem pattern is present it is authoritative: a legacy bit
+// must not override its "not selected" (the patterns can disagree on bridged controls).
+TEST(Mapper, SelectionItemTakesPrecedenceOverLegacyState) {
+  UiaElementData data;
+  data.hasSelectionItem = true;
+  data.isSelected = false;                       // modern says not selected...
+  data.legacyState = vp::UiaLegacyStateSelected; // ...legacy says selected; modern wins
+  EXPECT_FALSE(mapElement(data).states.test(State::Selected));
+}
+
+// Same precedence for ReadOnly: a present ValuePattern that is not read-only wins over a
+// stray legacy read-only bit.
+TEST(Mapper, ValuePatternReadOnlyTakesPrecedenceOverLegacyState) {
+  UiaElementData data;
+  data.hasValuePattern = true;
+  data.isReadOnly = false;
+  data.legacyState = vp::UiaLegacyStateReadOnly;
+  EXPECT_FALSE(mapElement(data).states.test(State::ReadOnly));
+}
+
 TEST(Mapper, ReadOnlyFromLegacyStateWithoutValuePattern) {
   UiaElementData data;
   data.hasValuePattern = false;

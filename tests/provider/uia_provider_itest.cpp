@@ -25,12 +25,13 @@
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
-#include <windows.h>
+#include <Windows.h>
 
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include <format>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -52,6 +53,8 @@ using vox::model::State;
 using vox::provider::UiaProvider;
 
 constexpr DWORD ReadyTimeoutMs = 10000;
+constexpr int MaxPollAttempts = 200; // ~10s of polling at PollIntervalMs while focus cycles
+constexpr int PollIntervalMs = 50;
 
 // One expected control. An empty `name` matches by role alone (the edit has no
 // accessible name, so it is identified by its unique Edit role).
@@ -88,8 +91,10 @@ bool uiaTreeRequired() {
   return envValue(L"VOX_REQUIRE_UIA_TREE") == L"1";
 }
 
-/// The test-app executable: the path CMake injected, else a sibling of this test
-/// executable (both land in the same build output directory).
+/// The test-app executable: the path CMake injects via VOX_UIA_TEST_APP (the normal
+/// case), with a best-effort fallback to a sibling of this test executable for a
+/// co-located build. CMake build trees keep them in separate target directories, so
+/// the fallback rarely fires — a missing/empty VOX_UIA_TEST_APP just skips the test.
 std::wstring locateTestApp() {
   if (std::wstring fromEnv = envValue(L"VOX_UIA_TEST_APP"); !fromEnv.empty()) {
     return fromEnv;
@@ -133,7 +138,7 @@ bool haveAllExpected(const std::vector<AccessibleNode>& seen) {
 }
 
 std::string describe(const AccessibleNode& node) {
-  return "role=" + std::to_string(static_cast<int>(node.role)) + " name='" + node.name + "'";
+  return std::format("role={} name='{}'", vox::model::toString(node.role), node.name);
 }
 
 // Joins the collected controls into a diagnostic string (CI triage of focus/UIA issues).
@@ -200,12 +205,12 @@ private:
 
   bool launchApp(const std::wstring& exe) {
     const std::wstring eventName =
-        L"Local\\VoxUiaTestAppReady-" + std::to_wstring(::GetCurrentProcessId());
+        std::format(L"Local\\VoxUiaTestAppReady-{}", ::GetCurrentProcessId());
     readyEvent_ = ::CreateEventW(nullptr, TRUE /* manual reset */, FALSE, eventName.c_str());
     if (readyEvent_ == nullptr) {
       return false;
     }
-    std::wstring commandLine = L"\"" + exe + L"\" " + eventName;
+    std::wstring commandLine = std::format(L"\"{}\" {}", exe, eventName);
     STARTUPINFOW startup{};
     startup.cb = sizeof(startup);
     PROCESS_INFORMATION info{};
@@ -228,11 +233,14 @@ private:
 // control until all expected appear or the budget (~10s) runs out.
 std::vector<AccessibleNode> collectFocusedControls(const UiaProvider& provider) {
   std::vector<AccessibleNode> seen;
-  for (int attempt = 0; attempt < 200 && !haveAllExpected(seen); ++attempt) {
+  for (int attempt = 0; attempt < MaxPollAttempts; ++attempt) {
     if (std::optional<AccessibleNode> node = provider.focusedElement(); node.has_value()) {
       addDistinct(seen, *node);
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    if (haveAllExpected(seen)) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(PollIntervalMs));
   }
   return seen;
 }
@@ -242,11 +250,13 @@ TEST_F(UiaProviderItest, ReadsEachFocusableControl) {
   const std::vector<AccessibleNode> seen = collectFocusedControls(provider);
 
   if (!haveAllExpected(seen)) {
-    const std::string observed = "Observed: " + summarize(seen);
-    skipOrFail("VOX_REQUIRE_UIA_TREE is set but the provider did not read every focusable "
-               "control. " +
-                   observed,
-               "Did not read all focusable controls (no interactive focus?). " + observed);
+    const std::string seenSummary = summarize(seen);
+    skipOrFail(
+        std::format("VOX_REQUIRE_UIA_TREE is set but the provider did not read every focusable "
+                    "control. Observed: {}",
+                    seenSummary),
+        std::format("Did not read all focusable controls (no interactive focus?). Observed: {}",
+                    seenSummary));
     return;
   }
 

@@ -38,9 +38,8 @@ struct UiaElementData {
   std::string value;               ///< ValuePattern Value when hasValue.
   // LegacyIAccessiblePattern fallback for standard Win32 controls (MSAA bridge),
   // which expose state/value through the legacy path, not the modern patterns above.
-  bool hasLegacyState{false}; ///< LegacyIAccessiblePattern State read.
-  unsigned legacyState{0};    ///< MSAA STATE_SYSTEM_* bits when hasLegacyState.
-  bool hasLegacyValue{false}; ///< LegacyIAccessiblePattern Value read.
+  unsigned legacyState{0};    ///< MSAA STATE_SYSTEM_* bits (0 = unread/none).
+  bool hasLegacyValue{false}; ///< LegacyIAccessiblePattern Value read (gates the value below).
   std::string legacyValue;    ///< LegacyIAccessiblePattern Value when hasLegacyValue.
 };
 

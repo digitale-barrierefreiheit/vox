@@ -17,7 +17,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
-#include <windows.h>
+#include <Windows.h>
 
 #include <array>
 
@@ -31,7 +31,9 @@ constexpr UINT FocusCycleMs = 200;
 
 LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
   if (message == WM_TIMER && wParam == FocusCycleTimerId) {
-    // Advance focus to the next tab-stop control, wrapping at the end.
+    // Advance focus to the next tab-stop child, wrapping at the end. GetNextDlgTabItem
+    // walks any window's WS_TABSTOP children (not only real dialogs); the window carries
+    // WS_EX_CONTROLPARENT to make that traversal explicit.
     if (HWND next = ::GetNextDlgTabItem(window, ::GetFocus(), FALSE)) {
       ::SetForegroundWindow(window);
       ::SetFocus(next);
@@ -101,9 +103,9 @@ HWND buildControlTree(HWND parent) {
 // launcher created with CreateEventW. An un-openable event is not fatal.
 void signalReady(const char* eventName) {
   std::array<wchar_t, EventNameBufferChars> wide{};
-  const int written =
-      ::MultiByteToWideChar(CP_ACP, 0, eventName, -1, wide.data(), EventNameBufferChars);
-  if (written <= 0) {
+  if (const int written =
+          ::MultiByteToWideChar(CP_ACP, 0, eventName, -1, wide.data(), EventNameBufferChars);
+      written <= 0) {
     return; // conversion failed or the name did not fit the buffer
   }
   if (HANDLE ready = ::OpenEventW(EVENT_MODIFY_STATE, FALSE, wide.data())) {
@@ -126,9 +128,9 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  HWND window =
-      ::CreateWindowExW(0, WindowClassName, WindowTitle, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT,
-                        CW_USEDEFAULT, 320, 260, nullptr, nullptr, instance, nullptr);
+  HWND window = ::CreateWindowExW(WS_EX_CONTROLPARENT, WindowClassName, WindowTitle,
+                                  WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 320, 260,
+                                  nullptr, nullptr, instance, nullptr);
   if (window == nullptr) {
     return 1;
   }

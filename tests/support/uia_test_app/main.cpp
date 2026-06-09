@@ -31,13 +31,19 @@ constexpr UINT FocusCycleMs = 200;
 
 LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
   if (message == WM_TIMER && wParam == FocusCycleTimerId) {
-    // Advance focus to the next tab-stop child, wrapping at the end. GetNextDlgTabItem
-    // walks any window's WS_TABSTOP children (not only real dialogs); the window carries
-    // WS_EX_CONTROLPARENT to make that traversal explicit.
-    // The window was brought foreground once at startup; just cycle focus among its
-    // children here (no per-tick SetForegroundWindow, which would steal foreground).
-    if (HWND next = ::GetNextDlgTabItem(window, ::GetFocus(), FALSE)) {
+    // Advance focus to the next tab-stop child, wrapping at the end. GetNextDlgTabItem walks
+    // any window's WS_TABSTOP children (not only real dialogs); the window carries
+    // WS_EX_CONTROLPARENT to make that traversal explicit. Anchor on the control we last
+    // focused (a static, seeded with the first child) rather than GetFocus(): GetFocus() is
+    // per-thread and can be null when the window is not foreground, which would stall the
+    // cycle. The window is brought foreground once at startup; we do not re-steal it per tick.
+    static HWND anchor = nullptr;
+    if (anchor == nullptr) {
+      anchor = ::GetWindow(window, GW_CHILD);
+    }
+    if (HWND next = ::GetNextDlgTabItem(window, anchor, FALSE)) {
       ::SetFocus(next);
+      anchor = next;
     }
     return 0;
   }

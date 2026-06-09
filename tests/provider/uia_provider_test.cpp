@@ -185,25 +185,16 @@ protected:
     };
   }
 
-  /// A GetCachedPropertyValue action: the MSAA state bits @p state for the legacy State
-  /// property, else empty.
-  static auto legacyState(unsigned state) {
-    return [state](PROPERTYID id, VARIANT* out) {
+  /// A GetCachedPropertyValue action yielding the MSAA state bits @p state for the legacy
+  /// State property and the BSTR @p text for the legacy Value property (a fresh BSTR per
+  /// call, freed by the provider via VariantClear), and an empty VARIANT for anything else.
+  static auto legacyStateAndValue(unsigned state, const wchar_t* text) {
+    return [state, text](PROPERTYID id, VARIANT* out) {
       ::VariantInit(out);
       if (id == UIA_LegacyIAccessibleStatePropertyId) {
         out->vt = VT_I4;
         out->lVal = static_cast<LONG>(state);
-      }
-      return S_OK;
-    };
-  }
-
-  /// A GetCachedPropertyValue action: a BSTR @p text for the legacy Value property, else empty.
-  /// A fresh BSTR is allocated per call, which the provider frees via VariantClear.
-  static auto legacyValue(const wchar_t* text) {
-    return [text](PROPERTYID id, VARIANT* out) {
-      ::VariantInit(out);
-      if (id == UIA_LegacyIAccessibleValuePropertyId) {
+      } else if (id == UIA_LegacyIAccessibleValuePropertyId) {
         out->vt = VT_BSTR;
         out->bstrVal = bstr(text);
       }
@@ -265,27 +256,19 @@ TEST_F(UiaProviderTest, ValueIsAbsentWhenTheValueReadFails) {
   EXPECT_FALSE(node->value.has_value());
 }
 
-// Standard Win32 controls reach UIA through the MSAA bridge, which exposes state via the
-// legacy IAccessible *properties*, not Toggle. With no Toggle pattern, Checked comes thence.
-TEST_F(UiaProviderTest, ReadsCheckedFromLegacyStatePropertyWhenTogglePatternAbsent) {
-  ON_CALL(element_, get_CachedControlType(_))
-      .WillByDefault(setControlType(UIA_CheckBoxControlTypeId));
-  ON_CALL(element_, GetCachedPatternAs(_, _, _))
-      .WillByDefault(
-          vox::provider::testing::patternDispatch(nullptr, &expand_, &selection_, nullptr));
-  ON_CALL(element_, GetCachedPropertyValue(_, _))
-      .WillByDefault(legacyState(vox::provider::UiaLegacyStateChecked));
-  EXPECT_TRUE(focusedNodeOrFail().states.test(vox::model::State::Checked));
-}
-
-// With no Value pattern, an edit's value comes from the legacy IAccessible value property.
-TEST_F(UiaProviderTest, ReadsValueFromLegacyValuePropertyWhenValuePatternAbsent) {
+// Standard Win32 controls reach UIA through the MSAA bridge, which exposes state and value
+// as the legacy IAccessible *properties* rather than the modern patterns. With those patterns
+// absent, the provider reads both legacy properties: a read-only edit reports ReadOnly (from
+// the legacy state bits) and its text value.
+TEST_F(UiaProviderTest, ReadsLegacyStateAndValuePropertiesWhenModernPatternsAbsent) {
   ON_CALL(element_, get_CachedControlType(_)).WillByDefault(setControlType(UIA_EditControlTypeId));
   ON_CALL(element_, GetCachedPatternAs(_, _, _))
-      .WillByDefault(
-          vox::provider::testing::patternDispatch(&toggle_, &expand_, &selection_, nullptr));
-  ON_CALL(element_, GetCachedPropertyValue(_, _)).WillByDefault(legacyValue(L"Hallo"));
-  EXPECT_EQ(focusedNodeOrFail().value.value_or(""), "Hallo");
+      .WillByDefault(vox::provider::testing::patternDispatch(nullptr, nullptr, nullptr, nullptr));
+  ON_CALL(element_, GetCachedPropertyValue(_, _))
+      .WillByDefault(legacyStateAndValue(vox::provider::UiaLegacyStateReadOnly, L"Hallo"));
+  const AccessibleNode node = focusedNodeOrFail();
+  EXPECT_TRUE(node.states.test(vox::model::State::ReadOnly));
+  EXPECT_EQ(node.value.value_or(""), "Hallo");
 }
 
 TEST_F(UiaProviderTest, StartForwardsFocusEventsToTheCallback) {

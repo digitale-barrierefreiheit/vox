@@ -39,16 +39,21 @@
 
 #include <gtest/gtest.h>
 
+#include <vox/german/de_lex_data.hpp>
+#include <vox/german/lexicon.hpp>
 #include <vox/model/accessible_node.hpp>
 #include <vox/model/role.hpp>
 #include <vox/model/state.hpp>
+#include <vox/output/output_manager.hpp>
 #include <vox/provider/uia_provider.hpp>
 
 namespace {
 
+using vox::german::Lexicon;
 using vox::model::AccessibleNode;
 using vox::model::Role;
 using vox::model::State;
+using vox::output::OutputManager;
 using vox::provider::UiaProvider;
 
 constexpr DWORD ReadyTimeoutMs = 10000;
@@ -58,23 +63,42 @@ constexpr int PollIntervalMs = 50;
 // One expected control. An empty `name` matches by role alone (the edit has no accessible
 // name); `state`, if set, must be present; a non-empty `value` must match. The states and
 // value come from the legacy MSAA bridge (standard Win32 controls expose them there, not
-// via the modern Toggle/Value patterns) — see the provider's mapper fallback.
+// via the modern Toggle/Value patterns) — see the provider's mapper fallback. `utterance`,
+// if set, is the German text OutputManager::announce() must render from the read node (the
+// end-to-end check). It is left empty for the edit, whose accessible name is not pinned.
 struct ExpectedControl {
   Role role;
   std::string_view name;
   std::optional<State> state;
   std::string_view value;
+  std::string_view utterance;
 };
 
 // The focusable controls the app exposes: the covered roles (Button, Checkbox, RadioButton,
 // Edit), with two checkboxes for the checked and tri-state cases. A checked Win32 radio
 // reports STATE_SYSTEM_CHECKED (-> Checked), not Selected.
 constexpr std::array<ExpectedControl, 5> ExpectedControls{{
-    {.role = Role::Button, .name = "Speichern", .state = std::nullopt, .value = ""},
-    {.role = Role::Checkbox, .name = "Kapitel anzeigen", .state = State::Checked, .value = ""},
-    {.role = Role::Checkbox, .name = "Teilauswahl", .state = State::Mixed, .value = ""},
-    {.role = Role::RadioButton, .name = "Deutsch", .state = State::Checked, .value = ""},
-    {.role = Role::Edit, .name = "", .state = std::nullopt, .value = "Hallo"},
+    {.role = Role::Button,
+     .name = "Speichern",
+     .state = std::nullopt,
+     .value = "",
+     .utterance = "Schaltfläche, Speichern"},
+    {.role = Role::Checkbox,
+     .name = "Kapitel anzeigen",
+     .state = State::Checked,
+     .value = "",
+     .utterance = "Kontrollkästchen, Kapitel anzeigen, aktiviert"},
+    {.role = Role::Checkbox,
+     .name = "Teilauswahl",
+     .state = State::Mixed,
+     .value = "",
+     .utterance = "Kontrollkästchen, Teilauswahl, teilweise aktiviert"},
+    {.role = Role::RadioButton,
+     .name = "Deutsch",
+     .state = State::Checked,
+     .value = "",
+     .utterance = "Optionsfeld, Deutsch, aktiviert"},
+    {.role = Role::Edit, .name = "", .state = std::nullopt, .value = "Hallo", .utterance = ""},
 }};
 
 std::wstring envValue(const wchar_t* name) {
@@ -270,9 +294,11 @@ TEST_F(UiaProviderItest, ReadsEachFocusableControl) {
   }
 
   // Every expected control was read with the right role + name + focusability. For each,
-  // assert the legacy-bridge state/value (checkboxes Checked/Mixed, radio Checked, edit
-  // value). Focused is intentionally not asserted: with focus cycling it reads on most polls
-  // but is timing-sensitive (a control can be collected mid-transition).
+  // assert the legacy-bridge state/value (checkboxes Checked/Mixed, radio Checked, edit value)
+  // and, end to end, the German utterance announce() renders from the read node. Focused is
+  // intentionally not asserted: with focus cycling it reads on most polls but is timing-
+  // sensitive (a control can be collected mid-transition).
+  const OutputManager output(Lexicon::parse(vox::german::DefaultGermanLexiconData));
   for (const ExpectedControl& expected : ExpectedControls) {
     const std::optional<AccessibleNode> node = find(seen, expected.role, expected.name);
     if (!node.has_value()) {
@@ -286,6 +312,11 @@ TEST_F(UiaProviderItest, ReadsEachFocusableControl) {
     if (!expected.value.empty()) {
       EXPECT_EQ(node->value.value_or(""), expected.value)
           << "value mismatch on " << describe(*node);
+    }
+    if (!expected.utterance.empty()) {
+      // End-to-end: real element -> provider -> AccessibleNode -> German utterance.
+      EXPECT_EQ(output.announce(*node).text, expected.utterance)
+          << "utterance mismatch on " << describe(*node);
     }
   }
 }

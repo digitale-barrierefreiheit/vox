@@ -36,9 +36,11 @@ if(WIN32)
   # the exe this build just produced.
   add_executable(provider_uia_itest uia_provider_itest.cpp)
   vox_configure_target(provider_uia_itest)
-  # No gmock: this itest uses plain gtest assertions (no mocks).
+  # No gmock: this itest uses plain gtest assertions (no mocks). vox::output drives the
+  # end-to-end check that a provider-read node renders to the expected German utterance.
   target_link_libraries(provider_uia_itest PRIVATE
     vox::provider
+    vox::output
     GTest::gtest
     GTest::gtest_main)
   add_dependencies(provider_uia_itest uia_test_app)

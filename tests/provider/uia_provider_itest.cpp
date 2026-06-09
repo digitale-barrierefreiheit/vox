@@ -128,9 +128,14 @@ std::optional<AccessibleNode> find(const std::vector<AccessibleNode>& seen, Role
   return std::nullopt;
 }
 
-// Adds a control unless one with the same role + name was already collected.
+// Adds a control unless one with the same role AND exact name was already collected.
+// (Uses exact equality, not find()'s empty-name wildcard, so an unnamed control is not
+// mistakenly deduped against a different same-role control.)
 void addDistinct(std::vector<AccessibleNode>& seen, const AccessibleNode& node) {
-  if (!find(seen, node.role, node.name).has_value()) {
+  const bool present = std::ranges::any_of(seen, [&node](const AccessibleNode& existing) {
+    return existing.role == node.role && existing.name == node.name;
+  });
+  if (!present) {
     seen.push_back(node);
   }
 }

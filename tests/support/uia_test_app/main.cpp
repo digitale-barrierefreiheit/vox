@@ -34,8 +34,9 @@ LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
     // Advance focus to the next tab-stop child, wrapping at the end. GetNextDlgTabItem
     // walks any window's WS_TABSTOP children (not only real dialogs); the window carries
     // WS_EX_CONTROLPARENT to make that traversal explicit.
+    // The window was brought foreground once at startup; just cycle focus among its
+    // children here (no per-tick SetForegroundWindow, which would steal foreground).
     if (HWND next = ::GetNextDlgTabItem(window, ::GetFocus(), FALSE)) {
-      ::SetForegroundWindow(window);
       ::SetFocus(next);
     }
     return 0;

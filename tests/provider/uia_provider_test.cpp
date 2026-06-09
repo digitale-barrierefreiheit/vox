@@ -176,6 +176,39 @@ protected:
     };
   }
 
+  /// A get_CachedControlType action yielding @p controlType.
+  static auto setControlType(CONTROLTYPEID controlType) {
+    return [controlType](CONTROLTYPEID* out) {
+      *out = controlType;
+      return S_OK;
+    };
+  }
+
+  /// A GetCachedPropertyValue action: an I4 @p state for the legacy State property, else empty.
+  static auto legacyState(LONG state) {
+    return [state](PROPERTYID id, VARIANT* out) {
+      ::VariantInit(out);
+      if (id == UIA_LegacyIAccessibleStatePropertyId) {
+        out->vt = VT_I4;
+        out->lVal = state;
+      }
+      return S_OK;
+    };
+  }
+
+  /// A GetCachedPropertyValue action: a BSTR @p text for the legacy Value property, else empty.
+  /// A fresh BSTR is allocated per call, which the provider frees via VariantClear.
+  static auto legacyValue(const wchar_t* text) {
+    return [text](PROPERTYID id, VARIANT* out) {
+      ::VariantInit(out);
+      if (id == UIA_LegacyIAccessibleValuePropertyId) {
+        out->vt = VT_BSTR;
+        out->bstrVal = bstr(text);
+      }
+      return S_OK;
+    };
+  }
+
   IUIAutomationFocusChangedEventHandler* capturedHandler_{nullptr};
   NiceMock<MockUiAutomation> automation_;
   NiceMock<MockUiCacheRequest> cache_;
@@ -224,21 +257,12 @@ TEST_F(UiaProviderTest, ValueIsAbsentWhenTheValueReadFails) {
 // Standard Win32 controls reach UIA through the MSAA bridge, which exposes state via the
 // legacy IAccessible *properties*, not Toggle. With no Toggle pattern, Checked comes thence.
 TEST_F(UiaProviderTest, ReadsCheckedFromLegacyStatePropertyWhenTogglePatternAbsent) {
-  ON_CALL(element_, get_CachedControlType(_)).WillByDefault([](CONTROLTYPEID* out) {
-    *out = UIA_CheckBoxControlTypeId;
-    return S_OK;
-  });
+  ON_CALL(element_, get_CachedControlType(_))
+      .WillByDefault(setControlType(UIA_CheckBoxControlTypeId));
   ON_CALL(element_, GetCachedPatternAs(_, _, _))
       .WillByDefault(
           vox::provider::testing::patternDispatch(nullptr, &expand_, &selection_, nullptr));
-  ON_CALL(element_, GetCachedPropertyValue(_, _)).WillByDefault([](PROPERTYID id, VARIANT* out) {
-    ::VariantInit(out);
-    if (id == UIA_LegacyIAccessibleStatePropertyId) {
-      out->vt = VT_I4;
-      out->lVal = 0x10; // STATE_SYSTEM_CHECKED
-    }
-    return S_OK;
-  });
+  ON_CALL(element_, GetCachedPropertyValue(_, _)).WillByDefault(legacyState(0x10)); // CHECKED
   const UiaProvider provider;
   const std::optional<AccessibleNode> node = provider.focusedElement();
   ASSERT_TRUE(node.has_value());
@@ -247,21 +271,11 @@ TEST_F(UiaProviderTest, ReadsCheckedFromLegacyStatePropertyWhenTogglePatternAbse
 
 // With no Value pattern, an edit's value comes from the legacy IAccessible value property.
 TEST_F(UiaProviderTest, ReadsValueFromLegacyValuePropertyWhenValuePatternAbsent) {
-  ON_CALL(element_, get_CachedControlType(_)).WillByDefault([](CONTROLTYPEID* out) {
-    *out = UIA_EditControlTypeId;
-    return S_OK;
-  });
+  ON_CALL(element_, get_CachedControlType(_)).WillByDefault(setControlType(UIA_EditControlTypeId));
   ON_CALL(element_, GetCachedPatternAs(_, _, _))
       .WillByDefault(
           vox::provider::testing::patternDispatch(&toggle_, &expand_, &selection_, nullptr));
-  ON_CALL(element_, GetCachedPropertyValue(_, _)).WillByDefault([](PROPERTYID id, VARIANT* out) {
-    ::VariantInit(out);
-    if (id == UIA_LegacyIAccessibleValuePropertyId) {
-      out->vt = VT_BSTR;
-      out->bstrVal = bstr(L"Hallo");
-    }
-    return S_OK;
-  });
+  ON_CALL(element_, GetCachedPropertyValue(_, _)).WillByDefault(legacyValue(L"Hallo"));
   const UiaProvider provider;
   const std::optional<AccessibleNode> node = provider.focusedElement();
   ASSERT_TRUE(node.has_value());

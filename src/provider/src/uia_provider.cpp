@@ -79,23 +79,25 @@ std::string toUtf8(BSTR text) {
   return out;
 }
 
-// LegacyIAccessiblePattern fallback: standard Win32 controls reach UIA through the MSAA
-// bridge and expose state/value here, not via the modern patterns. The pure mapper uses
-// these only when the corresponding modern pattern is absent.
+// Legacy fallback: standard Win32 controls reach UIA through the MSAA bridge and expose
+// state/value through the legacy IAccessible *properties* (read here as cached property
+// values), not the modern patterns. The pure mapper uses these only when the corresponding
+// modern pattern is absent.
 void extractLegacy(UiaElementData& data, IUIAutomationElement* element) {
-  if (ComPtr<IUIAutomationLegacyIAccessiblePattern> legacy;
-      SUCCEEDED(
-          element->GetCachedPatternAs(UIA_LegacyIAccessiblePatternId, IID_PPV_ARGS(&legacy))) &&
-      legacy) {
-    if (DWORD state = 0; SUCCEEDED(legacy->get_CachedState(&state))) {
-      data.legacyState = static_cast<unsigned>(state);
-    }
-    if (BSTR text = nullptr; SUCCEEDED(legacy->get_CachedValue(&text))) {
-      data.hasLegacyValue = true;
-      data.legacyValue = toUtf8(text); // toUtf8 treats null as ""
-      ::SysFreeString(text);
-    }
+  VARIANT state{};
+  if (SUCCEEDED(element->GetCachedPropertyValue(UIA_LegacyIAccessibleStatePropertyId, &state)) &&
+      state.vt == VT_I4) {
+    data.legacyState = static_cast<unsigned>(state.lVal);
   }
+  ::VariantClear(&state);
+
+  VARIANT value{};
+  if (SUCCEEDED(element->GetCachedPropertyValue(UIA_LegacyIAccessibleValuePropertyId, &value)) &&
+      value.vt == VT_BSTR) {
+    data.hasLegacyValue = true;
+    data.legacyValue = toUtf8(value.bstrVal); // toUtf8 treats null as ""
+  }
+  ::VariantClear(&value);
 }
 
 /// Pulls the cached properties/patterns of @p element into a plain snapshot.
@@ -236,9 +238,11 @@ public:
     added &= SUCCEEDED(cacheRequest_->AddPattern(UIA_ExpandCollapsePatternId));
     added &= SUCCEEDED(cacheRequest_->AddPattern(UIA_SelectionItemPatternId));
     added &= SUCCEEDED(cacheRequest_->AddPattern(UIA_ValuePatternId));
-    // Fallback for standard Win32 controls (the MSAA->UIA bridge), which surface state/
-    // value through LegacyIAccessiblePattern rather than the modern patterns above.
-    added &= SUCCEEDED(cacheRequest_->AddPattern(UIA_LegacyIAccessiblePatternId));
+    // Fallback for standard Win32 controls (the MSAA->UIA bridge), which surface state/value
+    // through the legacy IAccessible *properties* (read as cached property values), not the
+    // modern patterns above.
+    added &= SUCCEEDED(cacheRequest_->AddProperty(UIA_LegacyIAccessibleStatePropertyId));
+    added &= SUCCEEDED(cacheRequest_->AddProperty(UIA_LegacyIAccessibleValuePropertyId));
     if (!added) {
       // Don't run with a partially populated cache request (that would look like
       // spurious "missing properties"); degrade to no reads instead.

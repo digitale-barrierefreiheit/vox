@@ -31,7 +31,6 @@ using vox::provider::testing::MockUiAutomation;
 using vox::provider::testing::MockUiCacheRequest;
 using vox::provider::testing::MockUiElement;
 using vox::provider::testing::MockUiExpandCollapsePattern;
-using vox::provider::testing::MockUiLegacyPattern;
 using vox::provider::testing::MockUiSelectionItemPattern;
 using vox::provider::testing::MockUiTogglePattern;
 using vox::provider::testing::MockUiValuePattern;
@@ -141,8 +140,8 @@ protected:
     // The dispatch helper (in the mock header) maps each id to its pattern mock,
     // keeping the COM void** out-param out of this test.
     ON_CALL(element_, GetCachedPatternAs(_, _, _))
-        .WillByDefault(vox::provider::testing::patternDispatch(&toggle_, &expand_, &selection_,
-                                                               &value_, &legacy_));
+        .WillByDefault(
+            vox::provider::testing::patternDispatch(&toggle_, &expand_, &selection_, &value_));
   }
 
   /// The four supported patterns: toggled-on, expanded, selected, value "hello".
@@ -161,13 +160,12 @@ protected:
       return S_OK;
     });
     ON_CALL(value_, get_CachedIsReadOnly(_)).WillByDefault(setBool(FALSE));
-    // The legacy pattern reports no state and no value by default (the modern patterns
-    // above provide them on this happy-path button); the fallback tests override these.
-    ON_CALL(legacy_, get_CachedState(_)).WillByDefault([](DWORD* out) {
-      *out = 0;
+    // No legacy IAccessible state/value by default (the modern patterns above cover this
+    // happy-path button); an empty VARIANT means "absent". The fallback tests override this.
+    ON_CALL(element_, GetCachedPropertyValue(_, _)).WillByDefault([](PROPERTYID, VARIANT* out) {
+      ::VariantInit(out);
       return S_OK;
     });
-    ON_CALL(legacy_, get_CachedValue(_)).WillByDefault(Return(ErrorFail));
   }
 
   /// A default action that writes @p value into a `BOOL*` out-param and succeeds.
@@ -186,7 +184,6 @@ protected:
   NiceMock<MockUiExpandCollapsePattern> expand_;
   NiceMock<MockUiSelectionItemPattern> selection_;
   NiceMock<MockUiValuePattern> value_;
-  NiceMock<MockUiLegacyPattern> legacy_;
 };
 
 TEST_F(UiaProviderTest, FocusedElementExtractsNameAndValue) {
@@ -225,17 +222,21 @@ TEST_F(UiaProviderTest, ValueIsAbsentWhenTheValueReadFails) {
 }
 
 // Standard Win32 controls reach UIA through the MSAA bridge, which exposes state via the
-// legacy pattern, not Toggle. With no Toggle pattern, the checked state comes from there.
-TEST_F(UiaProviderTest, ReadsCheckedFromLegacyPatternWhenTogglePatternAbsent) {
+// legacy IAccessible *properties*, not Toggle. With no Toggle pattern, Checked comes thence.
+TEST_F(UiaProviderTest, ReadsCheckedFromLegacyStatePropertyWhenTogglePatternAbsent) {
   ON_CALL(element_, get_CachedControlType(_)).WillByDefault([](CONTROLTYPEID* out) {
     *out = UIA_CheckBoxControlTypeId;
     return S_OK;
   });
   ON_CALL(element_, GetCachedPatternAs(_, _, _))
-      .WillByDefault(vox::provider::testing::patternDispatch(nullptr, &expand_, &selection_,
-                                                             nullptr, &legacy_));
-  ON_CALL(legacy_, get_CachedState(_)).WillByDefault([](DWORD* out) {
-    *out = 0x10; // STATE_SYSTEM_CHECKED
+      .WillByDefault(
+          vox::provider::testing::patternDispatch(nullptr, &expand_, &selection_, nullptr));
+  ON_CALL(element_, GetCachedPropertyValue(_, _)).WillByDefault([](PROPERTYID id, VARIANT* out) {
+    ::VariantInit(out);
+    if (id == UIA_LegacyIAccessibleStatePropertyId) {
+      out->vt = VT_I4;
+      out->lVal = 0x10; // STATE_SYSTEM_CHECKED
+    }
     return S_OK;
   });
   const UiaProvider provider;
@@ -244,17 +245,21 @@ TEST_F(UiaProviderTest, ReadsCheckedFromLegacyPatternWhenTogglePatternAbsent) {
   EXPECT_TRUE(node->states.test(vox::model::State::Checked));
 }
 
-// With no Value pattern, an edit's value comes from the legacy pattern.
-TEST_F(UiaProviderTest, ReadsValueFromLegacyPatternWhenValuePatternAbsent) {
+// With no Value pattern, an edit's value comes from the legacy IAccessible value property.
+TEST_F(UiaProviderTest, ReadsValueFromLegacyValuePropertyWhenValuePatternAbsent) {
   ON_CALL(element_, get_CachedControlType(_)).WillByDefault([](CONTROLTYPEID* out) {
     *out = UIA_EditControlTypeId;
     return S_OK;
   });
   ON_CALL(element_, GetCachedPatternAs(_, _, _))
-      .WillByDefault(vox::provider::testing::patternDispatch(&toggle_, &expand_, &selection_,
-                                                             nullptr, &legacy_));
-  ON_CALL(legacy_, get_CachedValue(_)).WillByDefault([](BSTR* out) {
-    *out = bstr(L"Hallo");
+      .WillByDefault(
+          vox::provider::testing::patternDispatch(&toggle_, &expand_, &selection_, nullptr));
+  ON_CALL(element_, GetCachedPropertyValue(_, _)).WillByDefault([](PROPERTYID id, VARIANT* out) {
+    ::VariantInit(out);
+    if (id == UIA_LegacyIAccessibleValuePropertyId) {
+      out->vt = VT_BSTR;
+      out->bstrVal = bstr(L"Hallo");
+    }
     return S_OK;
   });
   const UiaProvider provider;

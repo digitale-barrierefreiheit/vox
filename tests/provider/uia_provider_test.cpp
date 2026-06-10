@@ -30,6 +30,7 @@ using vox::provider::UiaProvider;
 using vox::provider::testing::bstr;
 using vox::provider::testing::MockUiAutomation;
 using vox::provider::testing::MockUiCacheRequest;
+using vox::provider::testing::MockUiCondition;
 using vox::provider::testing::MockUiElement;
 using vox::provider::testing::MockUiExpandCollapsePattern;
 using vox::provider::testing::MockUiSelectionItemPattern;
@@ -291,6 +292,63 @@ TEST_F(UiaProviderTest, StopRemovesTheRegisteredHandler) {
   provider.start([](const AccessibleNode&) { /* no-op: this test only checks stop() */ });
   EXPECT_CALL(automation_, RemoveFocusChangedEventHandler(_)).WillOnce(Return(S_OK));
   provider.stop();
+}
+
+// nodeByName reads a non-focusable element by name: ElementFromHandle(window) ->
+// FindFirstBuildCache(Name == name) -> extract -> map (here a static text "Hinweis").
+TEST_F(UiaProviderTest, NodeByNameReadsTheNamedElementInTheWindowSubtree) {
+  NiceMock<MockUiElement> windowElement;
+  NiceMock<MockUiElement> found;
+  NiceMock<MockUiCondition> condition;
+  ON_CALL(automation_, ElementFromHandle(_, _))
+      .WillByDefault([&windowElement](UIA_HWND, IUIAutomationElement** out) {
+        *out = &windowElement;
+        return S_OK;
+      });
+  ON_CALL(automation_, CreatePropertyCondition(_, _, _))
+      .WillByDefault([&condition](PROPERTYID, VARIANT, IUIAutomationCondition** out) {
+        *out = &condition;
+        return S_OK;
+      });
+  ON_CALL(windowElement, FindFirstBuildCache(_, _, _, _))
+      .WillByDefault([&found](enum TreeScope, IUIAutomationCondition*, IUIAutomationCacheRequest*,
+                              IUIAutomationElement** out) {
+        *out = &found;
+        return S_OK;
+      });
+  ON_CALL(found, get_CachedControlType(_)).WillByDefault([](CONTROLTYPEID* out) {
+    *out = UIA_TextControlTypeId;
+    return S_OK;
+  });
+  ON_CALL(found, get_CachedName(_)).WillByDefault([](BSTR* out) {
+    *out = bstr(L"Hinweis");
+    return S_OK;
+  });
+  ON_CALL(found, get_CachedIsEnabled(_)).WillByDefault(setBool(TRUE));
+
+  int handleTarget = 0; // any non-null HWND; the mock ignores its value
+  const UiaProvider provider;
+  const std::optional<AccessibleNode> node = provider.nodeByName(&handleTarget, "Hinweis");
+  ASSERT_TRUE(node.has_value());
+  EXPECT_EQ(node->role, vox::model::Role::StaticText);
+  EXPECT_EQ(node->name, "Hinweis");
+}
+
+// A degraded nodeByName: if the named element is not found, returns nullopt.
+TEST_F(UiaProviderTest, NodeByNameIsNulloptWhenNotFound) {
+  ON_CALL(automation_, ElementFromHandle(_, _))
+      .WillByDefault([this](UIA_HWND, IUIAutomationElement** out) {
+        *out = &element_;
+        return S_OK;
+      });
+  ON_CALL(automation_, CreatePropertyCondition(_, _, _))
+      .WillByDefault([](PROPERTYID, VARIANT, IUIAutomationCondition** out) {
+        *out = nullptr;
+        return ErrorFail; // condition creation fails -> nodeByName degrades
+      });
+  int handleTarget = 0;
+  const UiaProvider provider;
+  EXPECT_FALSE(provider.nodeByName(&handleTarget, "Fehlt").has_value());
 }
 
 TEST_F(UiaProviderTest, NameIsEmptyWhenTheNameBstrIsNull) {

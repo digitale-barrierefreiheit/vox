@@ -95,12 +95,22 @@ void applySelected(StateSet& states, const UiaElementData& data) {
   }
 }
 
-// ReadOnly from the ValuePattern's IsReadOnly when it was read, else the legacy state bit.
-void applyReadOnly(StateSet& states, const UiaElementData& data) {
+// "Read-only" and a value are concepts only for value-bearing roles (an editable field or a
+// combo box); other roles (e.g. a static text, trivially read-only) must not report them.
+bool isValueBearing(Role role) {
+  return role == Role::Edit || role == Role::Combobox;
+}
+
+// ReadOnly from the ValuePattern's IsReadOnly when it was read, else the legacy state bit — but
+// only for value-bearing roles, so a static text does not announce a vacuous "read-only".
+void applyReadOnly(vox::model::AccessibleNode& node, const UiaElementData& data) {
+  if (!isValueBearing(node.role)) {
+    return;
+  }
   const bool readOnly =
       data.hasReadOnly ? data.isReadOnly : (data.legacyState & UiaLegacyStateReadOnly) != 0U;
   if (readOnly) {
-    states.set(ReadOnly);
+    node.states.set(ReadOnly);
   }
 }
 
@@ -111,8 +121,7 @@ void applyValue(vox::model::AccessibleNode& node, const UiaElementData& data) {
     node.value = data.value; // present even when empty; absent stays nullopt
     return;
   }
-  const bool valueBearing = node.role == Role::Edit || node.role == Role::Combobox;
-  if (data.hasLegacyValue && valueBearing) {
+  if (data.hasLegacyValue && isValueBearing(node.role)) {
     node.value = data.legacyValue;
   }
 }
@@ -136,7 +145,7 @@ vox::model::AccessibleNode mapElement(const UiaElementData& data) {
   applyToggle(node.states, data);
   applyExpandCollapse(node.states, data);
   applySelected(node.states, data);
-  applyReadOnly(node.states, data);
+  applyReadOnly(node, data);
   applyValue(node, data);
 
   return node;

@@ -11,7 +11,9 @@
 ///
 /// The app cycles keyboard focus through its focusable controls; this polls the
 /// provider's focused element to collect each one, then asserts the mapped role, name,
-/// focus, and state/value. Standard Win32 controls reach UIA via the legacy MSAA bridge,
+/// focus, and state/value. The non-focusable roles (a static text, a menu-bar item) the
+/// focus path cannot reach are read by name via UiaProvider::nodeByName and asserted the same
+/// way. Standard Win32 controls reach UIA via the legacy MSAA bridge,
 /// which exposes state/value through LegacyIAccessiblePattern (the IAccessible state bits
 /// + value) rather than the modern Toggle/Value/SelectionItem patterns — so the provider's
 /// mapper falls back to the legacy path, which this exercises end to end against a real
@@ -27,7 +29,6 @@
 #include <Windows.h>
 
 #include <algorithm>
-#include <array>
 #include <chrono>
 #include <cstddef>
 #include <format>
@@ -35,6 +36,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <uia_test_app/control_tree.hpp>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -55,85 +57,20 @@ using vox::model::Role;
 using vox::model::State;
 using vox::output::OutputManager;
 using vox::provider::UiaProvider;
+using vox::testapp::ControlSpec;
+using vox::testapp::ControlTree;
+using vox::testapp::NonFocusableControl;
+using vox::testapp::NonFocusableTree;
 
 constexpr DWORD ReadyTimeoutMs = 10000;
 constexpr int MaxPollAttempts = 200; // ~10s of polling at PollIntervalMs while focus cycles
 constexpr int PollIntervalMs = 50;
 
-// One expected control. `name` must match exactly (every control here is named — the edits
-// via their preceding STATIC label); `state`, if set, must be present; a non-empty `value`
-// must match. The states and value come from the legacy MSAA bridge (standard Win32 controls
-// expose them there, not via the modern Toggle/Value patterns) — see the provider's mapper
-// fallback. `utterance`, if set, is the German text OutputManager::announce() must render
-// from the read node (the end-to-end check). (find() treats an empty `name` as a wildcard,
-// but none is used now.)
-struct ExpectedControl {
-  Role role;
-  std::string_view name;
-  std::optional<State> state;
-  std::string_view value;
-  std::string_view utterance;
-};
-
-// The focusable controls the app exposes: Button, Checkbox (checked + tri-state), RadioButton,
-// three labelled Edits (a value, an empty one -> "leer", and a read-only one), a Combobox
-// (collapsed, with a selection), and a List item (the focused/selected listbox row). A checked
-// Win32 radio reports STATE_SYSTEM_CHECKED (-> Checked), not Selected; a labelled edit/combobox
-// takes its accessible name from the preceding STATIC.
-constexpr std::array<ExpectedControl, 10> ExpectedControls{{
-    {.role = Role::Button,
-     .name = "Speichern",
-     .state = std::nullopt,
-     .value = "",
-     .utterance = "Schaltfläche, Speichern"},
-    {.role = Role::Checkbox,
-     .name = "Kapitel anzeigen",
-     .state = State::Checked,
-     .value = "",
-     .utterance = "Kontrollkästchen, Kapitel anzeigen, aktiviert"},
-    {.role = Role::Checkbox,
-     .name = "Teilauswahl",
-     .state = State::Mixed,
-     .value = "",
-     .utterance = "Kontrollkästchen, Teilauswahl, teilweise aktiviert"},
-    {.role = Role::RadioButton,
-     .name = "Deutsch",
-     .state = State::Checked,
-     .value = "",
-     .utterance = "Optionsfeld, Deutsch, aktiviert"},
-    {.role = Role::Edit,
-     .name = "Name",
-     .state = std::nullopt,
-     .value = "Hallo",
-     .utterance = "Eingabefeld, Name, Hallo"},
-    {.role = Role::Edit,
-     .name = "Suche",
-     .state = std::nullopt,
-     .value = "",
-     .utterance = "Eingabefeld, Suche, leer"},
-    {.role = Role::Edit,
-     .name = "Pfad",
-     .state = State::ReadOnly,
-     .value = "system32",
-     .utterance = "Eingabefeld, Pfad, schreibgeschützt, system32"},
-    // The combobox is collapsed: a Win32 combobox surfaces expand/collapse via the legacy
-    // state bits (the mapper's fallback maps them), so it reads as Expandable (not Expanded).
-    {.role = Role::Combobox,
-     .name = "Stimme",
-     .state = State::Expandable,
-     .value = "Anna",
-     .utterance = "Kombinationsfeld, Stimme, reduziert, Anna"},
-    {.role = Role::ListItem,
-     .name = "Eintrag 1",
-     .state = State::Selected,
-     .value = "",
-     .utterance = "Listenelement, Eintrag 1, ausgewählt"},
-    {.role = Role::Link,
-     .name = "Hilfe",
-     .state = std::nullopt,
-     .value = "",
-     .utterance = "Link, Hilfe"},
-}};
+// The expected control tree (role, name, state, value, utterance) is the single source of
+// truth shared with the test app: vox::testapp::ControlTree in uia_test_app/control_tree.hpp.
+// Every control is named (the edits/combobox via their preceding STATIC label); the states
+// and value come from the legacy MSAA bridge (the provider's mapper fallback), and the
+// utterance is what OutputManager::announce() must render (the end-to-end check).
 
 std::wstring envValue(const wchar_t* name) {
   const DWORD size = ::GetEnvironmentVariableW(name, nullptr, 0);
@@ -199,7 +136,7 @@ void addDistinct(std::vector<AccessibleNode>& seen, const AccessibleNode& node) 
 }
 
 bool haveAllExpected(const std::vector<AccessibleNode>& seen) {
-  return std::ranges::all_of(ExpectedControls, [&seen](const ExpectedControl& expected) {
+  return std::ranges::all_of(ControlTree, [&seen](const ControlSpec& expected) {
     return find(seen, expected.role, expected.name).has_value();
   });
 }
@@ -334,7 +271,7 @@ TEST_F(UiaProviderItest, ReadsEachFocusableControl) {
   // intentionally not asserted: with focus cycling it reads on most polls but is timing-
   // sensitive (a control can be collected mid-transition).
   const OutputManager output(Lexicon::parse(vox::german::DefaultGermanLexiconData));
-  for (const ExpectedControl& expected : ExpectedControls) {
+  for (const ControlSpec& expected : ControlTree) {
     const std::optional<AccessibleNode> node = find(seen, expected.role, expected.name);
     if (!node.has_value()) {
       continue; // presence guaranteed by haveAllExpected; this guard keeps the access checked
@@ -353,6 +290,34 @@ TEST_F(UiaProviderItest, ReadsEachFocusableControl) {
       EXPECT_EQ(output.announce(*node).text, expected.utterance)
           << "utterance mismatch on " << describe(*node);
     }
+  }
+}
+
+// The non-focusable roles (static text, menu item) the focus path cannot reach: read each by
+// name through UiaProvider::nodeByName (ElementFromHandle + FindFirst), then assert the mapped
+// role/name and the end-to-end German utterance, as for the focusable controls.
+TEST_F(UiaProviderItest, ReadsEachNonFocusableControl) {
+  HWND window = ::FindWindowW(vox::testapp::WindowClassName, nullptr);
+  if (window == nullptr) {
+    skipOrFail("VOX_REQUIRE_UIA_TREE is set but the test app window was not found.",
+               "Test app window not found.");
+    return;
+  }
+  const UiaProvider provider;
+  const OutputManager output(Lexicon::parse(vox::german::DefaultGermanLexiconData));
+  for (const NonFocusableControl& expected : NonFocusableTree) {
+    const std::optional<AccessibleNode> node = provider.nodeByName(window, expected.name);
+    if (!node.has_value()) {
+      skipOrFail(std::format("VOX_REQUIRE_UIA_TREE is set but the provider could not read the "
+                             "non-focusable control '{}'.",
+                             expected.name),
+                 std::format("Could not read non-focusable control '{}'.", expected.name));
+      return;
+    }
+    EXPECT_EQ(node->role, expected.role) << "role mismatch on " << describe(*node);
+    EXPECT_EQ(node->name, expected.name) << "name mismatch on " << describe(*node);
+    EXPECT_EQ(output.announce(*node).text, expected.utterance)
+        << "utterance mismatch on " << describe(*node);
   }
 }
 

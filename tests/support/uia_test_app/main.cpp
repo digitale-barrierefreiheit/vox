@@ -8,9 +8,10 @@
 /// It exposes focusable controls for several mapped roles (button, checkboxes, radio,
 /// labelled edits, combobox, list box) with known names and initial states, and cycles focus
 /// among them on a timer (via the Win32 tab order) so a UIA client (the integration test) sees a
-/// focus-changed event for each. Roles that cannot take keyboard focus (static text,
-/// disabled controls, popup menu items) fall outside this focus path and stay unit-tested. It
-/// signals a named "ready" event (name in argv[1]) once startup is done — foreground and
+/// focus-changed event for each. It also exposes the non-focusable roles — a static text and a
+/// menu-bar item — which the integration test reads by name (UiaProvider::nodeByName) rather than
+/// via focus. It signals a named "ready" event (name in argv[1]) once startup is done — foreground
+/// and
 /// focus requested for the first control — then pumps messages until terminated. Standard
 /// common controls expose UI Automation through the system's default provider, so this
 /// app writes no UIA code.
@@ -21,11 +22,15 @@
 
 #include <array>
 #include <CommCtrl.h>
+#include <cstddef>
+#include <string>
+#include <string_view>
+#include <uia_test_app/control_tree.hpp>
 
 namespace {
 
-constexpr const wchar_t* WindowClassName = L"VoxUiaTestAppWindow";
-constexpr const wchar_t* WindowTitle = L"Vox UIA Test App";
+using vox::testapp::WindowClassName;
+using vox::testapp::WindowTitle;
 constexpr int EventNameBufferChars = 256;
 constexpr UINT_PTR FocusCycleTimerId = 1;
 constexpr UINT FocusCycleMs = 200;
@@ -88,74 +93,142 @@ HWND addLabeledEdit(HWND parent, const LabeledEditSpec& spec) {
                            85, spec.top, 220, 24, parent, nullptr, instance, nullptr);
 }
 
+struct LabeledComboSpec {
+  int top;
+  const wchar_t* label;
+  const wchar_t* selection;
+};
+
 // Creates a STATIC label and a drop-down COMBOBOX on one row (label first, for the name),
-// with two items and an initial selection. Returns the combobox (the focusable control).
-HWND addLabeledCombo(HWND parent, int top, const wchar_t* label) {
+// with the selection as its (selected) item. Returns the combobox (the focusable control).
+HWND addLabeledCombo(HWND parent, const LabeledComboSpec& spec) {
   HINSTANCE instance = ::GetModuleHandleW(nullptr);
-  ::CreateWindowExW(0, L"STATIC", label, WS_CHILD | WS_VISIBLE, 10, top + 4, 70, 20, parent,
-                    nullptr, instance, nullptr);
+  ::CreateWindowExW(0, L"STATIC", spec.label, WS_CHILD | WS_VISIBLE, 10, spec.top + 4, 70, 20,
+                    parent, nullptr, instance, nullptr);
   HWND combo = ::CreateWindowExW(0, L"COMBOBOX", nullptr,
-                                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST, 85, top,
-                                 220, 160, parent, nullptr, instance, nullptr);
-  ::SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Anna"));
-  ::SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Stefan"));
-  ::SendMessageW(combo, CB_SETCURSEL, 0, 0); // select "Anna"
+                                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST, 85,
+                                 spec.top, 220, 160, parent, nullptr, instance, nullptr);
+  ::SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(spec.selection));
+  ::SendMessageW(combo, CB_SETCURSEL, 0, 0);
   return combo;
 }
 
-// Creates a single-select LISTBOX with two items and the first selected. When the listbox
-// has keyboard focus the system's focused element is the focused item, so the provider reads
-// a ListItem. Returns the listbox.
-HWND addListBox(HWND parent, int top) {
+// Creates a single-select LISTBOX with @p selected as its selected item. When the listbox has
+// keyboard focus the system's focused element is that item, so the provider reads a ListItem.
+HWND addListBox(HWND parent, int top, const wchar_t* selected) {
   HINSTANCE instance = ::GetModuleHandleW(nullptr);
   HWND list = ::CreateWindowExW(0, L"LISTBOX", nullptr,
                                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | LBS_NOTIFY, 10,
                                 top, 295, 50, parent, nullptr, instance, nullptr);
-  ::SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Eintrag 1"));
-  ::SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Eintrag 2"));
-  ::SendMessageW(list, LB_SETCURSEL, 0, 0); // select "Eintrag 1"
+  ::SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(selected));
+  ::SendMessageW(list, LB_SETCURSEL, 0, 0);
   return list;
 }
 
-// Builds the known control tree and returns the first control (the initial focus). Each
-// button/checkbox/radio's window text is its accessible name; checkboxes/radio get an
-// explicit checked/indeterminate state. The edits are labelled (a preceding STATIC), so the
-// accessible name is the label and the window text is the value (empty / read-only cases too).
-HWND buildControlTree(HWND parent) {
-  HWND firstButton = addControl(parent, {.className = L"BUTTON",
-                                         .text = L"Speichern",
-                                         .style = WS_TABSTOP | BS_PUSHBUTTON,
-                                         .top = 10});
+// Creates a SysLink (comctl32 v6, via the manifest dependency); the link text is its name.
+HWND addLink(HWND parent, int top, const std::wstring& name) {
+  const std::wstring markup = L"<a>" + name + L"</a>";
+  return ::CreateWindowExW(0, L"SysLink", markup.c_str(), WS_CHILD | WS_VISIBLE | WS_TABSTOP, 10,
+                           top, 295, 24, parent, nullptr, ::GetModuleHandleW(nullptr), nullptr);
+}
 
-  HWND checkedBox = addControl(parent, {.className = L"BUTTON",
-                                        .text = L"Kapitel anzeigen",
-                                        .style = WS_TABSTOP | BS_AUTOCHECKBOX,
-                                        .top = 44});
-  ::SendMessageW(checkedBox, BM_SETCHECK, BST_CHECKED, 0);
+// Widens a UTF-8 string (the tree's names/values are ASCII) for the Win32 *W APIs.
+std::wstring widen(std::string_view utf8) {
+  const int count =
+      ::MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()), nullptr, 0);
+  std::wstring wide(static_cast<std::size_t>(count), L'\0');
+  ::MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()), wide.data(), count);
+  return wide;
+}
 
-  HWND triStateBox = addControl(parent, {.className = L"BUTTON",
-                                         .text = L"Teilauswahl",
-                                         .style = WS_TABSTOP | BS_AUTO3STATE,
-                                         .top = 78});
-  ::SendMessageW(triStateBox, BM_SETCHECK, BST_INDETERMINATE, 0);
-
-  HWND radio = addControl(parent, {.className = L"BUTTON",
-                                   .text = L"Deutsch",
+// Builds one control from a shared ControlSpec at @p top; returns the focusable control.
+HWND buildControl(HWND parent, const vox::testapp::ControlSpec& spec, int top) {
+  using vox::testapp::Kind;
+  const std::wstring name = widen(spec.name);
+  const std::wstring value = widen(spec.value);
+  switch (spec.kind) {
+  case Kind::Button:
+    return addControl(parent, {.className = L"BUTTON",
+                               .text = name.c_str(),
+                               .style = WS_TABSTOP | BS_PUSHBUTTON,
+                               .top = top});
+  case Kind::CheckedCheckbox: {
+    HWND box = addControl(parent, {.className = L"BUTTON",
+                                   .text = name.c_str(),
+                                   .style = WS_TABSTOP | BS_AUTOCHECKBOX,
+                                   .top = top});
+    ::SendMessageW(box, BM_SETCHECK, BST_CHECKED, 0);
+    return box;
+  }
+  case Kind::TriStateCheckbox: {
+    HWND box = addControl(parent, {.className = L"BUTTON",
+                                   .text = name.c_str(),
+                                   .style = WS_TABSTOP | BS_AUTO3STATE,
+                                   .top = top});
+    ::SendMessageW(box, BM_SETCHECK, BST_INDETERMINATE, 0);
+    return box;
+  }
+  case Kind::Radio: {
+    HWND box = addControl(parent, {.className = L"BUTTON",
+                                   .text = name.c_str(),
                                    .style = WS_TABSTOP | WS_GROUP | BS_AUTORADIOBUTTON,
-                                   .top = 112});
-  ::SendMessageW(radio, BM_SETCHECK, BST_CHECKED, 0);
+                                   .top = top});
+    ::SendMessageW(box, BM_SETCHECK, BST_CHECKED, 0);
+    return box;
+  }
+  case Kind::Edit:
+    return addLabeledEdit(
+        parent, {.top = top, .label = name.c_str(), .text = value.c_str(), .extraStyle = 0});
+  case Kind::ReadOnlyEdit:
+    return addLabeledEdit(
+        parent,
+        {.top = top, .label = name.c_str(), .text = value.c_str(), .extraStyle = ES_READONLY});
+  case Kind::Combobox:
+    return addLabeledCombo(parent, {.top = top, .label = name.c_str(), .selection = value.c_str()});
+  case Kind::ListBox:
+    return addListBox(parent, top, name.c_str());
+  case Kind::Link:
+    return addLink(parent, top, name);
+  }
+  return nullptr; // all Kind values are handled above
+}
 
-  addLabeledEdit(parent, {.top = 146, .label = L"Name", .text = L"Hallo", .extraStyle = 0});
-  addLabeledEdit(parent, {.top = 180, .label = L"Suche", .text = L"", .extraStyle = 0});
-  addLabeledEdit(parent,
-                 {.top = 214, .label = L"Pfad", .text = L"system32", .extraStyle = ES_READONLY});
-  addLabeledCombo(parent, 248, L"Stimme");
-  addListBox(parent, 282);
-  // A SysLink (comctl32 v6, via the embedded manifest); the link text is its accessible name.
-  ::CreateWindowExW(0, L"SysLink", L"<a>Hilfe</a>", WS_CHILD | WS_VISIBLE | WS_TABSTOP, 10, 340,
-                    295, 24, parent, nullptr, ::GetModuleHandleW(nullptr), nullptr);
+// Builds the known control tree from the single shared source and returns the first control
+// (the initial focus). The list box is taller, so its row is larger.
+HWND buildControlTree(HWND parent) {
+  HWND first = nullptr;
+  int top = 10;
+  for (const vox::testapp::ControlSpec& spec : vox::testapp::ControlTree) {
+    HWND control = buildControl(parent, spec, top);
+    if (first == nullptr) {
+      first = control;
+    }
+    top += (spec.kind == vox::testapp::Kind::ListBox) ? 58 : 34;
+  }
+  return first;
+}
 
-  return firstButton;
+// Adds the non-focusable controls (a static label + a menu-bar item) from the shared source.
+// Focus cycling cannot reach these, so the integration test reads them by name; they cover the
+// StaticText and MenuItem roles.
+void buildNonFocusable(HWND parent) {
+  for (const vox::testapp::NonFocusableControl& spec : vox::testapp::NonFocusableTree) {
+    const std::wstring name = widen(spec.name);
+    switch (spec.kind) {
+    case vox::testapp::NonFocusableKind::StaticLabel:
+      ::CreateWindowExW(0, L"STATIC", name.c_str(), WS_CHILD | WS_VISIBLE, 10, 374, 295, 20, parent,
+                        nullptr, ::GetModuleHandleW(nullptr), nullptr);
+      break;
+    case vox::testapp::NonFocusableKind::MenuBar: {
+      HMENU bar = ::CreateMenu();
+      HMENU popup = ::CreatePopupMenu();
+      ::AppendMenuW(popup, MF_STRING, 1, L"Neu");
+      ::AppendMenuW(bar, MF_POPUP, reinterpret_cast<UINT_PTR>(popup), name.c_str());
+      ::SetMenu(parent, bar);
+      break;
+    }
+    }
+  }
 }
 
 // Signals the launcher's ready event once startup is done — the window is created and
@@ -195,13 +268,19 @@ int main(int argc, char** argv) {
   }
 
   HWND window = ::CreateWindowExW(WS_EX_CONTROLPARENT, WindowClassName, WindowTitle,
-                                  WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 360, 440,
+                                  WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 360, 480,
                                   nullptr, nullptr, instance, nullptr);
   if (window == nullptr) {
     return 1;
   }
 
-  HWND firstControl = buildControlTree(window);
+  HWND firstControl = nullptr;
+  try {
+    firstControl = buildControlTree(window);
+    buildNonFocusable(window);
+  } catch (...) {
+    return 1; // a control-name conversion (widen allocation) failed — exit rather than escape
+  }
   if (firstControl == nullptr) {
     return 1;
   }

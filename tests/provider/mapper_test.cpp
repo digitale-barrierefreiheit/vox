@@ -123,6 +123,7 @@ TEST(Mapper, SelectedFromSelectionItem) {
 
 TEST(Mapper, ReadOnlyFromValuePattern) {
   UiaElementData data;
+  data.controlTypeId = vp::UiaEditControlTypeId; // ReadOnly applies only to value-bearing roles
   data.hasReadOnly = true;
   data.isReadOnly = true;
   EXPECT_TRUE(mapElement(data).states.test(State::ReadOnly));
@@ -135,6 +136,7 @@ TEST(Mapper, ReadOnlyFromValuePattern) {
 // text itself was unreadable (then the value is absent, not a spurious empty).
 TEST(Mapper, ReadOnlyReportedEvenWhenValueTextAbsent) {
   UiaElementData data;
+  data.controlTypeId = vp::UiaEditControlTypeId; // value-bearing, so ReadOnly applies
   data.hasReadOnly = true;
   data.isReadOnly = true;
   data.hasValue = false;
@@ -206,6 +208,7 @@ TEST(Mapper, SelectionItemTakesPrecedenceOverLegacyState) {
 // stray legacy read-only bit.
 TEST(Mapper, ValuePatternReadOnlyTakesPrecedenceOverLegacyState) {
   UiaElementData data;
+  data.controlTypeId = vp::UiaEditControlTypeId; // value-bearing, so ReadOnly is considered
   data.hasReadOnly = true;
   data.isReadOnly = false;
   data.legacyState = vp::UiaLegacyStateReadOnly;
@@ -214,9 +217,19 @@ TEST(Mapper, ValuePatternReadOnlyTakesPrecedenceOverLegacyState) {
 
 TEST(Mapper, ReadOnlyFromLegacyStateWithoutValuePattern) {
   UiaElementData data;
+  data.controlTypeId = vp::UiaEditControlTypeId; // value-bearing, so the legacy bit applies
   data.hasReadOnly = false;
   data.legacyState = vp::UiaLegacyStateReadOnly;
   EXPECT_TRUE(mapElement(data).states.test(State::ReadOnly));
+}
+
+// A non-value-bearing role (e.g. a static text) is trivially read-only via the legacy bridge,
+// but "read-only" is a value concept, so the mapper suppresses it there (it would be noise).
+TEST(Mapper, ReadOnlySuppressedForNonValueBearingRole) {
+  UiaElementData data;
+  data.controlTypeId = vp::UiaTextControlTypeId; // StaticText
+  data.legacyState = vp::UiaLegacyStateReadOnly;
+  EXPECT_FALSE(mapElement(data).states.test(State::ReadOnly));
 }
 
 TEST(Mapper, ValueFromLegacyForValueBearingRole) {

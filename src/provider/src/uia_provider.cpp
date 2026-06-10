@@ -8,9 +8,11 @@
 /// `UiaElementData` and handed to the pure `mapElement()`. All HRESULTs are
 /// checked so a missing property/pattern degrades to "absent" rather than
 /// crashing.
+#include <cstddef>
 #include <functional>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include <vox/provider/uia_provider.hpp>
@@ -77,6 +79,21 @@ std::string toUtf8(BSTR text) {
     return {}; // conversion failed — degrade to empty rather than return filler
   }
   return out;
+}
+
+/// Converts a UTF-8 string to a UTF-16 wide string (empty for empty/invalid input).
+std::wstring fromUtf8(std::string_view utf8) {
+  if (utf8.empty()) {
+    return {};
+  }
+  const int count =
+      ::MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()), nullptr, 0);
+  if (count <= 0) {
+    return {};
+  }
+  std::wstring wide(static_cast<std::size_t>(count), L'\0');
+  ::MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()), wide.data(), count);
+  return wide;
 }
 
 // Legacy fallback: standard Win32 controls reach UIA through the MSAA bridge and expose
@@ -306,7 +323,43 @@ public:
     handler_.Reset();
   }
 
+  [[nodiscard]] std::optional<vox::model::AccessibleNode> nodeByName(void* windowHandle,
+                                                                     std::string_view name) const {
+    if (!automation_ || !cacheRequest_ || windowHandle == nullptr) {
+      return std::nullopt;
+    }
+    ComPtr<IUIAutomationElement> window;
+    if (FAILED(automation_->ElementFromHandle(static_cast<UIA_HWND>(windowHandle), &window)) ||
+        !window) {
+      return std::nullopt;
+    }
+    ComPtr<IUIAutomationCondition> condition;
+    if (!makeNameCondition(name, &condition)) {
+      return std::nullopt;
+    }
+    ComPtr<IUIAutomationElement> found;
+    if (FAILED(window->FindFirstBuildCache(TreeScope_Subtree, condition.Get(), cacheRequest_.Get(),
+                                           &found)) ||
+        !found) {
+      return std::nullopt;
+    }
+    return mapElement(extract(found.Get()));
+  }
+
 private:
+  // Builds a "Name == name" property condition (the BSTR is copied into the condition).
+  [[nodiscard]] bool makeNameCondition(std::string_view name, IUIAutomationCondition** out) const {
+    const std::wstring wide = fromUtf8(name);
+    VARIANT value;
+    ::VariantInit(&value);
+    value.vt = VT_BSTR;
+    value.bstrVal = ::SysAllocString(wide.c_str());
+    const bool ok = value.bstrVal != nullptr &&
+                    SUCCEEDED(automation_->CreatePropertyCondition(UIA_NamePropertyId, value, out));
+    ::VariantClear(&value);
+    return ok;
+  }
+
   bool comInitialized_ = false;
   ComPtr<IUIAutomation> automation_;
   ComPtr<IUIAutomationCacheRequest> cacheRequest_;
@@ -327,6 +380,11 @@ void UiaProvider::start(FocusChangedCallback onFocusChanged) {
 
 void UiaProvider::stop() {
   impl_->stop();
+}
+
+std::optional<vox::model::AccessibleNode> UiaProvider::nodeByName(void* windowHandle,
+                                                                  std::string_view name) const {
+  return impl_->nodeByName(windowHandle, name);
 }
 
 } // namespace vox::provider

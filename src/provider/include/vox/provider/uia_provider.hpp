@@ -21,6 +21,7 @@
 
 #  include <memory>
 #  include <optional>
+#  include <string_view>
 
 #  include <vox/model/accessible_node.hpp>
 #  include <vox/provider/iprovider.hpp>
@@ -49,6 +50,14 @@ public:
 
   /// @brief Unsubscribes from focus-change events.
   void stop() override;
+
+  /// @brief Reads the first element named @p name in the subtree of window @p windowHandle
+  ///        (an `HWND`, passed as `void*` to keep this header free of Windows types), or
+  ///        `std::nullopt` if not found/unreadable. The focus path can only reach focusable
+  ///        controls; this lets the #40 integration test read non-focusable roles (static
+  ///        text, menu items) by name.
+  [[nodiscard]] std::optional<vox::model::AccessibleNode> nodeByName(void* windowHandle,
+                                                                     std::string_view name) const;
 
 private:
   class Impl;

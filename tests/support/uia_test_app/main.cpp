@@ -87,6 +87,21 @@ HWND addLabeledEdit(HWND parent, const LabeledEditSpec& spec) {
                            85, spec.top, 220, 24, parent, nullptr, instance, nullptr);
 }
 
+// Creates a STATIC label and a drop-down COMBOBOX on one row (label first, for the name),
+// with two items and an initial selection. Returns the combobox (the focusable control).
+HWND addLabeledCombo(HWND parent, int top, const wchar_t* label) {
+  HINSTANCE instance = ::GetModuleHandleW(nullptr);
+  ::CreateWindowExW(0, L"STATIC", label, WS_CHILD | WS_VISIBLE, 10, top + 4, 70, 20, parent,
+                    nullptr, instance, nullptr);
+  HWND combo = ::CreateWindowExW(0, L"COMBOBOX", nullptr,
+                                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST, 85, top,
+                                 220, 160, parent, nullptr, instance, nullptr);
+  ::SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Anna"));
+  ::SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Stefan"));
+  ::SendMessageW(combo, CB_SETCURSEL, 0, 0); // select "Anna"
+  return combo;
+}
+
 // Builds the known control tree and returns the first control (the initial focus). Each
 // button/checkbox/radio's window text is its accessible name; checkboxes/radio get an
 // explicit checked/indeterminate state. The edits are labelled (a preceding STATIC), so the
@@ -119,6 +134,7 @@ HWND buildControlTree(HWND parent) {
   addLabeledEdit(parent, {.top = 180, .label = L"Suche", .text = L"", .extraStyle = 0});
   addLabeledEdit(parent,
                  {.top = 214, .label = L"Pfad", .text = L"system32", .extraStyle = ES_READONLY});
+  addLabeledCombo(parent, 248, L"Stimme");
 
   return firstButton;
 }
@@ -157,7 +173,7 @@ int main(int argc, char** argv) {
   }
 
   HWND window = ::CreateWindowExW(WS_EX_CONTROLPARENT, WindowClassName, WindowTitle,
-                                  WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 360, 320,
+                                  WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 360, 360,
                                   nullptr, nullptr, instance, nullptr);
   if (window == nullptr) {
     return 1;

@@ -79,7 +79,7 @@ struct ExpectedControl {
 // and three labelled Edits (a value, an empty one -> "leer", and a read-only one). A checked
 // Win32 radio reports STATE_SYSTEM_CHECKED (-> Checked), not Selected; a labelled edit takes
 // its accessible name from the preceding STATIC.
-constexpr std::array<ExpectedControl, 7> ExpectedControls{{
+constexpr std::array<ExpectedControl, 8> ExpectedControls{{
     {.role = Role::Button,
      .name = "Speichern",
      .state = std::nullopt,
@@ -115,6 +115,11 @@ constexpr std::array<ExpectedControl, 7> ExpectedControls{{
      .state = State::ReadOnly,
      .value = "system32",
      .utterance = "Eingabefeld, Pfad, schreibgeschützt, system32"},
+    {.role = Role::Combobox,
+     .name = "Stimme",
+     .state = State::Expandable,
+     .value = "Anna",
+     .utterance = "Kombinationsfeld, Stimme, reduziert, Anna"},
 }};
 
 std::wstring envValue(const wchar_t* name) {

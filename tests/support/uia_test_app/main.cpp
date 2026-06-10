@@ -148,38 +148,46 @@ std::wstring widen(std::string_view utf8) {
   return wide;
 }
 
+// The button-family kinds: a BUTTON-class control with an optional initial check state.
+// Returns nullptr for any other kind (so buildControl falls through to its own cases).
+HWND buildButtonKind(HWND parent, vox::testapp::Kind kind, const wchar_t* name, int top) {
+  using vox::testapp::Kind;
+  switch (kind) {
+  case Kind::Button:
+    return addControl(
+        parent,
+        {.className = L"BUTTON", .text = name, .style = WS_TABSTOP | BS_PUSHBUTTON, .top = top});
+  case Kind::CheckedCheckbox:
+    return addCheckable(
+        parent,
+        {.className = L"BUTTON", .text = name, .style = WS_TABSTOP | BS_AUTOCHECKBOX, .top = top},
+        BST_CHECKED);
+  case Kind::TriStateCheckbox:
+    return addCheckable(
+        parent,
+        {.className = L"BUTTON", .text = name, .style = WS_TABSTOP | BS_AUTO3STATE, .top = top},
+        BST_INDETERMINATE);
+  case Kind::Radio:
+    return addCheckable(parent,
+                        {.className = L"BUTTON",
+                         .text = name,
+                         .style = WS_TABSTOP | WS_GROUP | BS_AUTORADIOBUTTON,
+                         .top = top},
+                        BST_CHECKED);
+  default:
+    return nullptr;
+  }
+}
+
 // Builds one control from a shared ControlSpec at @p top; returns the focusable control.
 HWND buildControl(HWND parent, const vox::testapp::ControlSpec& spec, int top) {
   using vox::testapp::Kind;
   const std::wstring name = widen(spec.name);
   const std::wstring value = widen(spec.value);
+  if (HWND button = buildButtonKind(parent, spec.kind, name.c_str(), top)) {
+    return button;
+  }
   switch (spec.kind) {
-  case Kind::Button:
-    return addControl(parent, {.className = L"BUTTON",
-                               .text = name.c_str(),
-                               .style = WS_TABSTOP | BS_PUSHBUTTON,
-                               .top = top});
-  case Kind::CheckedCheckbox:
-    return addCheckable(parent,
-                        {.className = L"BUTTON",
-                         .text = name.c_str(),
-                         .style = WS_TABSTOP | BS_AUTOCHECKBOX,
-                         .top = top},
-                        BST_CHECKED);
-  case Kind::TriStateCheckbox:
-    return addCheckable(parent,
-                        {.className = L"BUTTON",
-                         .text = name.c_str(),
-                         .style = WS_TABSTOP | BS_AUTO3STATE,
-                         .top = top},
-                        BST_INDETERMINATE);
-  case Kind::Radio:
-    return addCheckable(parent,
-                        {.className = L"BUTTON",
-                         .text = name.c_str(),
-                         .style = WS_TABSTOP | WS_GROUP | BS_AUTORADIOBUTTON,
-                         .top = top},
-                        BST_CHECKED);
   case Kind::Edit:
     return addLabeledEdit(
         parent, {.top = top, .label = name.c_str(), .text = value.c_str(), .extraStyle = 0});
@@ -193,8 +201,9 @@ HWND buildControl(HWND parent, const vox::testapp::ControlSpec& spec, int top) {
     return addListBox(parent, top, name.c_str());
   case Kind::Link:
     return addLink(parent, top, name);
+  default:
+    return nullptr; // button-family kinds are handled by buildButtonKind above
   }
-  return nullptr; // all Kind values are handled above
 }
 
 // Builds the known control tree from the single shared source and returns the first control

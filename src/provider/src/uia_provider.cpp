@@ -325,28 +325,39 @@ public:
     handler_.Reset();
   }
 
-  [[nodiscard]] std::optional<vox::model::AccessibleNode> nodeByName(void* windowHandle,
-                                                                     std::string_view name) const {
-    if (windowHandle == nullptr) {
-      return std::nullopt;
-    }
-    if (!automation_ || !cacheRequest_) {
-      return std::nullopt;
-    }
+  [[nodiscard]] bool ready() const {
+    return automation_ && cacheRequest_;
+  }
+
+  // Finds the first element named @p name in window @p windowHandle's subtree, or null.
+  [[nodiscard]] ComPtr<IUIAutomationElement> findNamed(void* windowHandle,
+                                                       std::string_view name) const {
     ComPtr<IUIAutomationElement> window;
     const HRESULT windowHr =
         automation_->ElementFromHandle(static_cast<UIA_HWND>(windowHandle), &window);
     if (FAILED(windowHr) || !window) {
-      return std::nullopt;
+      return nullptr;
     }
     ComPtr<IUIAutomationCondition> condition;
     if (!makeNameCondition(name, &condition)) {
-      return std::nullopt;
+      return nullptr;
     }
     ComPtr<IUIAutomationElement> found;
     const HRESULT findHr = window->FindFirstBuildCache(TreeScope_Subtree, condition.Get(),
                                                        cacheRequest_.Get(), &found);
     if (FAILED(findHr) || !found) {
+      return nullptr;
+    }
+    return found;
+  }
+
+  [[nodiscard]] std::optional<vox::model::AccessibleNode> nodeByName(void* windowHandle,
+                                                                     std::string_view name) const {
+    if (windowHandle == nullptr || !ready()) {
+      return std::nullopt;
+    }
+    const ComPtr<IUIAutomationElement> found = findNamed(windowHandle, name);
+    if (!found) {
       return std::nullopt;
     }
     return mapElement(extract(found.Get()));

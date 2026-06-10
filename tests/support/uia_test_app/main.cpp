@@ -73,6 +73,13 @@ HWND addControl(HWND parent, const ControlSpec& spec) {
                            nullptr);
 }
 
+// Adds a BUTTON-class control (checkbox/radio) and applies its initial check state.
+HWND addCheckable(HWND parent, const ControlSpec& spec, WPARAM check) {
+  HWND box = addControl(parent, spec);
+  ::SendMessageW(box, BM_SETCHECK, check, 0);
+  return box;
+}
+
 struct LabeledEditSpec {
   int top;
   const wchar_t* label;
@@ -152,30 +159,27 @@ HWND buildControl(HWND parent, const vox::testapp::ControlSpec& spec, int top) {
                                .text = name.c_str(),
                                .style = WS_TABSTOP | BS_PUSHBUTTON,
                                .top = top});
-  case Kind::CheckedCheckbox: {
-    HWND box = addControl(parent, {.className = L"BUTTON",
-                                   .text = name.c_str(),
-                                   .style = WS_TABSTOP | BS_AUTOCHECKBOX,
-                                   .top = top});
-    ::SendMessageW(box, BM_SETCHECK, BST_CHECKED, 0);
-    return box;
-  }
-  case Kind::TriStateCheckbox: {
-    HWND box = addControl(parent, {.className = L"BUTTON",
-                                   .text = name.c_str(),
-                                   .style = WS_TABSTOP | BS_AUTO3STATE,
-                                   .top = top});
-    ::SendMessageW(box, BM_SETCHECK, BST_INDETERMINATE, 0);
-    return box;
-  }
-  case Kind::Radio: {
-    HWND box = addControl(parent, {.className = L"BUTTON",
-                                   .text = name.c_str(),
-                                   .style = WS_TABSTOP | WS_GROUP | BS_AUTORADIOBUTTON,
-                                   .top = top});
-    ::SendMessageW(box, BM_SETCHECK, BST_CHECKED, 0);
-    return box;
-  }
+  case Kind::CheckedCheckbox:
+    return addCheckable(parent,
+                        {.className = L"BUTTON",
+                         .text = name.c_str(),
+                         .style = WS_TABSTOP | BS_AUTOCHECKBOX,
+                         .top = top},
+                        BST_CHECKED);
+  case Kind::TriStateCheckbox:
+    return addCheckable(parent,
+                        {.className = L"BUTTON",
+                         .text = name.c_str(),
+                         .style = WS_TABSTOP | BS_AUTO3STATE,
+                         .top = top},
+                        BST_INDETERMINATE);
+  case Kind::Radio:
+    return addCheckable(parent,
+                        {.className = L"BUTTON",
+                         .text = name.c_str(),
+                         .style = WS_TABSTOP | WS_GROUP | BS_AUTORADIOBUTTON,
+                         .top = top},
+                        BST_CHECKED);
   case Kind::Edit:
     return addLabeledEdit(
         parent, {.top = top, .label = name.c_str(), .text = value.c_str(), .extraStyle = 0});

@@ -325,12 +325,16 @@ public:
 
   [[nodiscard]] std::optional<vox::model::AccessibleNode> nodeByName(void* windowHandle,
                                                                      std::string_view name) const {
-    if (!automation_ || !cacheRequest_ || windowHandle == nullptr) {
+    if (windowHandle == nullptr) {
+      return std::nullopt;
+    }
+    if (!automation_ || !cacheRequest_) {
       return std::nullopt;
     }
     ComPtr<IUIAutomationElement> window;
-    if (FAILED(automation_->ElementFromHandle(static_cast<UIA_HWND>(windowHandle), &window)) ||
-        !window) {
+    const HRESULT windowHr =
+        automation_->ElementFromHandle(static_cast<UIA_HWND>(windowHandle), &window);
+    if (FAILED(windowHr) || !window) {
       return std::nullopt;
     }
     ComPtr<IUIAutomationCondition> condition;
@@ -338,9 +342,9 @@ public:
       return std::nullopt;
     }
     ComPtr<IUIAutomationElement> found;
-    if (FAILED(window->FindFirstBuildCache(TreeScope_Subtree, condition.Get(), cacheRequest_.Get(),
-                                           &found)) ||
-        !found) {
+    const HRESULT findHr = window->FindFirstBuildCache(TreeScope_Subtree, condition.Get(),
+                                                       cacheRequest_.Get(), &found);
+    if (FAILED(findHr) || !found) {
       return std::nullopt;
     }
     return mapElement(extract(found.Get()));

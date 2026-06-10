@@ -20,6 +20,7 @@
 #include <Windows.h>
 
 #include <array>
+#include <commctrl.h>
 
 namespace {
 
@@ -150,6 +151,9 @@ HWND buildControlTree(HWND parent) {
                  {.top = 214, .label = L"Pfad", .text = L"system32", .extraStyle = ES_READONLY});
   addLabeledCombo(parent, 248, L"Stimme");
   addListBox(parent, 282);
+  // A SysLink (comctl32 v6, via the embedded manifest); the link text is its accessible name.
+  ::CreateWindowExW(0, L"SysLink", L"<a>Hilfe</a>", WS_CHILD | WS_VISIBLE | WS_TABSTOP, 10, 340,
+                    295, 24, parent, nullptr, ::GetModuleHandleW(nullptr), nullptr);
 
   return firstButton;
 }
@@ -178,6 +182,9 @@ void signalReady(const char* eventName) {
 int main(int argc, char** argv) {
   HINSTANCE instance = ::GetModuleHandleW(nullptr);
 
+  const INITCOMMONCONTROLSEX icc{.dwSize = sizeof(INITCOMMONCONTROLSEX), .dwICC = ICC_LINK_CLASS};
+  ::InitCommonControlsEx(&icc); // register the SysLink (link) control class
+
   WNDCLASSEXW windowClass{};
   windowClass.cbSize = sizeof(windowClass);
   windowClass.lpfnWndProc = &windowProc;
@@ -188,7 +195,7 @@ int main(int argc, char** argv) {
   }
 
   HWND window = ::CreateWindowExW(WS_EX_CONTROLPARENT, WindowClassName, WindowTitle,
-                                  WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 360, 400,
+                                  WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 360, 440,
                                   nullptr, nullptr, instance, nullptr);
   if (window == nullptr) {
     return 1;

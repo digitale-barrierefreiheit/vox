@@ -80,7 +80,7 @@ struct ExpectedControl {
 // (collapsed, with a selection), and a List item (the focused/selected listbox row). A checked
 // Win32 radio reports STATE_SYSTEM_CHECKED (-> Checked), not Selected; a labelled edit/combobox
 // takes its accessible name from the preceding STATIC.
-constexpr std::array<ExpectedControl, 9> ExpectedControls{{
+constexpr std::array<ExpectedControl, 10> ExpectedControls{{
     {.role = Role::Button,
      .name = "Speichern",
      .state = std::nullopt,
@@ -128,6 +128,11 @@ constexpr std::array<ExpectedControl, 9> ExpectedControls{{
      .state = State::Selected,
      .value = "",
      .utterance = "Listenelement, Eintrag 1, ausgewählt"},
+    {.role = Role::Link,
+     .name = "Hilfe",
+     .state = std::nullopt,
+     .value = "",
+     .utterance = "Link, Hilfe"},
 }};
 
 std::wstring envValue(const wchar_t* name) {

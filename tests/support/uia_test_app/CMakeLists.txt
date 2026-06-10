@@ -8,5 +8,9 @@
 # common controls give it a UIA tree without any UIA code here.
 add_executable(uia_test_app main.cpp)
 vox_configure_target(uia_test_app)
-target_link_libraries(uia_test_app PRIVATE user32)
+target_link_libraries(uia_test_app PRIVATE user32 comctl32)
+# Declare the comctl32 v6 dependency in the linker-generated manifest so the SysLink (link)
+# control class is available. Merged into CMake's own manifest, so there is no duplicate.
+target_link_options(uia_test_app PRIVATE
+  "/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'")
 set_target_properties(uia_test_app PROPERTIES FOLDER "tests")

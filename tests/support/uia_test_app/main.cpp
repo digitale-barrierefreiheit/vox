@@ -151,23 +151,23 @@ std::wstring widen(std::string_view utf8) {
 // The button-family kinds: a BUTTON-class control with an optional initial check state.
 // Returns nullptr for any other kind (so buildControl falls through to its own cases).
 HWND buildButtonKind(HWND parent, vox::testapp::Kind kind, const wchar_t* name, int top) {
-  using vox::testapp::Kind;
+  using enum vox::testapp::Kind;
   switch (kind) {
-  case Kind::Button:
+  case Button:
     return addControl(
         parent,
         {.className = L"BUTTON", .text = name, .style = WS_TABSTOP | BS_PUSHBUTTON, .top = top});
-  case Kind::CheckedCheckbox:
+  case CheckedCheckbox:
     return addCheckable(
         parent,
         {.className = L"BUTTON", .text = name, .style = WS_TABSTOP | BS_AUTOCHECKBOX, .top = top},
         BST_CHECKED);
-  case Kind::TriStateCheckbox:
+  case TriStateCheckbox:
     return addCheckable(
         parent,
         {.className = L"BUTTON", .text = name, .style = WS_TABSTOP | BS_AUTO3STATE, .top = top},
         BST_INDETERMINATE);
-  case Kind::Radio:
+  case Radio:
     return addCheckable(parent,
                         {.className = L"BUTTON",
                          .text = name,
@@ -181,42 +181,59 @@ HWND buildButtonKind(HWND parent, vox::testapp::Kind kind, const wchar_t* name, 
 
 // Builds one control from a shared ControlSpec at @p top; returns the focusable control.
 HWND buildControl(HWND parent, const vox::testapp::ControlSpec& spec, int top) {
-  using vox::testapp::Kind;
+  using enum vox::testapp::Kind;
   const std::wstring name = widen(spec.name);
   const std::wstring value = widen(spec.value);
   if (HWND button = buildButtonKind(parent, spec.kind, name.c_str(), top)) {
     return button;
   }
   switch (spec.kind) {
-  case Kind::Edit:
+  case Edit:
     return addLabeledEdit(
         parent, {.top = top, .label = name.c_str(), .text = value.c_str(), .extraStyle = 0});
-  case Kind::ReadOnlyEdit:
+  case ReadOnlyEdit:
     return addLabeledEdit(
         parent,
         {.top = top, .label = name.c_str(), .text = value.c_str(), .extraStyle = ES_READONLY});
-  case Kind::Combobox:
+  case Combobox:
     return addLabeledCombo(parent, {.top = top, .label = name.c_str(), .selection = value.c_str()});
-  case Kind::ListBox:
+  case ListBox:
     return addListBox(parent, top, name.c_str());
-  case Kind::Link:
+  case Link:
     return addLink(parent, top, name);
   default:
     return nullptr; // button-family kinds are handled by buildButtonKind above
   }
 }
 
+constexpr int ControlTreeTop = 10; // y of the first control row
+
+// Row height for a control kind (the list box is taller than the single-line controls).
+int rowHeight(vox::testapp::Kind kind) {
+  return (kind == vox::testapp::Kind::ListBox) ? 58 : 34;
+}
+
+// The y just below the focusable control tree — where the non-focusable static label sits.
+// Derived from ControlTree's layout so it never drifts when the tree changes.
+int controlTreeBottom() {
+  int top = ControlTreeTop;
+  for (const vox::testapp::ControlSpec& spec : vox::testapp::ControlTree) {
+    top += rowHeight(spec.kind);
+  }
+  return top;
+}
+
 // Builds the known control tree from the single shared source and returns the first control
-// (the initial focus). The list box is taller, so its row is larger.
+// (the initial focus).
 HWND buildControlTree(HWND parent) {
   HWND first = nullptr;
-  int top = 10;
+  int top = ControlTreeTop;
   for (const vox::testapp::ControlSpec& spec : vox::testapp::ControlTree) {
     HWND control = buildControl(parent, spec, top);
     if (first == nullptr) {
       first = control;
     }
-    top += (spec.kind == vox::testapp::Kind::ListBox) ? 58 : 34;
+    top += rowHeight(spec.kind);
   }
   return first;
 }
@@ -229,8 +246,8 @@ void buildNonFocusable(HWND parent) {
     const std::wstring name = widen(spec.name);
     switch (spec.kind) {
     case vox::testapp::NonFocusableKind::StaticLabel:
-      ::CreateWindowExW(0, L"STATIC", name.c_str(), WS_CHILD | WS_VISIBLE, 10, 374, 295, 20, parent,
-                        nullptr, ::GetModuleHandleW(nullptr), nullptr);
+      ::CreateWindowExW(0, L"STATIC", name.c_str(), WS_CHILD | WS_VISIBLE, 10, controlTreeBottom(),
+                        295, 20, parent, nullptr, ::GetModuleHandleW(nullptr), nullptr);
       break;
     case vox::testapp::NonFocusableKind::MenuBar: {
       HMENU bar = ::CreateMenu();

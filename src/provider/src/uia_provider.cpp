@@ -93,9 +93,9 @@ std::wstring fromUtf8(std::string_view utf8) {
     return {};
   }
   std::wstring wide(static_cast<std::size_t>(count), L'\0');
-  const int written = ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(),
-                                            static_cast<int>(utf8.size()), wide.data(), count);
-  if (written != count) {
+  if (const int written = ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(),
+                                                static_cast<int>(utf8.size()), wide.data(), count);
+      written != count) {
     return {}; // the write pass disagreed with the sizing pass — degrade to empty
   }
   return wide;
@@ -332,34 +332,34 @@ public:
     return automation_ && cacheRequest_;
   }
 
-  // Finds the first element named @p name in window @p windowHandle's subtree, or null.
-  [[nodiscard]] ComPtr<IUIAutomationElement> findNamed(void* windowHandle,
+  // Finds the first element named @p name in @p window's subtree, or null.
+  [[nodiscard]] ComPtr<IUIAutomationElement> findNamed(IUIAutomationElement* window,
                                                        std::string_view name) const {
-    ComPtr<IUIAutomationElement> window;
-    const HRESULT windowHr =
-        automation_->ElementFromHandle(static_cast<UIA_HWND>(windowHandle), &window);
-    if (FAILED(windowHr) || !window) {
-      return nullptr;
-    }
     ComPtr<IUIAutomationCondition> condition;
     if (!makeNameCondition(name, &condition)) {
       return nullptr;
     }
     ComPtr<IUIAutomationElement> found;
-    const HRESULT findHr = window->FindFirstBuildCache(TreeScope_Subtree, condition.Get(),
-                                                       cacheRequest_.Get(), &found);
-    if (FAILED(findHr) || !found) {
+    if (const HRESULT findHr = window->FindFirstBuildCache(TreeScope_Subtree, condition.Get(),
+                                                           cacheRequest_.Get(), &found);
+        FAILED(findHr) || !found) {
       return nullptr;
     }
     return found;
   }
 
-  [[nodiscard]] std::optional<vox::model::AccessibleNode> nodeByName(void* windowHandle,
+  [[nodiscard]] std::optional<vox::model::AccessibleNode> nodeByName(HWND windowHandle,
                                                                      std::string_view name) const {
     if (windowHandle == nullptr || !ready()) {
       return std::nullopt;
     }
-    const ComPtr<IUIAutomationElement> found = findNamed(windowHandle, name);
+    ComPtr<IUIAutomationElement> window;
+    if (const HRESULT windowHr =
+            automation_->ElementFromHandle(static_cast<UIA_HWND>(windowHandle), &window);
+        FAILED(windowHr) || !window) {
+      return std::nullopt;
+    }
+    const ComPtr<IUIAutomationElement> found = findNamed(window.Get(), name);
     if (!found) {
       return std::nullopt;
     }
@@ -405,7 +405,7 @@ void UiaProvider::stop() {
   impl_->stop();
 }
 
-std::optional<vox::model::AccessibleNode> UiaProvider::nodeByName(void* windowHandle,
+std::optional<vox::model::AccessibleNode> UiaProvider::nodeByName(HWND__* windowHandle,
                                                                   std::string_view name) const {
   return impl_->nodeByName(windowHandle, name);
 }

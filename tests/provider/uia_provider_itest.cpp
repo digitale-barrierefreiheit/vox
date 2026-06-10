@@ -76,9 +76,10 @@ struct ExpectedControl {
 };
 
 // The focusable controls the app exposes: Button, Checkbox (checked + tri-state), RadioButton,
-// and three labelled Edits (a value, an empty one -> "leer", and a read-only one). A checked
-// Win32 radio reports STATE_SYSTEM_CHECKED (-> Checked), not Selected; a labelled edit takes
-// its accessible name from the preceding STATIC.
+// three labelled Edits (a value, an empty one -> "leer", and a read-only one), a Combobox
+// (collapsed, with a selection), and a List item (the focused/selected listbox row). A checked
+// Win32 radio reports STATE_SYSTEM_CHECKED (-> Checked), not Selected; a labelled edit/combobox
+// takes its accessible name from the preceding STATIC.
 constexpr std::array<ExpectedControl, 9> ExpectedControls{{
     {.role = Role::Button,
      .name = "Speichern",

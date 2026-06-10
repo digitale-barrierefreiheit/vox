@@ -20,7 +20,7 @@
 #include <Windows.h>
 
 #include <array>
-#include <commctrl.h>
+#include <CommCtrl.h>
 
 namespace {
 

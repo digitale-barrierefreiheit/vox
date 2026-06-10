@@ -115,14 +115,13 @@ constexpr std::array<ExpectedControl, 9> ExpectedControls{{
      .state = State::ReadOnly,
      .value = "system32",
      .utterance = "Eingabefeld, Pfad, schreibgeschützt, system32"},
-    // The combobox's selection reads as the value; its expand/collapse state is not asserted:
-    // a Win32 combobox surfaces it through the legacy state bits, which the mapper's fallback
-    // does not yet map (it covers Checked/Mixed/Selected/ReadOnly) — a follow-up.
+    // The combobox is collapsed: a Win32 combobox surfaces expand/collapse via the legacy
+    // state bits (the mapper's fallback maps them), so it reads as Expandable (not Expanded).
     {.role = Role::Combobox,
      .name = "Stimme",
-     .state = std::nullopt,
+     .state = State::Expandable,
      .value = "Anna",
-     .utterance = "Kombinationsfeld, Stimme, Anna"},
+     .utterance = "Kombinationsfeld, Stimme, reduziert, Anna"},
     {.role = Role::ListItem,
      .name = "Eintrag 1",
      .state = State::Selected,

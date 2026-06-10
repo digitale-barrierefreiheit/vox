@@ -64,13 +64,24 @@ void applyToggle(StateSet& states, const UiaElementData& data) {
 }
 
 void applyExpandCollapse(StateSet& states, const UiaElementData& data) {
-  if (!data.hasExpandCollapse || data.expandCollapseState == UiaExpandCollapseStateLeafNode) {
+  if (data.hasExpandCollapse) {
+    if (data.expandCollapseState == UiaExpandCollapseStateLeafNode) {
+      return;
+    }
+    states.set(Expandable);
+    if (data.expandCollapseState == UiaExpandCollapseStateExpanded ||
+        data.expandCollapseState == UiaExpandCollapseStatePartiallyExpanded) {
+      states.set(Expanded);
+    }
     return;
   }
-  states.set(Expandable);
-  if (data.expandCollapseState == UiaExpandCollapseStateExpanded ||
-      data.expandCollapseState == UiaExpandCollapseStatePartiallyExpanded) {
+  // Legacy fallback: a standard Win32 combobox surfaces expand/collapse through the legacy
+  // state bits, not the modern pattern.
+  if ((data.legacyState & UiaLegacyStateExpanded) != 0U) {
+    states.set(Expandable);
     states.set(Expanded);
+  } else if ((data.legacyState & UiaLegacyStateCollapsed) != 0U) {
+    states.set(Expandable);
   }
 }
 

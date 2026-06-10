@@ -246,4 +246,30 @@ TEST(Mapper, ValuePatternTakesPrecedenceOverLegacyValue) {
   EXPECT_EQ(mapElement(data).value, "modern");
 }
 
+// A standard Win32 combobox exposes expand/collapse through the legacy state bits, not the
+// modern ExpandCollapse pattern, so the mapper falls back to them.
+TEST(Mapper, ExpandableFromLegacyCollapsedWithoutPattern) {
+  UiaElementData data;
+  data.legacyState = vp::UiaLegacyStateCollapsed;
+  const auto node = mapElement(data);
+  EXPECT_TRUE(node.states.test(State::Expandable));
+  EXPECT_FALSE(node.states.test(State::Expanded));
+}
+
+TEST(Mapper, ExpandedFromLegacyExpandedWithoutPattern) {
+  UiaElementData data;
+  data.legacyState = vp::UiaLegacyStateExpanded;
+  const auto node = mapElement(data);
+  EXPECT_TRUE(node.states.test(State::Expandable));
+  EXPECT_TRUE(node.states.test(State::Expanded));
+}
+
+TEST(Mapper, ExpandCollapsePatternTakesPrecedenceOverLegacyExpand) {
+  UiaElementData data;
+  data.hasExpandCollapse = true;
+  data.expandCollapseState = vp::UiaExpandCollapseStateLeafNode; // modern: not expandable...
+  data.legacyState = vp::UiaLegacyStateCollapsed;                // ...legacy says collapsed
+  EXPECT_FALSE(mapElement(data).states.test(State::Expandable));
+}
+
 } // namespace

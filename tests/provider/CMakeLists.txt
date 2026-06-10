@@ -43,6 +43,8 @@ if(WIN32)
     vox::output
     GTest::gtest
     GTest::gtest_main)
+  # The single-source control tree (#40) lives with the test app; both consume it.
+  target_include_directories(provider_uia_itest PRIVATE "${CMAKE_SOURCE_DIR}/tests/support")
   add_dependencies(provider_uia_itest uia_test_app)
   gtest_discover_tests(provider_uia_itest
     PROPERTIES

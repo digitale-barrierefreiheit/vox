@@ -81,18 +81,20 @@ std::string toUtf8(BSTR text) {
   return out;
 }
 
-/// Converts a UTF-8 string to a UTF-16 wide string (empty for empty/invalid input).
+/// Converts a UTF-8 string to a UTF-16 wide string. MB_ERR_INVALID_CHARS makes invalid UTF-8
+/// yield empty (a hard failure) rather than silently substituting U+FFFD.
 std::wstring fromUtf8(std::string_view utf8) {
   if (utf8.empty()) {
     return {};
   }
-  const int count =
-      ::MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()), nullptr, 0);
+  const int count = ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(),
+                                          static_cast<int>(utf8.size()), nullptr, 0);
   if (count <= 0) {
     return {};
   }
   std::wstring wide(static_cast<std::size_t>(count), L'\0');
-  ::MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()), wide.data(), count);
+  ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(), static_cast<int>(utf8.size()),
+                        wide.data(), count);
   return wide;
 }
 

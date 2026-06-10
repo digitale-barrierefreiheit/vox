@@ -45,7 +45,7 @@ jobs:
       # The TypeScript test-matrix action is covered by its own node:test suite; produce its
       # lcov here (CI's dist-sync job runs the tests but not under coverage) and rebase the
       # paths to the repo root so Sonar matches them to the files it analyzes.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
       - name: TypeScript action coverage (lcov for Sonar)
@@ -56,7 +56,7 @@ jobs:
           npm run coverage
           sed -i 's#\\#/#g; s#^SF:src/#SF:.github/actions/test-matrix/src/#' coverage/lcov.info
       - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
+        uses: SonarSource/sonarqube-scan-action@713881670b6b3676cda39549040e2d88c70d582e # v8.2.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       - name: SonarQube Quality Gate Check
@@ -70,7 +70,7 @@ jobs:
       - name: SonarCloud summary
         if: ${{ !cancelled() }}
         continue-on-error: true
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           PR: ${{ github.event.pull_request.number }}

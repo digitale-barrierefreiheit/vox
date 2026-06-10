@@ -50,6 +50,15 @@ HWND fakeWindow() {
   return static_cast<HWND>(static_cast<void*>(&marker));
 }
 
+// Routes ElementFromHandle on @p automation to @p window (the subtree root these tests read).
+void routeElementFromHandle(MockUiAutomation& automation, MockUiElement& window) {
+  ON_CALL(automation, ElementFromHandle(_, _))
+      .WillByDefault([&window](UIA_HWND, IUIAutomationElement** out) {
+        *out = &window;
+        return S_OK;
+      });
+}
+
 /// A dedicated exception a focus callback might raise (S112: not a generic one),
 /// to prove the event handler firewalls it at the COM boundary.
 class CallbackError : public std::runtime_error {
@@ -307,11 +316,7 @@ TEST_F(UiaProviderTest, NodeByNameReadsTheNamedElementInTheWindowSubtree) {
   NiceMock<MockUiElement> windowElement;
   NiceMock<MockUiElement> found;
   NiceMock<MockUiCondition> condition;
-  ON_CALL(automation_, ElementFromHandle(_, _))
-      .WillByDefault([&windowElement](UIA_HWND, IUIAutomationElement** out) {
-        *out = &windowElement;
-        return S_OK;
-      });
+  routeElementFromHandle(automation_, windowElement);
   ON_CALL(automation_, CreatePropertyCondition(_, _, _))
       .WillByDefault([&condition](PROPERTYID, VARIANT, IUIAutomationCondition** out) {
         *out = &condition;
@@ -342,11 +347,7 @@ TEST_F(UiaProviderTest, NodeByNameReadsTheNamedElementInTheWindowSubtree) {
 
 // A degraded nodeByName: if the named element is not found, returns nullopt.
 TEST_F(UiaProviderTest, NodeByNameIsNulloptWhenNotFound) {
-  ON_CALL(automation_, ElementFromHandle(_, _))
-      .WillByDefault([this](UIA_HWND, IUIAutomationElement** out) {
-        *out = &element_;
-        return S_OK;
-      });
+  routeElementFromHandle(automation_, element_);
   ON_CALL(automation_, CreatePropertyCondition(_, _, _))
       .WillByDefault([](PROPERTYID, VARIANT, IUIAutomationCondition** out) {
         *out = nullptr;
@@ -374,11 +375,7 @@ TEST_F(UiaProviderTest, NodeByNameIsNulloptWhenElementFromHandleFails) {
 TEST_F(UiaProviderTest, NodeByNameIsNulloptWhenFindFirstFails) {
   NiceMock<MockUiElement> windowElement;
   NiceMock<MockUiCondition> condition;
-  ON_CALL(automation_, ElementFromHandle(_, _))
-      .WillByDefault([&windowElement](UIA_HWND, IUIAutomationElement** out) {
-        *out = &windowElement;
-        return S_OK;
-      });
+  routeElementFromHandle(automation_, windowElement);
   ON_CALL(automation_, CreatePropertyCondition(_, _, _))
       .WillByDefault([&condition](PROPERTYID, VARIANT, IUIAutomationCondition** out) {
         *out = &condition;
@@ -397,11 +394,7 @@ TEST_F(UiaProviderTest, NodeByNameIsNulloptWhenFindFirstFails) {
 // An invalid-UTF-8 name converts to empty, so makeNameCondition refuses to search for it.
 TEST_F(UiaProviderTest, NodeByNameIsNulloptForInvalidUtf8Name) {
   NiceMock<MockUiElement> windowElement;
-  ON_CALL(automation_, ElementFromHandle(_, _))
-      .WillByDefault([&windowElement](UIA_HWND, IUIAutomationElement** out) {
-        *out = &windowElement;
-        return S_OK;
-      });
+  routeElementFromHandle(automation_, windowElement);
   const UiaProvider provider;
   EXPECT_FALSE(provider.nodeByName(fakeWindow(), "\xC3").has_value()); // lone UTF-8 lead byte
 }
@@ -409,11 +402,7 @@ TEST_F(UiaProviderTest, NodeByNameIsNulloptForInvalidUtf8Name) {
 // An empty name likewise converts to empty, exercising fromUtf8's empty-input path.
 TEST_F(UiaProviderTest, NodeByNameIsNulloptForEmptyName) {
   NiceMock<MockUiElement> windowElement;
-  ON_CALL(automation_, ElementFromHandle(_, _))
-      .WillByDefault([&windowElement](UIA_HWND, IUIAutomationElement** out) {
-        *out = &windowElement;
-        return S_OK;
-      });
+  routeElementFromHandle(automation_, windowElement);
   const UiaProvider provider;
   EXPECT_FALSE(provider.nodeByName(fakeWindow(), "").has_value());
 }

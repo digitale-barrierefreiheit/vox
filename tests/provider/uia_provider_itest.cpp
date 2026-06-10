@@ -305,7 +305,7 @@ TEST_F(UiaProviderItest, ReadsEachFocusableControl) {
 // name through UiaProvider::nodeByName (ElementFromHandle + FindFirst), then assert the mapped
 // role/name and the end-to-end German utterance, as for the focusable controls.
 TEST_F(UiaProviderItest, ReadsEachNonFocusableControl) {
-  HWND window = ::FindWindowW(vox::testapp::WindowClassName, nullptr);
+  HWND window = ::FindWindowW(vox::testapp::WindowClassName, vox::testapp::WindowTitle);
   if (window == nullptr) {
     skipOrFail("VOX_REQUIRE_UIA_TREE is set but the test app window was not found.",
                "Test app window not found.");

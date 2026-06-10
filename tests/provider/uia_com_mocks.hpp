@@ -80,6 +80,9 @@ inline BSTR bstr(const wchar_t* text) {
   return ::SysAllocString(text);
 }
 
+/// Mock `IUIAutomationCondition` (a property condition; only IUnknown is exercised).
+class MockUiCondition : public ComMockBase<IUIAutomationCondition> {};
+
 /// Mock `IUIAutomation`.
 class MockUiAutomation : public ComMockBase<IUIAutomation> {
 public:
@@ -100,10 +103,9 @@ public:
     return E_NOTIMPL;
   }
 
-  HRESULT STDMETHODCALLTYPE ElementFromHandle(
-      __RPC__in UIA_HWND hwnd, __RPC__deref_out_opt IUIAutomationElement** element) override {
-    return E_NOTIMPL;
-  }
+  MOCK_METHOD(HRESULT, ElementFromHandle,
+              (__RPC__in UIA_HWND hwnd, __RPC__deref_out_opt IUIAutomationElement** element),
+              (override, Calltype(STDMETHODCALLTYPE)));
 
   HRESULT STDMETHODCALLTYPE
   ElementFromPoint(POINT pt, __RPC__deref_out_opt IUIAutomationElement** element) override {
@@ -188,11 +190,10 @@ public:
     return E_NOTIMPL;
   }
 
-  HRESULT STDMETHODCALLTYPE
-  CreatePropertyCondition(PROPERTYID propertyId, VARIANT value,
-                          __RPC__deref_out_opt IUIAutomationCondition** newCondition) override {
-    return E_NOTIMPL;
-  }
+  MOCK_METHOD(HRESULT, CreatePropertyCondition,
+              (PROPERTYID propertyId, VARIANT value,
+               __RPC__deref_out_opt IUIAutomationCondition** newCondition),
+              (override, Calltype(STDMETHODCALLTYPE)));
 
   HRESULT STDMETHODCALLTYPE
   CreatePropertyConditionEx(PROPERTYID propertyId, VARIANT value, enum PropertyConditionFlags flags,
@@ -455,12 +456,11 @@ public:
     return E_NOTIMPL;
   }
 
-  HRESULT STDMETHODCALLTYPE
-  FindFirstBuildCache(enum TreeScope scope, __RPC__in_opt IUIAutomationCondition* condition,
-                      __RPC__in_opt IUIAutomationCacheRequest* cacheRequest,
-                      __RPC__deref_out_opt IUIAutomationElement** found) override {
-    return E_NOTIMPL;
-  }
+  MOCK_METHOD(HRESULT, FindFirstBuildCache,
+              (enum TreeScope scope, __RPC__in_opt IUIAutomationCondition* condition,
+               __RPC__in_opt IUIAutomationCacheRequest* cacheRequest,
+               __RPC__deref_out_opt IUIAutomationElement** found),
+              (override, Calltype(STDMETHODCALLTYPE)));
 
   HRESULT STDMETHODCALLTYPE
   FindAllBuildCache(enum TreeScope scope, __RPC__in_opt IUIAutomationCondition* condition,
@@ -486,10 +486,8 @@ public:
     return E_NOTIMPL;
   }
 
-  HRESULT STDMETHODCALLTYPE GetCachedPropertyValue(PROPERTYID propertyId,
-                                                   __RPC__out VARIANT* retVal) override {
-    return E_NOTIMPL;
-  }
+  MOCK_METHOD(HRESULT, GetCachedPropertyValue, (PROPERTYID propertyId, __RPC__out VARIANT* retVal),
+              (override, Calltype(STDMETHODCALLTYPE)));
 
   HRESULT STDMETHODCALLTYPE GetCachedPropertyValueEx(PROPERTYID propertyId, BOOL ignoreDefaultValue,
                                                      __RPC__out VARIANT* retVal) override {

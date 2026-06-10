@@ -16,6 +16,8 @@
 #  include <gtest/gtest.h>
 
 #  include <vox/model/accessible_node.hpp>
+#  include <vox/model/state.hpp>
+#  include <vox/provider/uia_ids.hpp>
 #  include <vox/provider/uia_provider.hpp>
 #  include <vox/provider/uia_test_seam.hpp>
 
@@ -28,6 +30,7 @@ using vox::provider::UiaProvider;
 using vox::provider::testing::bstr;
 using vox::provider::testing::MockUiAutomation;
 using vox::provider::testing::MockUiCacheRequest;
+using vox::provider::testing::MockUiCondition;
 using vox::provider::testing::MockUiElement;
 using vox::provider::testing::MockUiExpandCollapsePattern;
 using vox::provider::testing::MockUiSelectionItemPattern;
@@ -39,6 +42,22 @@ using ::testing::NiceMock;
 using ::testing::Return;
 
 constexpr long ErrorFail = static_cast<long>(0x80004005U); // E_FAIL
+
+// A non-null but otherwise-bogus window handle for nodeByName tests; the mocked
+// ElementFromHandle ignores its value, so any non-null HWND suffices.
+HWND fakeWindow() {
+  static int marker = 0;
+  return static_cast<HWND>(static_cast<void*>(&marker));
+}
+
+// Routes ElementFromHandle on @p automation to @p window (the subtree root these tests read).
+void routeElementFromHandle(MockUiAutomation& automation, MockUiElement& window) {
+  ON_CALL(automation, ElementFromHandle(_, _))
+      .WillByDefault([&window](UIA_HWND, IUIAutomationElement** out) {
+        *out = &window;
+        return S_OK;
+      });
+}
 
 /// A dedicated exception a focus callback might raise (S112: not a generic one),
 /// to prove the event handler firewalls it at the COM boundary.
@@ -159,6 +178,12 @@ protected:
       return S_OK;
     });
     ON_CALL(value_, get_CachedIsReadOnly(_)).WillByDefault(setBool(FALSE));
+    // No legacy IAccessible state/value by default (the modern patterns above cover this
+    // happy-path button); an empty VARIANT means "absent". The fallback tests override this.
+    ON_CALL(element_, GetCachedPropertyValue(_, _)).WillByDefault([](PROPERTYID, VARIANT* out) {
+      ::VariantInit(out);
+      return S_OK;
+    });
   }
 
   /// A default action that writes @p value into a `BOOL*` out-param and succeeds.
@@ -167,6 +192,40 @@ protected:
       *out = value;
       return S_OK;
     };
+  }
+
+  /// A get_CachedControlType action yielding @p controlType.
+  static auto setControlType(CONTROLTYPEID controlType) {
+    return [controlType](CONTROLTYPEID* out) {
+      *out = controlType;
+      return S_OK;
+    };
+  }
+
+  /// A GetCachedPropertyValue action yielding the MSAA state bits @p state for the legacy
+  /// State property and the BSTR @p text for the legacy Value property (a fresh BSTR per
+  /// call, freed by the provider via VariantClear), and an empty VARIANT for anything else.
+  static auto legacyStateAndValue(unsigned state, const wchar_t* text) {
+    return [state, text](PROPERTYID id, VARIANT* out) {
+      ::VariantInit(out);
+      if (id == UIA_LegacyIAccessibleStatePropertyId) {
+        out->vt = VT_I4;
+        out->lVal = static_cast<LONG>(state);
+      } else if (id == UIA_LegacyIAccessibleValuePropertyId) {
+        out->vt = VT_BSTR;
+        out->bstrVal = bstr(text);
+      }
+      return S_OK;
+    };
+  }
+
+  /// Reads the focused node through a fresh provider (via the installed seam), asserting
+  /// one was returned; yields a default node on failure so callers can still assert fields.
+  AccessibleNode focusedNodeOrFail() {
+    const UiaProvider provider;
+    const std::optional<AccessibleNode> node = provider.focusedElement();
+    EXPECT_TRUE(node.has_value());
+    return node.value_or(AccessibleNode{});
   }
 
   IUIAutomationFocusChangedEventHandler* capturedHandler_{nullptr};
@@ -214,6 +273,21 @@ TEST_F(UiaProviderTest, ValueIsAbsentWhenTheValueReadFails) {
   EXPECT_FALSE(node->value.has_value());
 }
 
+// Standard Win32 controls reach UIA through the MSAA bridge, which exposes state and value
+// as the legacy IAccessible *properties* rather than the modern patterns. With those patterns
+// absent, the provider reads both legacy properties: a read-only edit reports ReadOnly (from
+// the legacy state bits) and its text value.
+TEST_F(UiaProviderTest, ReadsLegacyStateAndValuePropertiesWhenModernPatternsAbsent) {
+  ON_CALL(element_, get_CachedControlType(_)).WillByDefault(setControlType(UIA_EditControlTypeId));
+  ON_CALL(element_, GetCachedPatternAs(_, _, _))
+      .WillByDefault(vox::provider::testing::patternDispatch(nullptr, nullptr, nullptr, nullptr));
+  ON_CALL(element_, GetCachedPropertyValue(_, _))
+      .WillByDefault(legacyStateAndValue(vox::provider::UiaLegacyStateReadOnly, L"Hallo"));
+  const AccessibleNode node = focusedNodeOrFail();
+  EXPECT_TRUE(node.states.test(vox::model::State::ReadOnly));
+  EXPECT_EQ(node.value.value_or(""), "Hallo");
+}
+
 TEST_F(UiaProviderTest, StartForwardsFocusEventsToTheCallback) {
   UiaProvider provider;
   AccessibleNode received;
@@ -234,6 +308,103 @@ TEST_F(UiaProviderTest, StopRemovesTheRegisteredHandler) {
   provider.start([](const AccessibleNode&) { /* no-op: this test only checks stop() */ });
   EXPECT_CALL(automation_, RemoveFocusChangedEventHandler(_)).WillOnce(Return(S_OK));
   provider.stop();
+}
+
+// nodeByName reads a non-focusable element by name: ElementFromHandle(window) ->
+// FindFirstBuildCache(Name == name) -> extract -> map (here a static text "Hinweis").
+TEST_F(UiaProviderTest, NodeByNameReadsTheNamedElementInTheWindowSubtree) {
+  NiceMock<MockUiElement> windowElement;
+  NiceMock<MockUiElement> found;
+  NiceMock<MockUiCondition> condition;
+  routeElementFromHandle(automation_, windowElement);
+  ON_CALL(automation_, CreatePropertyCondition(_, _, _))
+      .WillByDefault([&condition](PROPERTYID, VARIANT, IUIAutomationCondition** out) {
+        *out = &condition;
+        return S_OK;
+      });
+  ON_CALL(windowElement, FindFirstBuildCache(_, _, _, _))
+      .WillByDefault([&found](enum TreeScope, IUIAutomationCondition*, IUIAutomationCacheRequest*,
+                              IUIAutomationElement** out) {
+        *out = &found;
+        return S_OK;
+      });
+  ON_CALL(found, get_CachedControlType(_)).WillByDefault([](CONTROLTYPEID* out) {
+    *out = UIA_TextControlTypeId;
+    return S_OK;
+  });
+  ON_CALL(found, get_CachedName(_)).WillByDefault([](BSTR* out) {
+    *out = bstr(L"Hinweis");
+    return S_OK;
+  });
+  ON_CALL(found, get_CachedIsEnabled(_)).WillByDefault(setBool(TRUE));
+
+  const UiaProvider provider;
+  const std::optional<AccessibleNode> node = provider.nodeByName(fakeWindow(), "Hinweis");
+  ASSERT_TRUE(node.has_value());
+  EXPECT_EQ(node->role, vox::model::Role::StaticText);
+  EXPECT_EQ(node->name, "Hinweis");
+}
+
+// A degraded nodeByName: if the named element is not found, returns nullopt.
+TEST_F(UiaProviderTest, NodeByNameIsNulloptWhenNotFound) {
+  routeElementFromHandle(automation_, element_);
+  ON_CALL(automation_, CreatePropertyCondition(_, _, _))
+      .WillByDefault([](PROPERTYID, VARIANT, IUIAutomationCondition** out) {
+        *out = nullptr;
+        return ErrorFail; // condition creation fails -> nodeByName degrades
+      });
+  const UiaProvider provider;
+  EXPECT_FALSE(provider.nodeByName(fakeWindow(), "Fehlt").has_value());
+}
+
+TEST_F(UiaProviderTest, NodeByNameIsNulloptForNullHandle) {
+  const UiaProvider provider;
+  EXPECT_FALSE(provider.nodeByName(nullptr, "X").has_value());
+}
+
+TEST_F(UiaProviderTest, NodeByNameIsNulloptWhenElementFromHandleFails) {
+  ON_CALL(automation_, ElementFromHandle(_, _))
+      .WillByDefault([](UIA_HWND, IUIAutomationElement** out) {
+        *out = nullptr;
+        return ErrorFail;
+      });
+  const UiaProvider provider;
+  EXPECT_FALSE(provider.nodeByName(fakeWindow(), "X").has_value());
+}
+
+TEST_F(UiaProviderTest, NodeByNameIsNulloptWhenFindFirstFails) {
+  NiceMock<MockUiElement> windowElement;
+  NiceMock<MockUiCondition> condition;
+  routeElementFromHandle(automation_, windowElement);
+  ON_CALL(automation_, CreatePropertyCondition(_, _, _))
+      .WillByDefault([&condition](PROPERTYID, VARIANT, IUIAutomationCondition** out) {
+        *out = &condition;
+        return S_OK;
+      });
+  ON_CALL(windowElement, FindFirstBuildCache(_, _, _, _))
+      .WillByDefault([](enum TreeScope, IUIAutomationCondition*, IUIAutomationCacheRequest*,
+                        IUIAutomationElement** out) {
+        *out = nullptr;
+        return ErrorFail;
+      });
+  const UiaProvider provider;
+  EXPECT_FALSE(provider.nodeByName(fakeWindow(), "X").has_value());
+}
+
+// An invalid-UTF-8 name converts to empty, so makeNameCondition refuses to search for it.
+TEST_F(UiaProviderTest, NodeByNameIsNulloptForInvalidUtf8Name) {
+  NiceMock<MockUiElement> windowElement;
+  routeElementFromHandle(automation_, windowElement);
+  const UiaProvider provider;
+  EXPECT_FALSE(provider.nodeByName(fakeWindow(), "\xC3").has_value()); // lone UTF-8 lead byte
+}
+
+// An empty name likewise converts to empty, exercising fromUtf8's empty-input path.
+TEST_F(UiaProviderTest, NodeByNameIsNulloptForEmptyName) {
+  NiceMock<MockUiElement> windowElement;
+  routeElementFromHandle(automation_, windowElement);
+  const UiaProvider provider;
+  EXPECT_FALSE(provider.nodeByName(fakeWindow(), "").has_value());
 }
 
 TEST_F(UiaProviderTest, NameIsEmptyWhenTheNameBstrIsNull) {

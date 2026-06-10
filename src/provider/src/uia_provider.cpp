@@ -8,9 +8,11 @@
 /// `UiaElementData` and handed to the pure `mapElement()`. All HRESULTs are
 /// checked so a missing property/pattern degrades to "absent" rather than
 /// crashing.
+#include <cstddef>
 #include <functional>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include <vox/provider/uia_provider.hpp>
@@ -71,12 +73,49 @@ std::string toUtf8(BSTR text) {
     return {};
   }
   std::string out(static_cast<std::size_t>(bytes), '\0');
-  if (const int written =
-          ::WideCharToMultiByte(CP_UTF8, 0, text, length, out.data(), bytes, nullptr, nullptr);
-      written != bytes) {
-    return {}; // conversion failed — degrade to empty rather than return filler
-  }
+  const int written =
+      ::WideCharToMultiByte(CP_UTF8, 0, text, length, out.data(), bytes, nullptr, nullptr);
+  out.resize(static_cast<std::size_t>(written)); // shrink to what was written (a no-op on success)
   return out;
+}
+
+/// Converts a UTF-8 string to a UTF-16 wide string. MB_ERR_INVALID_CHARS makes invalid UTF-8
+/// yield empty (a hard failure) rather than silently substituting U+FFFD.
+std::wstring fromUtf8(std::string_view utf8) {
+  if (utf8.empty()) {
+    return {};
+  }
+  const int count = ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(),
+                                          static_cast<int>(utf8.size()), nullptr, 0);
+  if (count <= 0) {
+    return {};
+  }
+  std::wstring wide(static_cast<std::size_t>(count), L'\0');
+  const int written = ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(),
+                                            static_cast<int>(utf8.size()), wide.data(), count);
+  wide.resize(static_cast<std::size_t>(written)); // shrink to what was written (a no-op on success)
+  return wide;
+}
+
+// Legacy fallback: standard Win32 controls reach UIA through the MSAA bridge and expose
+// state/value through the legacy IAccessible *properties* (read here as cached property
+// values), not the modern patterns. The pure mapper uses these only when the corresponding
+// modern pattern is absent.
+void extractLegacy(UiaElementData& data, IUIAutomationElement* element) {
+  VARIANT state{};
+  if (SUCCEEDED(element->GetCachedPropertyValue(UIA_LegacyIAccessibleStatePropertyId, &state)) &&
+      state.vt == VT_I4) {
+    data.legacyState = static_cast<unsigned>(state.lVal);
+  }
+  ::VariantClear(&state);
+
+  VARIANT value{};
+  if (SUCCEEDED(element->GetCachedPropertyValue(UIA_LegacyIAccessibleValuePropertyId, &value)) &&
+      value.vt == VT_BSTR) {
+    data.hasLegacyValue = true;
+    data.legacyValue = toUtf8(value.bstrVal); // toUtf8 treats null as ""
+  }
+  ::VariantClear(&value);
 }
 
 /// Pulls the cached properties/patterns of @p element into a plain snapshot.
@@ -140,11 +179,12 @@ UiaElementData extract(IUIAutomationElement* element) {
 
   if (ComPtr<IUIAutomationValuePattern> value;
       SUCCEEDED(element->GetCachedPatternAs(UIA_ValuePatternId, IID_PPV_ARGS(&value))) && value) {
-    // The pattern's presence (and its read-only-ness) is independent of whether
-    // the value text reads — capture it regardless.
-    data.hasValuePattern = true;
+    // Record read-only-ness only once IsReadOnly actually reads (independent of whether
+    // the value text reads), so a failed IsReadOnly read can fall back to the legacy state
+    // bits rather than being assumed not-read-only.
     BOOL readOnly = FALSE;
     if (SUCCEEDED(value->get_CachedIsReadOnly(&readOnly))) {
+      data.hasReadOnly = true;
       data.isReadOnly = readOnly != FALSE;
     }
     // Mark the value *present* only once it actually reads, so a failed read
@@ -157,6 +197,8 @@ UiaElementData extract(IUIAutomationElement* element) {
       ::SysFreeString(text);
     }
   }
+
+  extractLegacy(data, element);
 
   return data;
 }
@@ -215,6 +257,11 @@ public:
     added &= SUCCEEDED(cacheRequest_->AddPattern(UIA_ExpandCollapsePatternId));
     added &= SUCCEEDED(cacheRequest_->AddPattern(UIA_SelectionItemPatternId));
     added &= SUCCEEDED(cacheRequest_->AddPattern(UIA_ValuePatternId));
+    // Fallback for standard Win32 controls (the MSAA->UIA bridge), which surface state/value
+    // through the legacy IAccessible *properties* (read as cached property values), not the
+    // modern patterns above.
+    added &= SUCCEEDED(cacheRequest_->AddProperty(UIA_LegacyIAccessibleStatePropertyId));
+    added &= SUCCEEDED(cacheRequest_->AddProperty(UIA_LegacyIAccessibleValuePropertyId));
     if (!added) {
       // Don't run with a partially populated cache request (that would look like
       // spurious "missing properties"); degrade to no reads instead.
@@ -277,7 +324,61 @@ public:
     handler_.Reset();
   }
 
+  [[nodiscard]] bool ready() const {
+    return automation_ && cacheRequest_;
+  }
+
+  // Finds the first element named @p name in @p window's subtree, or null.
+  [[nodiscard]] ComPtr<IUIAutomationElement> findNamed(IUIAutomationElement* window,
+                                                       std::string_view name) const {
+    ComPtr<IUIAutomationCondition> condition;
+    if (!makeNameCondition(name, &condition)) {
+      return nullptr;
+    }
+    ComPtr<IUIAutomationElement> found;
+    if (const HRESULT findHr = window->FindFirstBuildCache(TreeScope_Subtree, condition.Get(),
+                                                           cacheRequest_.Get(), &found);
+        FAILED(findHr) || !found) {
+      return nullptr;
+    }
+    return found;
+  }
+
+  [[nodiscard]] std::optional<vox::model::AccessibleNode> nodeByName(HWND windowHandle,
+                                                                     std::string_view name) const {
+    if (windowHandle == nullptr || !ready()) {
+      return std::nullopt;
+    }
+    ComPtr<IUIAutomationElement> window;
+    if (const HRESULT windowHr =
+            automation_->ElementFromHandle(static_cast<UIA_HWND>(windowHandle), &window);
+        FAILED(windowHr) || !window) {
+      return std::nullopt;
+    }
+    const ComPtr<IUIAutomationElement> found = findNamed(window.Get(), name);
+    if (!found) {
+      return std::nullopt;
+    }
+    return mapElement(extract(found.Get()));
+  }
+
 private:
+  // Builds a "Name == name" property condition (the BSTR is copied into the condition).
+  [[nodiscard]] bool makeNameCondition(std::string_view name, IUIAutomationCondition** out) const {
+    const std::wstring wide = fromUtf8(name);
+    if (wide.empty()) {
+      return false; // empty or invalid-UTF-8 name: fail rather than search for an empty name
+    }
+    VARIANT value;
+    ::VariantInit(&value);
+    value.vt = VT_BSTR;
+    value.bstrVal = ::SysAllocString(wide.c_str());
+    const bool ok = value.bstrVal != nullptr &&
+                    SUCCEEDED(automation_->CreatePropertyCondition(UIA_NamePropertyId, value, out));
+    ::VariantClear(&value);
+    return ok;
+  }
+
   bool comInitialized_ = false;
   ComPtr<IUIAutomation> automation_;
   ComPtr<IUIAutomationCacheRequest> cacheRequest_;
@@ -298,6 +399,11 @@ void UiaProvider::start(FocusChangedCallback onFocusChanged) {
 
 void UiaProvider::stop() {
   impl_->stop();
+}
+
+std::optional<vox::model::AccessibleNode> UiaProvider::nodeByName(HWND__* windowHandle,
+                                                                  std::string_view name) const {
+  return impl_->nodeByName(windowHandle, name);
 }
 
 } // namespace vox::provider

@@ -21,9 +21,13 @@
 
 #  include <memory>
 #  include <optional>
+#  include <string_view>
 
 #  include <vox/model/accessible_node.hpp>
 #  include <vox/provider/iprovider.hpp>
+
+// Win32 window handle (HWND): forward-declared so this header needs no <windows.h>.
+struct HWND__;
 
 namespace vox::provider {
 
@@ -49,6 +53,15 @@ public:
 
   /// @brief Unsubscribes from focus-change events.
   void stop() override;
+
+  /// @brief Reads the first element named @p name in the subtree of window @p windowHandle
+  ///        (an `HWND`, forward-declared above so this header needs no Windows headers), or
+  ///        `std::nullopt` if not found/unreadable. The focus path can only reach focusable
+  ///        controls; this lets the #40 integration test read non-focusable roles (static
+  ///        text, menu items) by name. An empty or invalid-UTF-8 @p name yields `std::nullopt`
+  ///        (it is rejected rather than searched for).
+  [[nodiscard]] std::optional<vox::model::AccessibleNode> nodeByName(HWND__* windowHandle,
+                                                                     std::string_view name) const;
 
 private:
   class Impl;

@@ -103,6 +103,7 @@ jobs:
       - name: Build + test (audio device required)
         env:
           VOX_REQUIRE_AUDIO_DEVICE: "1"
+          VOX_REQUIRE_UIA_TREE: "1" # the UIA provider integration test (#40)
         run: just test ${{ matrix.test_preset }}
       - name: Report test results
         if: ${{ !cancelled() }}
@@ -173,6 +174,7 @@ jobs:
         env:
           VOX_REQUIRE_GERMAN_VOICE: "1"
           VOX_REQUIRE_AUDIO_DEVICE: "1"
+          VOX_REQUIRE_UIA_TREE: "1" # the UIA provider integration test (#40)
         run: just test x64-msvc-release
       - name: Report test results
         if: ${{ !cancelled() }}

@@ -60,12 +60,13 @@ constexpr DWORD ReadyTimeoutMs = 10000;
 constexpr int MaxPollAttempts = 200; // ~10s of polling at PollIntervalMs while focus cycles
 constexpr int PollIntervalMs = 50;
 
-// One expected control. An empty `name` matches by role alone (the edit has no accessible
-// name); `state`, if set, must be present; a non-empty `value` must match. The states and
-// value come from the legacy MSAA bridge (standard Win32 controls expose them there, not
-// via the modern Toggle/Value patterns) — see the provider's mapper fallback. `utterance`,
-// if set, is the German text OutputManager::announce() must render from the read node (the
-// end-to-end check). It is left empty for the edit, whose accessible name is not pinned.
+// One expected control. `name` must match exactly (every control here is named — the edits
+// via their preceding STATIC label); `state`, if set, must be present; a non-empty `value`
+// must match. The states and value come from the legacy MSAA bridge (standard Win32 controls
+// expose them there, not via the modern Toggle/Value patterns) — see the provider's mapper
+// fallback. `utterance`, if set, is the German text OutputManager::announce() must render
+// from the read node (the end-to-end check). (find() treats an empty `name` as a wildcard,
+// but none is used now.)
 struct ExpectedControl {
   Role role;
   std::string_view name;

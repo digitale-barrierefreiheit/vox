@@ -250,6 +250,28 @@ std::vector<AccessibleNode> collectFocusedControls(const UiaProvider& provider) 
   return seen;
 }
 
+// Asserts one collected control against its spec: focusability, the headline state, a present
+// value for value-bearing roles, and the end-to-end German utterance.
+void assertControl(const AccessibleNode& node, const ControlSpec& expected,
+                   const OutputManager& output) {
+  EXPECT_TRUE(node.states.test(State::Focusable)) << "not focusable: " << describe(node);
+  if (expected.state.has_value()) {
+    EXPECT_TRUE(node.states.test(*expected.state))
+        << "expected state not read on " << describe(node);
+  }
+  if (expected.role == Role::Edit || expected.role == Role::Combobox) {
+    // Value-bearing roles must report a *present* value — the empty edit ("Suche") is
+    // present-but-empty, distinct from a non-value control's absent value.
+    EXPECT_TRUE(node.value.has_value()) << "value not present on " << describe(node);
+    EXPECT_EQ(node.value.value_or(""), expected.value) << "value mismatch on " << describe(node);
+  }
+  if (!expected.utterance.empty()) {
+    // End-to-end: real element -> provider -> AccessibleNode -> German utterance.
+    EXPECT_EQ(output.announce(node).text, expected.utterance)
+        << "utterance mismatch on " << describe(node);
+  }
+}
+
 TEST_F(UiaProviderItest, ReadsEachFocusableControl) {
   const UiaProvider provider;
   const std::vector<AccessibleNode> seen = collectFocusedControls(provider);
@@ -272,26 +294,9 @@ TEST_F(UiaProviderItest, ReadsEachFocusableControl) {
   // sensitive (a control can be collected mid-transition).
   const OutputManager output(Lexicon::parse(vox::german::DefaultGermanLexiconData));
   for (const ControlSpec& expected : ControlTree) {
-    const std::optional<AccessibleNode> node = find(seen, expected.role, expected.name);
-    if (!node.has_value()) {
-      continue; // presence guaranteed by haveAllExpected; this guard keeps the access checked
-    }
-    EXPECT_TRUE(node->states.test(State::Focusable)) << "not focusable: " << describe(*node);
-    if (expected.state.has_value()) {
-      EXPECT_TRUE(node->states.test(*expected.state))
-          << "expected state not read on " << describe(*node);
-    }
-    if (expected.role == Role::Edit || expected.role == Role::Combobox) {
-      // Value-bearing roles must report a *present* value — the empty edit ("Suche") is
-      // present-but-empty, distinct from a non-value control's absent value.
-      EXPECT_TRUE(node->value.has_value()) << "value not present on " << describe(*node);
-      EXPECT_EQ(node->value.value_or(""), expected.value)
-          << "value mismatch on " << describe(*node);
-    }
-    if (!expected.utterance.empty()) {
-      // End-to-end: real element -> provider -> AccessibleNode -> German utterance.
-      EXPECT_EQ(output.announce(*node).text, expected.utterance)
-          << "utterance mismatch on " << describe(*node);
+    if (const std::optional<AccessibleNode> node = find(seen, expected.role, expected.name);
+        node.has_value()) {
+      assertControl(*node, expected, output);
     }
   }
 }

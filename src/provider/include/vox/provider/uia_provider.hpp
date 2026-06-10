@@ -58,7 +58,8 @@ public:
   ///        (an `HWND`, forward-declared above so this header needs no Windows headers), or
   ///        `std::nullopt` if not found/unreadable. The focus path can only reach focusable
   ///        controls; this lets the #40 integration test read non-focusable roles (static
-  ///        text, menu items) by name.
+  ///        text, menu items) by name. An empty or invalid-UTF-8 @p name yields `std::nullopt`
+  ///        (it is rejected rather than searched for).
   [[nodiscard]] std::optional<vox::model::AccessibleNode> nodeByName(HWND__* windowHandle,
                                                                      std::string_view name) const;
 

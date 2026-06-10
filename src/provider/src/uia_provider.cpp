@@ -93,8 +93,11 @@ std::wstring fromUtf8(std::string_view utf8) {
     return {};
   }
   std::wstring wide(static_cast<std::size_t>(count), L'\0');
-  ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(), static_cast<int>(utf8.size()),
-                        wide.data(), count);
+  const int written = ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(),
+                                            static_cast<int>(utf8.size()), wide.data(), count);
+  if (written != count) {
+    return {}; // the write pass disagreed with the sizing pass — degrade to empty
+  }
   return wide;
 }
 
@@ -367,6 +370,9 @@ private:
   // Builds a "Name == name" property condition (the BSTR is copied into the condition).
   [[nodiscard]] bool makeNameCondition(std::string_view name, IUIAutomationCondition** out) const {
     const std::wstring wide = fromUtf8(name);
+    if (wide.empty()) {
+      return false; // empty or invalid-UTF-8 name: fail rather than search for an empty name
+    }
     VARIANT value;
     ::VariantInit(&value);
     value.vt = VT_BSTR;

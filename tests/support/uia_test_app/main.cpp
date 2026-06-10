@@ -255,6 +255,7 @@ void buildNonFocusable(HWND parent) {
       ::AppendMenuW(popup, MF_STRING, 1, L"Neu");
       ::AppendMenuW(bar, MF_POPUP, reinterpret_cast<UINT_PTR>(popup), name.c_str());
       ::SetMenu(parent, bar);
+      ::DrawMenuBar(parent); // force a non-client repaint so UIA sees the menu item immediately
       break;
     }
     }

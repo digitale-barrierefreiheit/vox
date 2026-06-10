@@ -281,7 +281,10 @@ TEST_F(UiaProviderItest, ReadsEachFocusableControl) {
       EXPECT_TRUE(node->states.test(*expected.state))
           << "expected state not read on " << describe(*node);
     }
-    if (!expected.value.empty()) {
+    if (expected.role == Role::Edit || expected.role == Role::Combobox) {
+      // Value-bearing roles must report a *present* value — the empty edit ("Suche") is
+      // present-but-empty, distinct from a non-value control's absent value.
+      EXPECT_TRUE(node->value.has_value()) << "value not present on " << describe(*node);
       EXPECT_EQ(node->value.value_or(""), expected.value)
           << "value mismatch on " << describe(*node);
     }

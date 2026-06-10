@@ -67,18 +67,24 @@ HWND addControl(HWND parent, const ControlSpec& spec) {
                            nullptr);
 }
 
+struct LabeledEditSpec {
+  int top;
+  const wchar_t* label;
+  const wchar_t* text;
+  DWORD extraStyle;
+};
+
 // Creates a STATIC label and an EDIT on one row, the label first so the MSAA/UIA bridge
 // derives the edit's accessible name from the label text (a preceding-static label). The
 // edit's window text is its value. Returns the edit (the focusable control the test reads).
-HWND addLabeledEdit(HWND parent, int top, const wchar_t* label, const wchar_t* text,
-                    DWORD extraStyle) {
+HWND addLabeledEdit(HWND parent, const LabeledEditSpec& spec) {
   HINSTANCE instance = ::GetModuleHandleW(nullptr);
-  ::CreateWindowExW(0, L"STATIC", label, WS_CHILD | WS_VISIBLE, 10, top + 4, 70, 20, parent,
-                    nullptr, instance, nullptr);
-  return ::CreateWindowExW(0, L"EDIT", text,
+  ::CreateWindowExW(0, L"STATIC", spec.label, WS_CHILD | WS_VISIBLE, 10, spec.top + 4, 70, 20,
+                    parent, nullptr, instance, nullptr);
+  return ::CreateWindowExW(0, L"EDIT", spec.text,
                            WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL |
-                               extraStyle,
-                           85, top, 220, 24, parent, nullptr, instance, nullptr);
+                               spec.extraStyle,
+                           85, spec.top, 220, 24, parent, nullptr, instance, nullptr);
 }
 
 // Builds the known control tree and returns the first control (the initial focus). Each
@@ -109,9 +115,10 @@ HWND buildControlTree(HWND parent) {
                                    .top = 112});
   ::SendMessageW(radio, BM_SETCHECK, BST_CHECKED, 0);
 
-  addLabeledEdit(parent, 146, L"Name", L"Hallo", 0);
-  addLabeledEdit(parent, 180, L"Suche", L"", 0);
-  addLabeledEdit(parent, 214, L"Pfad", L"system32", ES_READONLY);
+  addLabeledEdit(parent, {.top = 146, .label = L"Name", .text = L"Hallo", .extraStyle = 0});
+  addLabeledEdit(parent, {.top = 180, .label = L"Suche", .text = L"", .extraStyle = 0});
+  addLabeledEdit(parent,
+                 {.top = 214, .label = L"Pfad", .text = L"system32", .extraStyle = ES_READONLY});
 
   return firstButton;
 }

@@ -102,6 +102,20 @@ HWND addLabeledCombo(HWND parent, int top, const wchar_t* label) {
   return combo;
 }
 
+// Creates a single-select LISTBOX with two items and the first selected. When the listbox
+// has keyboard focus the system's focused element is the focused item, so the provider reads
+// a ListItem. Returns the listbox.
+HWND addListBox(HWND parent, int top) {
+  HINSTANCE instance = ::GetModuleHandleW(nullptr);
+  HWND list = ::CreateWindowExW(0, L"LISTBOX", nullptr,
+                                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | LBS_NOTIFY, 10,
+                                top, 295, 50, parent, nullptr, instance, nullptr);
+  ::SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Eintrag 1"));
+  ::SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Eintrag 2"));
+  ::SendMessageW(list, LB_SETCURSEL, 0, 0); // select "Eintrag 1"
+  return list;
+}
+
 // Builds the known control tree and returns the first control (the initial focus). Each
 // button/checkbox/radio's window text is its accessible name; checkboxes/radio get an
 // explicit checked/indeterminate state. The edits are labelled (a preceding STATIC), so the
@@ -135,6 +149,7 @@ HWND buildControlTree(HWND parent) {
   addLabeledEdit(parent,
                  {.top = 214, .label = L"Pfad", .text = L"system32", .extraStyle = ES_READONLY});
   addLabeledCombo(parent, 248, L"Stimme");
+  addListBox(parent, 282);
 
   return firstButton;
 }
@@ -173,7 +188,7 @@ int main(int argc, char** argv) {
   }
 
   HWND window = ::CreateWindowExW(WS_EX_CONTROLPARENT, WindowClassName, WindowTitle,
-                                  WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 360, 360,
+                                  WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 360, 400,
                                   nullptr, nullptr, instance, nullptr);
   if (window == nullptr) {
     return 1;

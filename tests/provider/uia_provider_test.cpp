@@ -406,6 +406,18 @@ TEST_F(UiaProviderTest, NodeByNameIsNulloptForInvalidUtf8Name) {
   EXPECT_FALSE(provider.nodeByName(fakeWindow(), "\xC3").has_value()); // lone UTF-8 lead byte
 }
 
+// An empty name likewise converts to empty, exercising fromUtf8's empty-input path.
+TEST_F(UiaProviderTest, NodeByNameIsNulloptForEmptyName) {
+  NiceMock<MockUiElement> windowElement;
+  ON_CALL(automation_, ElementFromHandle(_, _))
+      .WillByDefault([&windowElement](UIA_HWND, IUIAutomationElement** out) {
+        *out = &windowElement;
+        return S_OK;
+      });
+  const UiaProvider provider;
+  EXPECT_FALSE(provider.nodeByName(fakeWindow(), "").has_value());
+}
+
 TEST_F(UiaProviderTest, NameIsEmptyWhenTheNameBstrIsNull) {
   ON_CALL(element_, get_CachedName(_)).WillByDefault([](BSTR* out) {
     *out = nullptr; // null BSTR -> toUtf8 yields empty

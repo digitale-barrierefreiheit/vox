@@ -73,11 +73,9 @@ std::string toUtf8(BSTR text) {
     return {};
   }
   std::string out(static_cast<std::size_t>(bytes), '\0');
-  if (const int written =
-          ::WideCharToMultiByte(CP_UTF8, 0, text, length, out.data(), bytes, nullptr, nullptr);
-      written != bytes) {
-    return {}; // conversion failed — degrade to empty rather than return filler
-  }
+  const int written =
+      ::WideCharToMultiByte(CP_UTF8, 0, text, length, out.data(), bytes, nullptr, nullptr);
+  out.resize(static_cast<std::size_t>(written)); // shrink to what was written (a no-op on success)
   return out;
 }
 
@@ -93,11 +91,9 @@ std::wstring fromUtf8(std::string_view utf8) {
     return {};
   }
   std::wstring wide(static_cast<std::size_t>(count), L'\0');
-  if (const int written = ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(),
-                                                static_cast<int>(utf8.size()), wide.data(), count);
-      written != count) {
-    return {}; // the write pass disagreed with the sizing pass — degrade to empty
-  }
+  const int written = ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(),
+                                            static_cast<int>(utf8.size()), wide.data(), count);
+  wide.resize(static_cast<std::size_t>(written)); // shrink to what was written (a no-op on success)
   return wide;
 }
 

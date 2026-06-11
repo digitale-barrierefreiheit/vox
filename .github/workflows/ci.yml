@@ -192,13 +192,16 @@ jobs:
   # The pipeline percentiles are additionally compared against the dev baseline
   # (the benchmark-data branch) with a generous relative threshold: hosted
   # runners are noisy, so the absolute in-process budget stays authoritative.
+  # This job is read-only (it runs PR code); publishing the dev baseline needs
+  # contents:write and lives in the separate benchmarks-baseline job below,
+  # which runs only on dev pushes (trusted code).
   # ---------------------------------------------------------------------------
   benchmarks:
     name: benchmarks-ttfa
     runs-on: windows-2025
     permissions:
-      contents: write # store the dev baseline on the benchmark-data branch
-      pull-requests: write # comment on PRs when a relative regression alerts
+      contents: read
+      pull-requests: write # per-run results comment + regression alerts
     steps:
       - uses: actions/checkout@v6
       - uses: lukka/get-cmake@591817e96fcad43505fb4eae36172462abb3a42e # v4.3.3
@@ -230,14 +233,49 @@ jobs:
         with:
           vcpkgGitCommitId: ${{ env.VCPKG_BASELINE }}
       - name: Build + run the microbenchmarks (absolute budgets enforced)
+        id: bench
         env:
           VOX_BENCH_SAPI: "1"
           VOX_REQUIRE_TTFA_BUDGET: "1"
         run: just bench
+      # Per-run results summary + PR comment (#65 run-summaries pattern), posted
+      # on success AND failure — a blown budget should be readable at a glance.
+      - name: Build benchmark summary + comment
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          {
+            echo '<!-- vox-benchmarks run=${{ github.run_id }} -->'
+            echo '## 📈 TTFA benchmarks — run [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})'
+            if [ "${{ steps.bench.outcome }}" = success ]; then
+              echo '✅ All latency budgets held.'
+            else
+              echo '❌ Benchmark run failed — a latency budget was exceeded or the harness errored (see the job log).'
+            fi
+            if [ -f benchmark-results.json ]; then
+              echo ''
+              echo '| Benchmark | p50 | p99 | p99.9 | Budget |'
+              echo '|---|--:|--:|--:|---|'
+              jq -r -f tools/bench-summary.jq benchmark-results.json
+            fi
+          } > benchmark-comment.md
+          cat benchmark-comment.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Post benchmark PR comment
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        continue-on-error: true
+        uses: ./.github/actions/upsert-comment
+        with:
+          marker: '<!-- vox-benchmarks run=${{ github.run_id }} -->'
+          body-file: benchmark-comment.md
       - name: Convert the pipeline percentiles for the baseline comparison
         shell: bash
         run: jq -f tools/bench-to-action.jq benchmark-results.json > benchmark-data.json
-      - name: Compare against the dev baseline (stored on dev pushes)
+      # PRs: compare against the latest dev baseline (read-only), alert + fail
+      # on a relative regression. The baseline itself is published by the
+      # benchmarks-baseline job on dev pushes.
+      - name: Compare against the dev baseline
+        if: ${{ github.event_name == 'pull_request' }}
         uses: benchmark-action/github-action-benchmark@52576c92bccf6ac60c8223ec7eb2565637cae9ba # v1.22.1
         with:
           name: TTFA pipeline
@@ -250,7 +288,43 @@ jobs:
           comment-on-alert: true
           fail-on-alert: true
           summary-always: true
-          auto-push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/dev' }}
+          auto-push: false
+          save-data-file: false
+      - name: Hand the percentiles to the baseline job
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/dev' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-data
+          path: benchmark-data.json
+
+  # ---------------------------------------------------------------------------
+  # Publishes the dev baseline (benchmark-data branch) from the benchmarks job's
+  # converted percentiles. Separate job so contents:write is only ever granted
+  # to trusted dev-push code, never to PR code (least privilege).
+  # ---------------------------------------------------------------------------
+  benchmarks-baseline:
+    name: benchmarks-baseline (dev)
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/dev' }}
+    needs: benchmarks
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # push the new baseline to the benchmark-data branch
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          name: benchmark-data
+      - name: Store the new dev baseline
+        uses: benchmark-action/github-action-benchmark@52576c92bccf6ac60c8223ec7eb2565637cae9ba # v1.22.1
+        with:
+          name: TTFA pipeline
+          tool: customSmallerIsBetter
+          output-file-path: benchmark-data.json
+          gh-pages-branch: benchmark-data
+          benchmark-data-dir-path: ttfa
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          summary-always: true
+          auto-push: true
 
   # ---------------------------------------------------------------------------
   # Static analysis: clang-tidy over the compile database (incl. Core Guidelines).

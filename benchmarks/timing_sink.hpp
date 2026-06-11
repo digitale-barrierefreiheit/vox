@@ -7,13 +7,17 @@
 /// Benchmark harness only (#41). The Reader's worker thread calls write();
 /// the benchmark thread arms the sink, triggers a focus event, and blocks on
 /// awaitFirstWrite() — the timestamp is taken *inside* write() on the worker
-/// thread, so the waiter's own wakeup latency never pollutes the measurement.
+/// thread (before any locking), so neither the waiter's wakeup latency nor
+/// lock contention pollutes the measurement. Both waits are timeout-bound: a
+/// pipeline that stops producing PCM fails the benchmark fast with a clear
+/// error instead of hanging the CI job into its timeout.
 #ifndef VOX_BENCHMARKS_TIMING_SINK_HPP
 #define VOX_BENCHMARKS_TIMING_SINK_HPP
 
-#include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstddef>
+#include <mutex>
 #include <span>
 
 #include <vox/audio/iaudio_sink.hpp>
@@ -21,7 +25,7 @@
 namespace vox::bench {
 
 /// Records when the first write() of the current cycle arrived and how many
-/// bytes have been written since arm(), with blocking waits for both.
+/// bytes have been written since arm(), with timeout-bound waits for both.
 class TimingSink final : public vox::audio::IAudioSink {
 public:
   void start() override {}
@@ -31,45 +35,51 @@ public:
   void flush() override {} // barge-in: nothing is queued here to drop
 
   void write(std::span<const std::byte> pcm) override {
-    if (!firstWriteSeen_.load(std::memory_order_relaxed)) {
-      firstWriteAt_ = std::chrono::steady_clock::now(); // published by the release below
-      firstWriteSeen_.store(true, std::memory_order_release);
-      firstWriteSeen_.notify_one();
+    const auto now = std::chrono::steady_clock::now(); // timestamp before the lock
+    {
+      const std::scoped_lock lock(mutex_);
+      if (!firstWriteSeen_) {
+        firstWriteAt_ = now;
+        firstWriteSeen_ = true;
+      }
+      bytesWritten_ += pcm.size();
     }
-    bytesWritten_.fetch_add(pcm.size(), std::memory_order_release);
-    bytesWritten_.notify_one();
+    written_.notify_one();
   }
 
   /// Re-arms for the next cycle. Call only while the producer is idle (i.e.
   /// after awaitBytes() saw the previous utterance complete).
   void arm() {
-    bytesWritten_.store(0, std::memory_order_relaxed);
-    firstWriteSeen_.store(false, std::memory_order_relaxed);
+    const std::scoped_lock lock(mutex_);
+    firstWriteSeen_ = false;
+    bytesWritten_ = 0;
   }
 
-  /// Blocks until the first write() since arm() has happened.
-  void awaitFirstWrite() {
-    firstWriteSeen_.wait(false, std::memory_order_acquire);
+  /// Waits for the first write() since arm(). False on @p timeout — the
+  /// pipeline produced no PCM; fail the benchmark instead of hanging.
+  [[nodiscard]] bool awaitFirstWrite(std::chrono::milliseconds timeout) {
+    std::unique_lock lock(mutex_);
+    return written_.wait_for(lock, timeout, [this] { return firstWriteSeen_; });
   }
 
-  /// When that first write() arrived. Valid after awaitFirstWrite() returned.
+  /// When that first write() arrived. Valid after awaitFirstWrite() succeeded.
   [[nodiscard]] std::chrono::steady_clock::time_point firstWriteAt() const {
+    const std::scoped_lock lock(mutex_);
     return firstWriteAt_;
   }
 
-  /// Blocks until at least @p expected bytes arrived since arm() — used to
-  /// drain a whole utterance so cycles never barge into each other.
-  void awaitBytes(std::size_t expected) {
-    auto seen = bytesWritten_.load(std::memory_order_acquire);
-    while (seen < expected) {
-      bytesWritten_.wait(seen, std::memory_order_acquire);
-      seen = bytesWritten_.load(std::memory_order_acquire);
-    }
+  /// Waits until at least @p expected bytes arrived since arm() — drains a
+  /// whole utterance so cycles never barge into each other. False on timeout.
+  [[nodiscard]] bool awaitBytes(std::size_t expected, std::chrono::milliseconds timeout) {
+    std::unique_lock lock(mutex_);
+    return written_.wait_for(lock, timeout, [this, expected] { return bytesWritten_ >= expected; });
   }
 
 private:
-  std::atomic<bool> firstWriteSeen_{false};
-  std::atomic<std::size_t> bytesWritten_{0};
+  mutable std::mutex mutex_;
+  std::condition_variable written_;
+  bool firstWriteSeen_{false};
+  std::size_t bytesWritten_{0};
   std::chrono::steady_clock::time_point firstWriteAt_;
 };
 

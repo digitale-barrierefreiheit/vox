@@ -68,6 +68,12 @@ void ttfaSapiFirstChunk(benchmark::State& state) {
   }
 
   const std::string text = vox::bench::makeOutput().announce(vox::bench::savedButton()).text;
+
+  // Warm up: the very first synthesize() pays one-time engine/voice
+  // initialization (>1 s observed on CI) — app-startup cost, not the
+  // steady-state announce latency Q1 budgets. One throwaway call excludes it.
+  engine->synthesize(text, [&engine](std::span<const std::byte>) { engine->cancel(); });
+
   std::vector<double> samplesUs;
   samplesUs.reserve(static_cast<std::size_t>(state.max_iterations));
 
@@ -83,7 +89,7 @@ void ttfaSapiFirstChunk(benchmark::State& state) {
       }
     });
     if (!seenFirstChunk) {
-      state.SkipWithError("the engine delivered no PCM");
+      vox::bench::failBenchmark(state, "the engine delivered no PCM");
       return;
     }
     const std::chrono::duration<double, std::micro> ttfa = firstChunkAt - requested;

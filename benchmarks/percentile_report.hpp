@@ -58,6 +58,14 @@ inline std::vector<std::string>& budgetViolations() {
   return violations;
 }
 
+/// Fails @p state with @p message AND records it as a violation: google-
+/// benchmark reports a skipped-with-error benchmark but still exits 0, so the
+/// registry is what turns a broken harness into a non-zero exit (see main()).
+inline void failBenchmark(benchmark::State& state, const std::string& message) {
+  state.SkipWithError(message);
+  budgetViolations().push_back(state.name() + ": " + message);
+}
+
 /// One absolute-budget assertion: @p metric (e.g. "p99") measured at
 /// @p valueUs against the allowed @p budgetUs.
 struct BudgetCheck {

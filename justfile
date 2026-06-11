@@ -112,11 +112,16 @@ bench:
 
 # 📈 Build (Release) + run the TTFA microbenchmarks (#41); writes benchmark-results.json.
 # (The real-engine SAPI measurement is Windows-only; this runs the pipeline gate.)
-[unix]
+[linux]
 bench:
     cmake --preset linux-clang-bench
     cmake --build --preset linux-clang-bench-release
     "{{root}}/build/linux-clang-bench/benchmarks/Release/vox_benchmarks" --benchmark_out="{{root}}/benchmark-results.json" --benchmark_out_format=json
+
+# 📈 Benchmarks run on Windows and Linux; there is no macOS bench preset yet.
+[macos]
+bench:
+    @echo 'Benchmarks run on Windows (x64-msvc-bench) and Linux (linux-clang-bench); no macOS preset yet.'
 
 # 🧽 Delete the build/ directory.
 clean:

@@ -43,6 +43,10 @@ constexpr std::size_t PcmBytesPerTextByte = 2;
 /// this absolute gate robust on noisy hosted runners.
 constexpr double PipelineBudgetUs = 20'000.0;
 
+/// A pipeline that produces no PCM within this fails the benchmark with a
+/// clear error instead of hanging the CI job into its timeout.
+constexpr std::chrono::milliseconds WriteTimeout{5'000};
+
 /// One cycle: focus event -> worker wakeup -> announce -> synthesize -> first
 /// PCM write. The iteration time is taken inside the sink on the worker thread.
 void ttfaPipeline(benchmark::State& state) {
@@ -65,13 +69,22 @@ void ttfaPipeline(benchmark::State& state) {
     sink.arm();
     const auto requested = std::chrono::steady_clock::now();
     provider.simulateFocusChange(node);
-    sink.awaitFirstWrite();
+    if (!sink.awaitFirstWrite(WriteTimeout)) {
+      vox::bench::failBenchmark(state, "the pipeline delivered no PCM within the timeout");
+      break;
+    }
     const std::chrono::duration<double, std::micro> ttfa = sink.firstWriteAt() - requested;
     state.SetIterationTime(ttfa.count() / 1'000'000.0);
     samplesUs.push_back(ttfa.count());
-    sink.awaitBytes(utterancePcmBytes);
+    if (!sink.awaitBytes(utterancePcmBytes, WriteTimeout)) {
+      vox::bench::failBenchmark(state, "the utterance did not finish within the timeout");
+      break;
+    }
   }
   reader.stop();
+  if (samplesUs.empty()) {
+    return; // failed above — no percentiles to report
+  }
 
   const vox::bench::Percentiles percentiles = vox::bench::reportPercentiles(state, samplesUs);
   vox::bench::enforceBudget(

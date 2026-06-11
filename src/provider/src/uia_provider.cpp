@@ -224,14 +224,15 @@ public:
       : callback_(std::move(callback)) {}
 
   HRESULT STDMETHODCALLTYPE HandleFocusChangedEvent(IUIAutomationElement* sender) override {
-    IProvider::FocusChangedCallback callback;
-    {
-      const std::scoped_lock lock(mutex_);
-      callback = callback_;
-    }
     // An exception must never escape across the COM ABI boundary (it could
-    // terminate the process), so the callback is invoked inside a catch-all.
+    // terminate the process). The whole body sits inside the firewall: even
+    // the lock and the std::function copy can throw in principle.
     try {
+      IProvider::FocusChangedCallback callback;
+      {
+        const std::scoped_lock lock(mutex_);
+        callback = callback_;
+      }
       if (sender != nullptr && callback) {
         callback(mapElement(extract(sender)));
       }
@@ -297,22 +298,25 @@ public:
   }
 
   ~Impl() {
-    // Destructor firewall: stop() can lock and allocate (shelving), and a
-    // destructor must never throw (S1048); the COM releases below are safe.
-    try {
-      stop(); // detaches the active handler and retries any shelved removals
-      if (!shelved_.empty() && automation_) {
-        // Escalation of last resort (#60): individual removals kept failing.
-        // Safe big hammer — this provider owns its *private* IUIAutomation
-        // instance, and these handlers are the only ones registered on it.
-        automation_->RemoveAllEventHandlers();
-        // Either way the shelved sinks are detached (inert), and UIA holds its
-        // own COM references to anything still registered — releasing ours now
-        // cannot leave a registered handler dangling.
-        shelved_.clear();
-      }
-      // NOLINTNEXTLINE(bugprone-empty-catch) — dtor firewall: must never throw.
-    } catch (...) {
+    // Teardown is stop() minus the shelving: shelving exists to keep a stuck
+    // handler alive for a future start(), which cannot happen anymore — and
+    // it allocates, which a destructor must not risk (S1048). A handler whose
+    // removal still fails goes straight to the escalation.
+    bool stuck = false;
+    if (handler_) {
+      handler_->detach();
+      stuck = !automation_ || FAILED(automation_->RemoveFocusChangedEventHandler(handler_.Get()));
+      handler_.Reset();
+    }
+    retryShelvedRemovals();
+    if ((stuck || !shelved_.empty()) && automation_) {
+      // Escalation of last resort (#60): individual removals kept failing.
+      // Safe big hammer — this provider owns its *private* IUIAutomation
+      // instance, and these handlers are the only ones registered on it.
+      automation_->RemoveAllEventHandlers();
+      // The sinks are detached (inert), and UIA holds its own COM references
+      // to anything still registered — releasing ours cannot dangle.
+      shelved_.clear();
     }
     cacheRequest_.Reset();
     automation_.Reset();

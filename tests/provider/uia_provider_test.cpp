@@ -502,6 +502,15 @@ TEST_F(UiaProviderTest, DestructionEscalatesToRemoveAllWhenRemovalKeepsFailing) 
   } // the destructor retries, then escalates to RemoveAllEventHandlers
 }
 
+TEST_F(UiaProviderTest, DestructionEscalatesWhenTheActiveHandlerCannotBeRemoved) {
+  EXPECT_CALL(automation_, RemoveFocusChangedEventHandler(_)).WillRepeatedly(Return(ErrorFail));
+  EXPECT_CALL(automation_, RemoveAllEventHandlers()).WillOnce(Return(S_OK));
+  {
+    UiaProvider provider;
+    provider.start([](const AccessibleNode&) { /* destroyed while still registered */ });
+  } // no stop(): teardown detaches, fails the removal, and escalates directly
+}
+
 /// A degraded provider (automation creation failed) accepts start()/stop() as
 /// safe no-ops rather than crashing.
 TEST(UiaProviderDegraded, StartAndStopAreNoOpsWhenAutomationIsUnavailable) {

@@ -15,6 +15,6 @@ def fmtus:
 | (.counters // .) as $c
 | (.name | sub("/.*$"; "")) as $name
 | ( if $name == "ttfaPipeline" then "p99 ≤ 20 ms (10% of Q1)"
-    elif $name == "ttfaSapiFirstChunk" then "p50 < 200 ms (Q1)"
+    elif $name == "ttfaSapiFirstChunk" then "p50 ≤ 200 ms (Q1)"
     else "—" end ) as $budget
 | "| `\($name)` | \($c.p50_us | fmtus) | \($c.p99_us | fmtus) | \($c.p999_us | fmtus) | \($budget) |"

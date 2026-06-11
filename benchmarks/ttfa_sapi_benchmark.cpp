@@ -13,7 +13,7 @@
 ///
 /// Opt-in via VOX_BENCH_SAPI=1 (needs an installed SAPI voice; German is
 /// preferred, matching the product). With VOX_REQUIRE_TTFA_BUDGET=1 the §1.2
-/// Q1 budget — first audio under 200 ms — becomes a hard pass/fail.
+/// Q1 budget — p50 ≤ 200 ms to first audio — becomes a hard pass/fail.
 #if defined(_WIN32)
 
 #  include <benchmark/benchmark.h>

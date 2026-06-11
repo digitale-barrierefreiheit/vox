@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781206820377,
+  "lastUpdate": 1781208623035,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -67,6 +67,35 @@ window.BENCHMARK_DATA = {
           {
             "name": "ttfaPipeline p50",
             "value": 0.6,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "dbee5a0c23cf842010d88f0a78700c21adf47472",
+          "message": "feat(tts): discover OneCore SAPI voices, not just classic SPCAT_VOICES (#52)\n\nVoices installed through Windows Settings / language packs register only under\nSpeech_OneCore, invisible to classic SPCAT_VOICES enumeration — a user's German\nvoice could be undiscoverable, and PreferGerman silently fell back to English\n(defeating ADR-07). The engine now enumerates both categories with the same\nmachinery (OneCore tokens drive ISpVoice unchanged) and merges them through the\nnew pure mergeVoices(): classic wins on duplicate names (token ids differ\nacross hives, names are the identity — exactly the registry-bridge case),\nunnamed voices never collapse, and the classic default stays the system\ndefault; selectVoice remains the single decision point.\n\nTests: 8 pure merge tests; engine seam tests for OneCore-only discovery and\nthe classic-then-OneCore category order. The OneCore->classic registry-bridge\nsteps are removed from CI: the runner's German voice now exists only in the\nOneCore hive, so VOX_REQUIRE_GERMAN_VOICE genuinely gates that OneCore\ndiscovery works. ADR-07 documents the resolution.\n\nCloses #52.",
+          "timestamp": "2026-06-11T21:52:55+02:00",
+          "tree_id": "c948f65a844e90ace0bd7dec250182d94d6eb5a2",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/dbee5a0c23cf842010d88f0a78700c21adf47472"
+        },
+        "date": 1781208622118,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.7,
             "unit": "us"
           }
         ]

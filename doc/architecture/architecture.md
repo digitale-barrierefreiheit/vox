@@ -559,7 +559,7 @@ The decisive measure of success is not a coverage number; it is whether blind us
 *Decision:* models exported to ONNX, run on CPU. *Rationale:* no GPU dependency (C2); broad model ecosystem (Piper-class VITS, Kokoro-class for reading). *Note:* benchmark quantization per target — int8 is not guaranteed faster than fp32.
 
 **ADR-07 — Dedicated German front-end.**
-*Decision:* a German normalization + G2P stage feeding all tiers, with a German-trained acoustic model. *Rationale:* much perceived German quality lives in normalization/G2P, not just the acoustic model.
+*Decision:* a German normalization + G2P stage feeding all tiers, with a German-trained acoustic model. *Rationale:* much perceived German quality lives in normalization/G2P, not just the acoustic model. *Note:* German-first also depends on *finding* the user's German voice: the SAPI backend enumerates both the classic `SPCAT_VOICES` catalogue and the **OneCore** hive (`Speech_OneCore`, where Windows-Settings/language-pack voices register), merged with classic precedence (#52) — without the OneCore pass, a Settings-installed German voice is invisible and the engine would silently fall back to English.
 
 **ADR-08 — C runtime: static-link the compiler runtime; rely on the OS Universal CRT; keep the helper CRT-minimal.**
 *Decision:* link the compiler runtime statically (`/MT`) for Core and helper, so there is **no Visual C++ Redistributable dependency** to install or version-mismatch on end-user machines; rely on the Universal CRT (UCRT), which is part of Windows 10+. The in-process helper additionally minimizes or statically links a trimmed CRT and disables exceptions/RTTI, keeping its footprint tiny and avoiding clashes with whatever runtime the host already loaded.

@@ -14,6 +14,7 @@
 
 namespace {
 
+using vox::tts::mergeVoices;
 using vox::tts::SelectedVoice;
 using vox::tts::selectVoice;
 using vox::tts::VoiceDescriptor;
@@ -88,6 +89,82 @@ TEST(SelectVoice, EmptySetYieldsNothingUnderEitherPolicy) {
   const std::vector<VoiceDescriptor> none;
   EXPECT_EQ(selectVoice(none, VoiceSelectionPolicy::PreferGerman), std::nullopt);
   EXPECT_EQ(selectVoice(none, VoiceSelectionPolicy::RequireGerman), std::nullopt);
+}
+
+// The tests below cover mergeVoices, which folds the OneCore discovery pass
+// (secondary) into the classic one (primary) with classic precedence (#52).
+
+VoiceDescriptor namedVoice(std::string id, std::string name, bool isDefault = false) {
+  VoiceDescriptor descriptor;
+  descriptor.id = std::move(id);
+  descriptor.name = std::move(name);
+  descriptor.isDefault = isDefault;
+  return descriptor;
+}
+
+TEST(MergeVoices, AppendsSecondaryVoicesAfterThePrimaryOnes) {
+  const std::vector<VoiceDescriptor> merged =
+      mergeVoices({namedVoice("classic-1", "Microsoft Hedda Desktop")},
+                  std::vector{namedVoice("onecore-1", "Microsoft Katja")});
+  EXPECT_EQ(merged, (std::vector{namedVoice("classic-1", "Microsoft Hedda Desktop"),
+                                 namedVoice("onecore-1", "Microsoft Katja")}));
+}
+
+TEST(MergeVoices, DropsASecondaryVoiceWhoseNameIsAlreadyKnown) {
+  // The registry-bridge case: the same voice visible in both hives under
+  // different token ids — the classic entry wins, the OneCore one is dropped.
+  const std::vector<VoiceDescriptor> merged =
+      mergeVoices({namedVoice("classic-hedda", "Microsoft Hedda")},
+                  std::vector{namedVoice("onecore-hedda", "Microsoft Hedda")});
+  EXPECT_EQ(merged, (std::vector{namedVoice("classic-hedda", "Microsoft Hedda")}));
+}
+
+TEST(MergeVoices, KeepsDistinctVariantsOfTheSameVoiceFamily) {
+  // "Desktop" and OneCore variants are different tokens with different names
+  // (and engines) — both stay selectable.
+  const std::vector<VoiceDescriptor> merged =
+      mergeVoices({namedVoice("classic-hedda", "Microsoft Hedda Desktop")},
+                  std::vector{namedVoice("onecore-hedda", "Microsoft Hedda")});
+  EXPECT_EQ(merged.size(), 2U);
+}
+
+TEST(MergeVoices, AddsANameRepeatedWithinSecondaryOnlyOnce) {
+  const std::vector<VoiceDescriptor> merged =
+      mergeVoices({}, std::vector{namedVoice("onecore-1", "Microsoft Katja"),
+                                  namedVoice("onecore-2", "Microsoft Katja")});
+  EXPECT_EQ(merged, (std::vector{namedVoice("onecore-1", "Microsoft Katja")}));
+}
+
+TEST(MergeVoices, NeverCollapsesUnnamedVoices) {
+  // An empty name identifies nothing; two unnamed voices are distinct.
+  const std::vector<VoiceDescriptor> merged =
+      mergeVoices({namedVoice("classic-1", "")}, std::vector{namedVoice("onecore-1", "")});
+  EXPECT_EQ(merged.size(), 2U);
+}
+
+TEST(MergeVoices, ClearsTheSecondaryDefaultWhenThePrimaryHasOne) {
+  // Each category reports its own default; the classic one is the system
+  // default the user actually set, so it must stay the only default.
+  const std::vector<VoiceDescriptor> merged =
+      mergeVoices({namedVoice("classic-1", "Microsoft Hedda Desktop", true)},
+                  std::vector{namedVoice("onecore-1", "Microsoft Katja", true)});
+  EXPECT_EQ(merged, (std::vector{namedVoice("classic-1", "Microsoft Hedda Desktop", true),
+                                 namedVoice("onecore-1", "Microsoft Katja", false)}));
+}
+
+TEST(MergeVoices, KeepsTheSecondaryDefaultWhenThePrimaryHasNone) {
+  const std::vector<VoiceDescriptor> merged =
+      mergeVoices({namedVoice("classic-1", "Microsoft Hedda Desktop")},
+                  std::vector{namedVoice("onecore-1", "Microsoft Katja", true)});
+  EXPECT_EQ(merged, (std::vector{namedVoice("classic-1", "Microsoft Hedda Desktop"),
+                                 namedVoice("onecore-1", "Microsoft Katja", true)}));
+}
+
+TEST(MergeVoices, EmptyPrimaryYieldsTheSecondaryUnchanged) {
+  // E.g. the classic hive missing or empty: OneCore alone must work.
+  const std::vector<VoiceDescriptor> merged =
+      mergeVoices({}, std::vector{namedVoice("onecore-1", "Microsoft Katja", true)});
+  EXPECT_EQ(merged, (std::vector{namedVoice("onecore-1", "Microsoft Katja", true)}));
 }
 
 } // namespace

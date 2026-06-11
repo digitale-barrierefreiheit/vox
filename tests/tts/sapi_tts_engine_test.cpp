@@ -379,8 +379,8 @@ TEST_F(SapiEngineTest, DiscoversAVoiceOnlyVisibleInTheOneCoreCategory) {
   });
   ON_CALL(enumTokens_, Next(_, _, _))
       .WillByDefault([this, &currentCategory](ULONG, ISpObjectToken** pelt, ULONG* fetched) {
-        const bool oneCorePass = currentCategory.find(L"Speech_OneCore") != std::wstring::npos;
-        if (!oneCorePass || tokenServed_) {
+        if (const bool oneCorePass = currentCategory.contains(L"Speech_OneCore");
+            !oneCorePass || tokenServed_) {
           if (fetched != nullptr) {
             *fetched = 0;
           }

@@ -43,11 +43,12 @@ std::vector<VoiceDescriptor> mergeVoices(std::vector<VoiceDescriptor> primary,
     // Only a non-empty name identifies a duplicate; unnamed voices are never
     // collapsed into each other. Checked against the result so far, so a name
     // repeated within @p secondary itself is also added only once.
-    const bool duplicate = !candidate.name.empty() &&
-                           std::ranges::any_of(primary, [&candidate](const VoiceDescriptor& kept) {
-                             return kept.name == candidate.name;
-                           });
-    if (duplicate) {
+    if (const bool duplicate = !candidate.name.empty() &&
+                               std::ranges::any_of(primary,
+                                                   [&candidate](const VoiceDescriptor& kept) {
+                                                     return kept.name == candidate.name;
+                                                   });
+        duplicate) {
       continue;
     }
     VoiceDescriptor added = candidate;

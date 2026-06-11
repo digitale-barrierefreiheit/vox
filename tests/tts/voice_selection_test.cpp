@@ -91,7 +91,8 @@ TEST(SelectVoice, EmptySetYieldsNothingUnderEitherPolicy) {
   EXPECT_EQ(selectVoice(none, VoiceSelectionPolicy::RequireGerman), std::nullopt);
 }
 
-// --- mergeVoices (#52): classic (primary) + OneCore (secondary) discovery ----
+// The tests below cover mergeVoices, which folds the OneCore discovery pass
+// (secondary) into the classic one (primary) with classic precedence (#52).
 
 VoiceDescriptor namedVoice(std::string id, std::string name, bool isDefault = false) {
   VoiceDescriptor descriptor;

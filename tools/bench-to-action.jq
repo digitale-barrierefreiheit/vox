@@ -18,7 +18,8 @@
   | ($bench.counters // $bench)
   | to_entries[]
   | select(.key | test("^p(50|99|999)_us$"))
-  | { name: (($bench.name | sub("/.*$"; "")) + " " + (.key | rtrimstr("_us"))),
+  | { name: (($bench.name | sub("/.*$"; "")) + " "
+             + (.key | rtrimstr("_us") | sub("^p999$"; "p99.9"))),
       unit: "us",
       value: .value }
 ]

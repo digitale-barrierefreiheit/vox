@@ -347,7 +347,7 @@ bool waitForMoreEvents(const std::atomic<int>& events, int baseline) {
 // start() resumes delivery (no silent-dead state).
 TEST_F(UiaProviderItest, StopSilencesFocusEventsAndStartResumesThem) {
   UiaProvider provider;
-  std::atomic<int> events{0};
+  std::atomic events{0};
   const auto count = [&events](const AccessibleNode&) { events.fetch_add(1); };
 
   provider.start(count);
@@ -358,9 +358,11 @@ TEST_F(UiaProviderItest, StopSilencesFocusEventsAndStartResumesThem) {
     return;
   }
 
-  // stop() returning means delivery has ceased — the count must stay frozen
-  // even though the app keeps changing focus every 200 ms.
+  // stop() guarantees no further callback *begins*; one already in flight may
+  // still land. Let that tail settle, then the count must stay frozen even
+  // though the app keeps changing focus every 200 ms.
   provider.stop();
+  std::this_thread::sleep_for(std::chrono::milliseconds(300));
   const int afterStop = events.load();
   std::this_thread::sleep_for(std::chrono::seconds(1)); // ~5 focus cycles
   EXPECT_EQ(events.load(), afterStop) << "a focus event was delivered after stop()";

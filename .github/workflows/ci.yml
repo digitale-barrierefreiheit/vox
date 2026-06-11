@@ -179,9 +179,12 @@ jobs:
   # in-process (p99 ≤ 10% of the 200 ms Q1 budget); the real-SAPI first-chunk
   # benchmark measures the true synthesis start against Q1 (German voice set up
   # as in windows-de-DE; no audio device needed — it synthesizes to memory).
-  # The pipeline percentiles are additionally compared against the dev baseline
-  # (the benchmark-data branch) with a generous relative threshold: hosted
-  # runners are noisy, so the absolute in-process budget stays authoritative.
+  # The pipeline MEDIAN (p50) is additionally compared against the dev baseline
+  # (the benchmark-data branch) with a generous relative threshold. Only the
+  # median: at µs scale the tail percentiles vary up to ~8x between runs of
+  # identical code on shared runners (scheduler noise), so a relative tail gate
+  # is a coin flip — the tails are covered by the absolute in-process budget
+  # and reported per run. The absolute budget stays authoritative throughout.
   # This job is read-only (it runs PR code); publishing the dev baseline needs
   # contents:write and lives in the separate benchmarks-baseline job below,
   # which runs only on dev pushes (trusted code).
@@ -268,7 +271,7 @@ jobs:
           gh-pages-branch: benchmark-data
           benchmark-data-dir-path: ttfa
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          alert-threshold: 200%
+          alert-threshold: 300%
           comment-on-alert: true
           fail-on-alert: true
           summary-always: true

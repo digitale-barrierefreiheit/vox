@@ -32,6 +32,9 @@
 # The justfile is parsed by `just` and its Linux recipes run in sh/WSL bash, which
 # need LF — a CRLF checkout on Windows would break them.
 justfile text eol=lf
+# jq programs (tools/*.jq) run under jq in CI/WSL, whose lexer rejects the
+# stray \r of a CRLF checkout on code lines — keep them LF everywhere.
+*.jq    text eol=lf
 
 # Windows-native scripts must stay CRLF to run correctly.
 *.bat   text eol=crlf

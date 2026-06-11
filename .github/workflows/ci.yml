@@ -304,7 +304,10 @@ jobs:
   # ---------------------------------------------------------------------------
   benchmarks-baseline:
     name: benchmarks-baseline (dev)
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/dev' }}
+    # An explicit if: suppresses the implicit success() check on needs, so a
+    # failed benchmarks run (blown budget) must be ruled out explicitly — it
+    # produced no artifact and must not become the new baseline anyway.
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/dev' && needs.benchmarks.result == 'success' }}
     needs: benchmarks
     runs-on: ubuntu-24.04
     permissions:

@@ -51,6 +51,20 @@ bool envFlag(const char* name) {
   return set;
 }
 
+/// One synthesize() guarded against engine exceptions: a transient SAPI
+/// failure must surface as a recorded benchmark failure (clear error +
+/// non-zero exit), not escape and abort the whole benchmark run.
+bool synthesizeOrFail(benchmark::State& state, vox::tts::SapiTtsEngine& engine,
+                      const std::string& text, const vox::tts::ITtsEngine::PcmSink& sink) {
+  try {
+    engine.synthesize(text, sink);
+    return true;
+  } catch (const std::exception& error) {
+    vox::bench::failBenchmark(state, std::string("synthesize() failed: ") + error.what());
+    return false;
+  }
+}
+
 /// One cycle: synthesize() until the engine delivers its first PCM chunk, then
 /// cancel (from within the sink, as the barge-in path does).
 void ttfaSapiFirstChunk(benchmark::State& state) {
@@ -63,7 +77,9 @@ void ttfaSapiFirstChunk(benchmark::State& state) {
     engine =
         std::make_unique<vox::tts::SapiTtsEngine>(vox::tts::VoiceSelectionPolicy::PreferGerman);
   } catch (const std::runtime_error&) {
-    state.SkipWithError("no usable SAPI voice on this machine");
+    // Running this benchmark is an explicit opt-in, so a missing voice is a
+    // hard failure (non-zero exit) — the CI perf gate must not pass silently.
+    vox::bench::failBenchmark(state, "no usable SAPI voice on this machine");
     return;
   }
 
@@ -72,7 +88,10 @@ void ttfaSapiFirstChunk(benchmark::State& state) {
   // Warm up: the very first synthesize() pays one-time engine/voice
   // initialization (>1 s observed on CI) — app-startup cost, not the
   // steady-state announce latency Q1 budgets. One throwaway call excludes it.
-  engine->synthesize(text, [&engine](std::span<const std::byte>) { engine->cancel(); });
+  if (!synthesizeOrFail(state, *engine, text,
+                        [&engine](std::span<const std::byte>) { engine->cancel(); })) {
+    return;
+  }
 
   std::vector<double> samplesUs;
   samplesUs.reserve(static_cast<std::size_t>(state.max_iterations));
@@ -81,13 +100,18 @@ void ttfaSapiFirstChunk(benchmark::State& state) {
     bool seenFirstChunk = false;
     std::chrono::steady_clock::time_point firstChunkAt;
     const auto requested = std::chrono::steady_clock::now();
-    engine->synthesize(text, [&seenFirstChunk, &firstChunkAt, &engine](std::span<const std::byte>) {
-      if (!seenFirstChunk) {
-        firstChunkAt = std::chrono::steady_clock::now();
-        seenFirstChunk = true;
-        engine->cancel(); // first chunk is the measurement; skip the rest
-      }
-    });
+    const bool synthesized =
+        synthesizeOrFail(state, *engine, text,
+                         [&seenFirstChunk, &firstChunkAt, &engine](std::span<const std::byte>) {
+                           if (!seenFirstChunk) {
+                             firstChunkAt = std::chrono::steady_clock::now();
+                             seenFirstChunk = true;
+                             engine->cancel(); // first chunk is the measurement; skip the rest
+                           }
+                         });
+    if (!synthesized) {
+      return;
+    }
     if (!seenFirstChunk) {
       vox::bench::failBenchmark(state, "the engine delivered no PCM");
       return;

@@ -65,14 +65,14 @@ if ($distro) {
 Write-Warning ('No Ubuntu-24.04 WSL distro with the toolchain found; falling back to native ' +
     'clang-cl, which differs from CI and may fail on the MSVC STL. See README — install a ' +
     'WSL "Ubuntu-24.04" distro and the Linux toolchain to match the gate.')
-cmake --preset x64-clang-cl
+cmake --preset x64-clang-cl -DVCPKG_MANIFEST_FEATURES=benchmarks -DVOX_BUILD_BENCHMARKS=ON
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($Base) {
     $mergeBase = git merge-base HEAD $Base
     if ($LASTEXITCODE -ne 0 -or -not $mergeBase) { throw "Cannot compute merge-base with '$Base'." }
-    $files = @(git diff --name-only $mergeBase.Trim() -- 'src/*.cpp' 'tests/*.cpp')
+    $files = @(git diff --name-only $mergeBase.Trim() -- 'src/*.cpp' 'tests/*.cpp' 'benchmarks/*.cpp')
 } else {
-    $files = @(git ls-files 'src/*.cpp' 'tests/*.cpp')
+    $files = @(git ls-files 'src/*.cpp' 'tests/*.cpp' 'benchmarks/*.cpp')
 }
 if ($files.Count -eq 0) { Write-Host 'tidy: no C++ sources to check'; exit 0 }
 # Invoke via a variable: clang-tidy is an external executable, not a PowerShell cmdlet,

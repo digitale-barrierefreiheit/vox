@@ -75,6 +75,17 @@
       }
     },
     {
+      "name": "x64-msvc-bench",
+      "displayName": "Windows x64 benchmarks (MSVC)",
+      "description": "x64-msvc plus the google-benchmark feature; builds benchmarks/ only (#41, §8.6.4).",
+      "inherits": "x64-msvc",
+      "cacheVariables": {
+        "VCPKG_MANIFEST_FEATURES": "benchmarks",
+        "VOX_BUILD_BENCHMARKS": "ON",
+        "VOX_BUILD_TESTS": "OFF"
+      }
+    },
+    {
       "name": "linux-clang",
       "displayName": "Linux x64 (Clang)",
       "description": "Portable-core build used for the sanitizer matrix (ADR-12/ADR-14).",
@@ -107,6 +118,17 @@
       }
     },
     {
+      "name": "linux-clang-bench",
+      "displayName": "Linux x64 benchmarks (Clang)",
+      "description": "linux-clang plus the google-benchmark feature; builds benchmarks/ only (#41, §8.6.4).",
+      "inherits": "linux-clang",
+      "cacheVariables": {
+        "VCPKG_MANIFEST_FEATURES": "benchmarks",
+        "VOX_BUILD_BENCHMARKS": "ON",
+        "VOX_BUILD_TESTS": "OFF"
+      }
+    },
+    {
       "name": "macos-clang",
       "displayName": "macOS (Clang)",
       "description": "Local macOS build for clang-tidy; no shipping target yet (macOS is a later milestone).",
@@ -128,6 +150,8 @@
     { "name": "x86-msvc-debug",        "configurePreset": "x86-msvc",        "configuration": "Debug" },
     { "name": "x86-msvc-release",      "configurePreset": "x86-msvc",        "configuration": "Release" },
     { "name": "x64-clang-cl-release",  "configurePreset": "x64-clang-cl",    "configuration": "Release" },
+    { "name": "x64-msvc-bench-release","configurePreset": "x64-msvc-bench",  "configuration": "Release" },
+    { "name": "linux-clang-bench-release", "configurePreset": "linux-clang-bench", "configuration": "Release" },
     { "name": "linux-clang-debug",     "configurePreset": "linux-clang",     "configuration": "Debug" },
     { "name": "linux-clang-asan",      "configurePreset": "linux-clang-asan","configuration": "Debug" },
     { "name": "linux-clang-tsan",      "configurePreset": "linux-clang-tsan","configuration": "Debug" },

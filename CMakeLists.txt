@@ -58,6 +58,9 @@ include(VoxHelpers)
 # ---------------------------------------------------------------------------
 include(CMakeDependentOption)
 option(VOX_BUILD_TESTS "Build the Vox test suite." ON)
+option(VOX_BUILD_BENCHMARKS
+       "Build the Vox microbenchmarks (architecture §8.6.4; needs the 'benchmarks' vcpkg feature)."
+       OFF)
 option(VOX_BUILD_DOCS "Generate the developer reference with Doxygen." OFF)
 
 # ---------------------------------------------------------------------------
@@ -70,6 +73,10 @@ if(VOX_BUILD_TESTS)
   add_subdirectory(tests)
 endif()
 
+if(VOX_BUILD_BENCHMARKS)
+  add_subdirectory(benchmarks)
+endif()
+
 if(VOX_BUILD_DOCS)
   add_subdirectory(doc)
 endif()
@@ -80,4 +87,5 @@ endif()
 message(STATUS "Vox ${PROJECT_VERSION}")
 message(STATUS "  Compiler  : ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
 message(STATUS "  Tests     : ${VOX_BUILD_TESTS}")
+message(STATUS "  Benchmarks: ${VOX_BUILD_BENCHMARKS}")
 message(STATUS "  Docs      : ${VOX_BUILD_DOCS}")

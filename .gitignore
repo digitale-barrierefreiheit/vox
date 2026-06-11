@@ -84,6 +84,12 @@ compile_commands.json
 /test-results.xml
 
 # ---------------------------------------------------------------------------
+# Benchmark results (`just bench` + the CI baseline conversion, repo-root only)
+# ---------------------------------------------------------------------------
+/benchmark-results.json
+/benchmark-data.json
+
+# ---------------------------------------------------------------------------
 # Node action build deps (the test-matrix action; its bundled dist/ IS committed)
 # ---------------------------------------------------------------------------
 .github/actions/*/node_modules/

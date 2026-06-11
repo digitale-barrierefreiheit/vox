@@ -73,15 +73,15 @@ test preset=test_preset: (build preset)
 # 🧹 clang-tidy — the CI gate (Linux/Clang). Pass a base ref (e.g. origin/dev) for changed-only.
 [linux]
 tidy base='':
-    VCPKG_ROOT="${VCPKG_ROOT:-$HOME/.local/share/vcpkg}" cmake --preset linux-clang -B build/linux-clang-tidy -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18
-    if [ -n '{{base}}' ]; then mb=$(git merge-base HEAD '{{base}}') || exit 1; files=$(git diff --name-only "$mb" -- 'src/*.cpp' 'tests/*.cpp'); else files=$(git ls-files 'src/*.cpp' 'tests/*.cpp'); fi; if [ -n "$files" ]; then {{clang_tidy}} -p build/linux-clang-tidy -warnings-as-errors='*' $files; else echo 'tidy: no C++ sources to check'; fi
+    VCPKG_ROOT="${VCPKG_ROOT:-$HOME/.local/share/vcpkg}" cmake --preset linux-clang -B build/linux-clang-tidy -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18 -DVCPKG_MANIFEST_FEATURES=benchmarks -DVOX_BUILD_BENCHMARKS=ON
+    if [ -n '{{base}}' ]; then mb=$(git merge-base HEAD '{{base}}') || exit 1; files=$(git diff --name-only "$mb" -- 'src/*.cpp' 'tests/*.cpp' 'benchmarks/*.cpp'); else files=$(git ls-files 'src/*.cpp' 'tests/*.cpp' 'benchmarks/*.cpp'); fi; if [ -n "$files" ]; then {{clang_tidy}} -p build/linux-clang-tidy -warnings-as-errors='*' $files; else echo 'tidy: no C++ sources to check'; fi
 
 # 🧹 clang-tidy on macOS (warns: differs from CI). Pass a base ref for changed-only.
 [macos]
 tidy base='':
     @echo 'warning: macOS clang-tidy differs from the CI gate (Linux/Clang).'
-    VCPKG_ROOT="${VCPKG_ROOT:-$HOME/.local/share/vcpkg}" cmake --preset macos-clang -B build/macos-clang-tidy
-    if [ -n '{{base}}' ]; then mb=$(git merge-base HEAD '{{base}}') || exit 1; files=$(git diff --name-only "$mb" -- 'src/*.cpp' 'tests/*.cpp'); else files=$(git ls-files 'src/*.cpp' 'tests/*.cpp'); fi; if [ -n "$files" ]; then {{clang_tidy}} -p build/macos-clang-tidy -warnings-as-errors='*' $files; else echo 'tidy: no C++ sources to check'; fi
+    VCPKG_ROOT="${VCPKG_ROOT:-$HOME/.local/share/vcpkg}" cmake --preset macos-clang -B build/macos-clang-tidy -DVCPKG_MANIFEST_FEATURES=benchmarks -DVOX_BUILD_BENCHMARKS=ON
+    if [ -n '{{base}}' ]; then mb=$(git merge-base HEAD '{{base}}') || exit 1; files=$(git diff --name-only "$mb" -- 'src/*.cpp' 'tests/*.cpp' 'benchmarks/*.cpp'); else files=$(git ls-files 'src/*.cpp' 'tests/*.cpp' 'benchmarks/*.cpp'); fi; if [ -n "$files" ]; then {{clang_tidy}} -p build/macos-clang-tidy -warnings-as-errors='*' $files; else echo 'tidy: no C++ sources to check'; fi
 
 # Picks an Ubuntu-24.04 WSL distro (matches CI), else native clang-cl. See tools/win-tidy.ps1.
 # 🧹 clang-tidy from Windows (WSL Ubuntu-24.04, else native). Pass a base ref for changed-only.
@@ -101,6 +101,27 @@ coverage preset=test_preset: (build preset)
 [unix]
 coverage:
     @echo 'Coverage runs on Windows (OpenCppCoverage) and in CI; Linux/macOS coverage is not yet wired.'
+
+# 📈 Build (Release) + run the TTFA microbenchmarks (#41); writes benchmark-results.json.
+# Absolute latency budgets fail the run; VOX_BENCH_SAPI=1 adds the real-engine measurement.
+[windows]
+bench:
+    cmake --preset x64-msvc-bench
+    cmake --build --preset x64-msvc-bench-release
+    & "{{root_native}}\build\x64-msvc-bench\benchmarks\Release\vox_benchmarks.exe" --benchmark_out="{{root_native}}\benchmark-results.json" --benchmark_out_format=json
+
+# 📈 Build (Release) + run the TTFA microbenchmarks (#41); writes benchmark-results.json.
+# (The real-engine SAPI measurement is Windows-only; this runs the pipeline gate.)
+[linux]
+bench:
+    cmake --preset linux-clang-bench
+    cmake --build --preset linux-clang-bench-release
+    "{{root}}/build/linux-clang-bench/benchmarks/Release/vox_benchmarks" --benchmark_out="{{root}}/benchmark-results.json" --benchmark_out_format=json
+
+# 📈 Benchmarks run on Windows and Linux; there is no macOS bench preset yet.
+[macos]
+bench:
+    @echo 'Benchmarks run on Windows (x64-msvc-bench) and Linux (linux-clang-bench); no macOS preset yet.'
 
 # 🧽 Delete the build/ directory.
 clean:

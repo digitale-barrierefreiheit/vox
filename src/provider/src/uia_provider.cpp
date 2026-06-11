@@ -10,10 +10,12 @@
 /// crashing.
 #include <cstddef>
 #include <functional>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include <vox/provider/uia_provider.hpp>
 #include <vox/provider/uia_test_seam.hpp>
@@ -204,6 +206,13 @@ UiaElementData extract(IUIAutomationElement* element) {
 }
 
 /// COM event sink that forwards UIA focus changes to a std::function.
+///
+/// The callback is detachable (#60): stop() neutralizes the sink *before*
+/// asking UIA to unregister it, so "no callbacks after stop()" holds even when
+/// `RemoveFocusChangedEventHandler` fails and UIA keeps invoking the object.
+/// The callback runs under the same mutex detach() takes, so detach()
+/// returning also means no callback is still in flight. Focus events are
+/// human-scale — the lock is nowhere near a hot path.
 class FocusEventHandler : public Microsoft::WRL::RuntimeClass<
                               Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>,
                               IUIAutomationFocusChangedEventHandler> {
@@ -212,6 +221,7 @@ public:
       : callback_(std::move(callback)) {}
 
   HRESULT STDMETHODCALLTYPE HandleFocusChangedEvent(IUIAutomationElement* sender) override {
+    const std::scoped_lock lock(mutex_);
     // An exception must never escape across the COM ABI boundary (it could
     // terminate the process), so the callback is invoked inside a catch-all.
     try {
@@ -223,7 +233,16 @@ public:
     return S_OK;
   }
 
+  /// Neutralizes the sink: once this returns, no callback is in flight and
+  /// none will ever run again — regardless of whether UIA still invokes the
+  /// COM object because unregistration failed.
+  void detach() {
+    const std::scoped_lock lock(mutex_);
+    callback_ = nullptr;
+  }
+
 private:
+  std::mutex mutex_;
   IProvider::FocusChangedCallback callback_;
 };
 
@@ -270,7 +289,17 @@ public:
   }
 
   ~Impl() {
-    stop();
+    stop(); // detaches the active handler and retries any shelved removals
+    if (!shelved_.empty() && automation_) {
+      // Escalation of last resort (#60): individual removals kept failing.
+      // Safe big hammer — this provider owns its *private* IUIAutomation
+      // instance, and these handlers are the only ones registered on it.
+      automation_->RemoveAllEventHandlers();
+      // Either way the shelved sinks are detached (inert), and UIA holds its
+      // own COM references to anything still registered — releasing ours now
+      // cannot leave a registered handler dangling.
+      shelved_.clear();
+    }
     cacheRequest_.Reset();
     automation_.Reset();
     if (comInitialized_) {
@@ -299,27 +328,31 @@ public:
     if (!automation_ || !cacheRequest_) {
       return;
     }
+    // stop() detaches and (best-effort) unregisters any previous handler; a
+    // stuck one is shelved there, so the slot below is always free — a
+    // stop()/start() cycle reliably resumes notifications (#60).
     stop();
-    if (handler_) {
-      // A previous handler could not be unregistered; don't overwrite it (that
-      // would drop the last reference to one still registered with UIA).
-      return;
-    }
-    handler_ = Microsoft::WRL::Make<FocusEventHandler>(std::move(onFocusChanged));
-    if (FAILED(automation_->AddFocusChangedEventHandler(cacheRequest_.Get(), handler_.Get()))) {
-      handler_.Reset(); // registration failed — nothing for stop() to remove
-    }
+    auto handler = Microsoft::WRL::Make<FocusEventHandler>(std::move(onFocusChanged));
+    if (SUCCEEDED(automation_->AddFocusChangedEventHandler(cacheRequest_.Get(), handler.Get()))) {
+      handler_ = std::move(handler);
+    } // registration failed — nothing was registered, nothing for stop() to remove
   }
 
   void stop() {
+    retryShelvedRemovals();
     if (!handler_) {
       return;
     }
+    // Detach FIRST: whatever UIA answers below, no further callback is
+    // delivered once stop() returns — correctness does not depend on
+    // unregistration succeeding (#60).
+    handler_->detach();
     if (automation_ && FAILED(automation_->RemoveFocusChangedEventHandler(handler_.Get()))) {
-      // Removal failed: UIA may still hold and invoke the handler, so keep our
-      // reference (a later stop()/destruction retries) rather than drop it while
-      // it is still registered.
-      return;
+      // UIA may still hold and invoke the (now inert) sink: shelve our
+      // reference so the COM object stays valid for those residual calls, and
+      // free the slot so the next start() can register a fresh handler. Later
+      // stop()s and the destructor retry the removal.
+      shelved_.push_back(std::move(handler_));
     }
     handler_.Reset();
   }
@@ -379,10 +412,25 @@ private:
     return ok;
   }
 
+  /// Retries unregistering handlers whose removal previously failed (#60),
+  /// releasing those UIA finally lets go of. Already-detached, so this is
+  /// purely cleanup — correctness never depends on it succeeding.
+  void retryShelvedRemovals() {
+    if (!automation_ || shelved_.empty()) {
+      return;
+    }
+    std::erase_if(shelved_, [this](const ComPtr<FocusEventHandler>& stuck) {
+      return SUCCEEDED(automation_->RemoveFocusChangedEventHandler(stuck.Get()));
+    });
+  }
+
   bool comInitialized_ = false;
   ComPtr<IUIAutomation> automation_;
   ComPtr<IUIAutomationCacheRequest> cacheRequest_;
-  ComPtr<IUIAutomationFocusChangedEventHandler> handler_;
+  ComPtr<FocusEventHandler> handler_; ///< The concrete sink, so stop() can detach() it.
+  /// Detached handlers UIA refused to unregister: kept alive for its residual
+  /// invocations, retried on every stop(), escalated in the destructor (#60).
+  std::vector<ComPtr<FocusEventHandler>> shelved_;
 };
 
 UiaProvider::UiaProvider() : impl_(std::make_unique<Impl>()) {}

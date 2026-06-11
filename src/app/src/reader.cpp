@@ -48,12 +48,12 @@ void Reader::start() {
       running_ = true;
     }
     worker_ = std::jthread([this] { workerLoop(); });
-    // Route the focus callback through a shared guard so it is safe even if the
-    // provider invokes it after this Reader is destroyed (stop() detaches it).
+    // Route the focus callback through a shared guard so it stays safe even if
+    // a provider invoked it after this Reader is destroyed. Defense-in-depth
+    // since #60: UiaProvider::stop() already guarantees post-stop silence.
     {
       // Re-attach the single, lifetime-long guard (created in the constructor)
-      // under its lock. Reusing it across restarts means a handler the provider
-      // could not unregister still points back at this live Reader.
+      // under its lock, reusing it across stop()/start() cycles.
       const std::scoped_lock lock(guard_->mutex);
       guard_->reader = this;
     }
@@ -83,7 +83,7 @@ void Reader::stop() {
     const std::scoped_lock lock(guard_->mutex);
     guard_->reader = nullptr;
   }
-  provider_.stop(); // ask the provider to unregister (it may not, hence the guard)
+  provider_.stop(); // delivers no further callbacks once it returns (#60)
   {
     const std::scoped_lock lock(mutex_);
     running_ = false;

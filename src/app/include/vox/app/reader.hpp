@@ -38,10 +38,12 @@ class Reader;
 
 namespace detail {
 /// Keeps the provider's focus callback safe if it fires after the Reader is
-/// gone. The UIA provider may keep invoking the handler when it fails to
-/// unregister (see UiaProvider::stop()); the callback holds a shared_ptr to this
-/// guard and only touches `reader` while it is non-null under the lock, and
-/// Reader::stop() detaches it (sets `reader` to null) before teardown.
+/// gone. Defense-in-depth, not load-bearing (#60): UiaProvider::stop()
+/// guarantees no callback is delivered once it returns (the sink is detached
+/// before unregistration, whatever UIA answers), so this guard only matters
+/// for a hypothetical future IProvider that breaks that contract. The callback
+/// holds a shared_ptr to this guard and only touches `reader` while it is
+/// non-null under the lock; Reader::stop() detaches it before teardown.
 struct ReaderFocusGuard {
   std::mutex mutex;
   Reader* reader{nullptr};

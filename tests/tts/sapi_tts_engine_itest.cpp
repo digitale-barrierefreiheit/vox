@@ -120,7 +120,7 @@ TEST_F(SapiTtsEngineTest, RequireGermanSelectsAGermanVoiceWhereAvailable) {
   if (!german) {
     if (germanRequired()) {
       FAIL() << "VOX_REQUIRE_GERMAN_VOICE is set but RequireGerman found no German voice "
-                "(language provisioning or the OneCore->SAPI registry bridge failed).";
+                "(language provisioning failed, or OneCore voice discovery (#52) is broken).";
     }
     GTEST_SKIP() << "No German SAPI voice installed on this machine.";
   }

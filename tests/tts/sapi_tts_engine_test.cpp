@@ -246,7 +246,8 @@ TEST_F(SapiEngineTest, ThrowsWhenNoVoiceIsAvailable) {
 }
 
 TEST_F(SapiEngineTest, ThrowsWhenTokenEnumerationFails) {
-  EXPECT_CALL(category_, EnumTokens(_, _, _)).WillOnce(Return(ErrorFail));
+  // Both discovery passes (classic + OneCore, #52) fail to enumerate.
+  EXPECT_CALL(category_, EnumTokens(_, _, _)).WillRepeatedly(Return(ErrorFail));
   EXPECT_THROW(SapiTtsEngine{VoiceSelectionPolicy::PreferGerman}, EngineError);
 }
 
@@ -344,9 +345,58 @@ TEST_F(SapiEngineTest, FormatReportsTheFixedOutputShape) {
 }
 
 TEST_F(SapiEngineTest, EnumerationStopsWhenSettingTheCategoryIdFails) {
-  EXPECT_CALL(category_, SetId(_, _)).WillOnce(Return(ErrorFail));
-  // No voices enumerate, so selection finds nothing and construction fails.
+  // Neither category id can be set (classic + OneCore, #52): no voices
+  // enumerate, so selection finds nothing and construction fails.
+  EXPECT_CALL(category_, SetId(_, _)).WillRepeatedly(Return(ErrorFail));
   EXPECT_THROW(SapiTtsEngine{VoiceSelectionPolicy::PreferGerman}, EngineError);
+}
+
+TEST_F(SapiEngineTest, EnumeratesTheClassicAndThenTheOneCoreCategory) {
+  // Discovery must look at both catalogues (#52), classic first — the merge
+  // gives classic precedence, so the order is part of the contract.
+  const ::testing::InSequence ordered;
+  EXPECT_CALL(
+      category_,
+      SetId(::testing::StrEq(L"HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech\\Voices"), _))
+      .WillOnce(Return(S_OK));
+  EXPECT_CALL(
+      category_,
+      SetId(::testing::StrEq(L"HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech_OneCore\\Voices"),
+            _))
+      .WillOnce(Return(S_OK));
+  const SapiTtsEngine engine{VoiceSelectionPolicy::PreferGerman};
+  EXPECT_EQ(engine.selectedVoice().id, "VOX-TEST-VOICE-DE");
+}
+
+TEST_F(SapiEngineTest, DiscoversAVoiceOnlyVisibleInTheOneCoreCategory) {
+  // The Settings-installed-voice case (#52): the classic catalogue is empty,
+  // only the OneCore pass serves the (German) token — it must still be found
+  // and selected, with no registry bridge.
+  std::wstring currentCategory;
+  ON_CALL(category_, SetId(_, _)).WillByDefault([&currentCategory](LPCWSTR id, BOOL) {
+    currentCategory = (id != nullptr) ? id : L"";
+    return S_OK;
+  });
+  ON_CALL(enumTokens_, Next(_, _, _))
+      .WillByDefault([this, &currentCategory](ULONG, ISpObjectToken** pelt, ULONG* fetched) {
+        const bool oneCorePass = currentCategory.find(L"Speech_OneCore") != std::wstring::npos;
+        if (!oneCorePass || tokenServed_) {
+          if (fetched != nullptr) {
+            *fetched = 0;
+          }
+          return S_FALSE; // the classic pass sees nothing
+        }
+        tokenServed_ = true;
+        *pelt = &token_;
+        if (fetched != nullptr) {
+          *fetched = 1;
+        }
+        return S_OK;
+      });
+
+  const SapiTtsEngine engine{VoiceSelectionPolicy::RequireGerman};
+  EXPECT_EQ(engine.selectedVoice().id, "VOX-TEST-VOICE-DE");
+  EXPECT_TRUE(engine.selectedVoice().isGerman);
 }
 
 TEST_F(SapiEngineTest, SkipsATokenWhoseIdCannotBeRead) {

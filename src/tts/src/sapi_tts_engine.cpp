@@ -64,6 +64,13 @@ using detail::readAttribute;
 using detail::toUtf8;
 using detail::toWide;
 
+/// The OneCore voice catalogue (#52). Voices installed through the modern
+/// language features (Windows Settings, Install-Language) register only here —
+/// classic SPCAT_VOICES does not see them. The tokens are SAPI-compatible and
+/// drive ISpVoice unchanged; there is no SPCAT_* constant for this hive.
+constexpr const wchar_t* OneCoreVoiceCategoryId =
+    L"HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech_OneCore\\Voices";
+
 /// Test seams (issue #68): when installed, these factories replace
 /// CoCreateInstance for the SAPI voice and the voice-token category, so the
 /// engine's construction / voice-selection / synthesis paths are unit-tested
@@ -379,28 +386,41 @@ public:
 
 private:
   void enumerateVoices() {
-    // Classic SAPI5 voices only (SPCAT_VOICES). Voices installed through the
-    // modern language features register under Speech_OneCore and are not seen
-    // here; discovering those is tracked in #52.
-    const ComPtr<ISpObjectTokenCategory> category = openVoiceCategory();
+    // Classic SAPI5 voices (SPCAT_VOICES) plus the OneCore catalogue (#52):
+    // voices installed through the modern language features (Windows Settings,
+    // Install-Language) register only under Speech_OneCore, invisible to
+    // classic enumeration. Their tokens drive ISpVoice unchanged, so this is
+    // purely a discovery extension. Classic is enumerated first and wins on
+    // duplicates — see mergeVoices() for the precedence rules.
+    std::vector<VoiceDescriptor> classic = enumerateCategory(SPCAT_VOICES);
+    const std::vector<VoiceDescriptor> oneCore = enumerateCategory(OneCoreVoiceCategoryId);
+    descriptors_ = mergeVoices(std::move(classic), oneCore);
+  }
+
+  /// Enumerates one voice-token category into descriptors (and registers each
+  /// token in the id map). An unavailable category yields an empty list.
+  std::vector<VoiceDescriptor> enumerateCategory(const wchar_t* categoryId) {
+    std::vector<VoiceDescriptor> found;
+    const ComPtr<ISpObjectTokenCategory> category = openVoiceCategory(categoryId);
     if (!category) {
-      return;
+      return found;
     }
     const std::wstring defaultId = readDefaultTokenId(*category.Get());
 
     ComPtr<IEnumSpObjectTokens> tokens;
     if (FAILED(category->EnumTokens(nullptr, nullptr, &tokens)) || !tokens) {
-      return;
+      return found;
     }
     for (ComPtr<ISpObjectToken> token = nextToken(tokens.Get()); token;
          token = nextToken(tokens.Get())) {
-      addVoice(token, defaultId);
+      addVoice(token, defaultId, found);
     }
+    return found;
   }
 
-  /// Opens the classic SAPI5 voice category (SPCAT_VOICES), or null if it is
-  /// unavailable.
-  ComPtr<ISpObjectTokenCategory> openVoiceCategory() {
+  /// Opens the voice category @p categoryId, or null if it is unavailable
+  /// (e.g. the OneCore hive on a system that does not have it).
+  ComPtr<ISpObjectTokenCategory> openVoiceCategory(const wchar_t* categoryId) {
     ComPtr<ISpObjectTokenCategory> category;
     // The init-statement runs before the condition, so category is set by the
     // call before the null-check reads it.
@@ -408,7 +428,7 @@ private:
         FAILED(created) || !category) {
       return nullptr;
     }
-    if (FAILED(category->SetId(SPCAT_VOICES, FALSE))) {
+    if (FAILED(category->SetId(categoryId, FALSE))) {
       return nullptr;
     }
     return category;
@@ -433,9 +453,10 @@ private:
     return token;
   }
 
-  /// Reads @p token into the voice tables; skips a token whose id cannot be read
-  /// or is empty.
-  void addVoice(const ComPtr<ISpObjectToken>& token, std::wstring_view defaultId) {
+  /// Reads @p token into @p found (and the id→token map); skips a token whose
+  /// id cannot be read or is empty.
+  void addVoice(const ComPtr<ISpObjectToken>& token, std::wstring_view defaultId,
+                std::vector<VoiceDescriptor>& found) {
     LPWSTR rawId = nullptr;
     if (FAILED(token->GetId(&rawId)) || rawId == nullptr) {
       return;
@@ -452,7 +473,7 @@ private:
       return;
     }
     idToToken_.try_emplace(descriptor.id, token);
-    descriptors_.push_back(std::move(descriptor));
+    found.push_back(std::move(descriptor));
   }
 
   ComApartment com_; // first member: initialized first, uninitialized last

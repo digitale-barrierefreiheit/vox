@@ -16,6 +16,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <vector>
 
 namespace vox::tts {
 
@@ -44,6 +45,20 @@ struct SelectedVoice {
   /// Two selections are equal iff both fields match.
   [[nodiscard]] friend bool operator==(const SelectedVoice&, const SelectedVoice&) = default;
 };
+
+/// @brief Merges two discovery passes into one selectable voice list (#52).
+///
+/// @p primary (the classic SAPI5 catalogue) wins: a @p secondary (OneCore)
+/// voice whose non-empty name already appears in the result is dropped. The
+/// observable duplicate is the same voice registered in both hives (e.g. by a
+/// OneCore→SAPI registry bridge); token *ids* differ across hives even then,
+/// so the name is the identity. Distinct variants ("Microsoft Hedda Desktop"
+/// vs "Microsoft Hedda") have distinct names and are both kept. When
+/// @p primary contains a default voice, default flags on surviving
+/// @p secondary entries are cleared — "the system default" stays the classic
+/// one the user actually set.
+[[nodiscard]] std::vector<VoiceDescriptor> mergeVoices(std::vector<VoiceDescriptor> primary,
+                                                       std::span<const VoiceDescriptor> secondary);
 
 /// @brief Chooses a voice from @p available according to @p policy.
 ///

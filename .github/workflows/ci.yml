@@ -114,12 +114,14 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # German speech integration (ADR-07) + audio. Augments an x64 runner with the
-  # de-DE TTS voice (bridged from Speech_OneCore into the classic SAPI hive) and
+  # de-DE TTS voice (installed via Features-on-Demand into Speech_OneCore — the
+  # engine discovers OneCore voices directly, #52, so no registry bridge) and
   # the VB-CABLE virtual audio device, then runs the suite with both
   # VOX_REQUIRE_GERMAN_VOICE=1 and VOX_REQUIRE_AUDIO_DEVICE=1 — so a missing
-  # German voice OR render device fails the build. x64 only: the German TTS
-  # engine is 64-bit. NOTE: depends on Features-on-Demand, a registry bridge, and
-  # a third-party signed driver; if it proves flaky, drop the require flags.
+  # German voice OR render device fails the build; a voice present only in the
+  # OneCore hive also gates that the OneCore discovery genuinely works. x64
+  # only: the German TTS engine is 64-bit. NOTE: depends on Features-on-Demand
+  # and a third-party signed driver; if it proves flaky, drop the require flags.
   # ---------------------------------------------------------------------------
   windows-de-DE:
     name: windows-x64-msvc-de-DE
@@ -145,18 +147,6 @@ jobs:
             Add-WindowsCapability -Online -Name $tts.Name -ErrorAction Stop | Out-Null
           }
           Write-Host "Installed voice capability: $($tts.Name)"
-      - name: Bridge the OneCore voice token into the classic SAPI registry
-        shell: pwsh
-        run: |
-          # Language-pack voices register under Speech_OneCore, which classic
-          # SAPI5 (ISpVoice / SPCAT_VOICES) does not enumerate. Copy the tokens
-          # into the classic hive so the engine can find the German voice. (The
-          # broader fix — enumerating OneCore directly — is tracked in #52.)
-          $src = 'HKLM\SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens'
-          $dst = 'HKLM\SOFTWARE\Microsoft\Speech\Voices\Tokens'
-          reg copy "$src" "$dst" /s /f
-          if ($LASTEXITCODE -ne 0) { throw "reg copy of voice tokens failed ($LASTEXITCODE)" }
-          reg query "$dst"
       - name: Install the VB-CABLE virtual audio device
         timeout-minutes: 5
         uses: ./.github/actions/install-vbcable
@@ -217,12 +207,6 @@ jobs:
             Add-WindowsCapability -Online -Name $tts.Name -ErrorAction Stop | Out-Null
           }
           Write-Host "Installed voice capability: $($tts.Name)"
-      - name: Bridge the OneCore voice token into the classic SAPI registry
-        shell: pwsh
-        run: |
-          # As in windows-de-DE; the direct OneCore enumeration is tracked in #52.
-          reg copy 'HKLM\SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens' 'HKLM\SOFTWARE\Microsoft\Speech\Voices\Tokens' /s /f
-          if ($LASTEXITCODE -ne 0) { throw "reg copy of voice tokens failed ($LASTEXITCODE)" }
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
         with:

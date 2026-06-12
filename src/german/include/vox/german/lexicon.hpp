@@ -46,7 +46,8 @@ enum class StateConcept : std::uint8_t {
 /// Number of `StateConcept` values; used to size the lookup table.
 inline constexpr std::size_t StateConceptCount = 9;
 
-/// German announcement vocabulary, built from a `key = value` table.
+/// Announcement vocabulary, built from a `key = value` table (German by
+/// default; the table's `language` declaration says what it holds, #61).
 ///
 /// Lookups are O(1) and return a view into storage that stays valid for the
 /// Lexicon's lifetime. A missing entry yields an empty view (the caller skips
@@ -69,10 +70,12 @@ public:
   ///        it declared none. Not normalized; matching is the loader's job.
   [[nodiscard]] std::string_view language() const;
 
-  /// @brief The German word for a control @p role, or empty if none.
+  /// @brief The announcement word for a control @p role (in the table's
+  ///        declared language), or empty if none.
   [[nodiscard]] std::string_view role(vox::model::Role role) const;
 
-  /// @brief The German word for a state @p stateConcept, or empty if none.
+  /// @brief The announcement word for a state @p stateConcept (in the table's
+  ///        declared language), or empty if none.
   [[nodiscard]] std::string_view state(StateConcept stateConcept) const;
 
   /// @brief Required `role.*` / `state.*` keys that are missing or empty.

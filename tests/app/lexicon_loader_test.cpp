@@ -150,6 +150,14 @@ TEST_F(LexiconLoaderTest, AnAbsentFileFallsBackToTheEmbeddedGermanDefault) {
   EXPECT_TRUE(loaded.lexicon.missingRequiredKeys().empty());
 }
 
+TEST_F(LexiconLoaderTest, ADirectoryWhereTheFileShouldBeIsNotRead) {
+  // Only regular files are opened — never directories or (on Windows) device
+  // names like "CON.lex" that a hostile tag could smuggle into the path.
+  std::filesystem::create_directories(dir() / "de.lex");
+
+  expectFallback(load(""), "could not be read");
+}
+
 TEST_F(LexiconLoaderTest, AFileWithoutALanguageDeclarationIsRejected) {
   writeFile("de.lex", "role.button = Knopf\n");
 

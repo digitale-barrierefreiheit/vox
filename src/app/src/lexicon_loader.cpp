@@ -12,6 +12,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -24,10 +25,16 @@ namespace vox::app {
 namespace {
 
 /// Reads @p file as bytes (the table is UTF-8 either way), or nullopt when it
-/// cannot be opened. A read that breaks off midway yields a truncated table,
-/// which the completeness validation rejects downstream.
+/// is not a readable regular file. The regular-file guard keeps a hostile tag
+/// or path off devices (on Windows, opening "CON.lex" would block on the
+/// console) and off directories. A read that breaks off midway (a disk error)
+/// yields a truncated table: rejected whenever a required key went missing,
+/// otherwise at worst one value is clipped and that announcement degrades.
 std::optional<std::string> readFile(const std::filesystem::path& file) {
-  std::ifstream stream(file, std::ios::binary);
+  std::ifstream stream;
+  if (std::error_code regularCheck; std::filesystem::is_regular_file(file, regularCheck)) {
+    stream.open(file, std::ios::binary);
+  }
   if (!stream.is_open()) {
     return std::nullopt;
   }

@@ -16,6 +16,7 @@
 #  include <fstream>
 #  include <ios>
 #  include <memory>
+#  include <optional>
 #  include <string>
 #  include <string_view>
 
@@ -92,15 +93,23 @@ std::filesystem::path testExecutableDirectory() {
   return std::filesystem::path(buffer.data(), buffer.data() + length).parent_path();
 }
 
-/// Sets an environment variable for one test and restores "unset" on exit.
+/// Sets an environment variable for one test and restores the previous state
+/// (the prior value, or unset) on exit, so nothing leaks across tests or into
+/// a developer's environment.
 class ScopedEnvironment {
 public:
   ScopedEnvironment(const wchar_t* name, const std::wstring& value) : name_(name) {
+    std::array<wchar_t, 4096> buffer{};
+    const DWORD written =
+        ::GetEnvironmentVariableW(name_, buffer.data(), static_cast<DWORD>(buffer.size()));
+    if (written > 0 && written < buffer.size()) {
+      previous_ = std::wstring(buffer.data(), written);
+    }
     ::SetEnvironmentVariableW(name_, value.c_str());
   }
 
   ~ScopedEnvironment() {
-    ::SetEnvironmentVariableW(name_, nullptr);
+    ::SetEnvironmentVariableW(name_, previous_.has_value() ? previous_->c_str() : nullptr);
   }
 
   ScopedEnvironment(const ScopedEnvironment&) = delete;
@@ -110,6 +119,7 @@ public:
 
 private:
   const wchar_t* name_;
+  std::optional<std::wstring> previous_;
 };
 
 /// Installs the SAPI chain the engine's constructor walks (voice + category ->

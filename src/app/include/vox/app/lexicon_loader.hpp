@@ -63,8 +63,9 @@ struct LexiconRequest {
 /// case-insensitive). Otherwise `request.lexiconDir / <tag>.lex` is tried,
 /// where `<tag>` is `request.requestedTag` or @ref DefaultLanguageTag; the
 /// file's declared language must match the tag it was loaded as. An invalid
-/// tag is reported and ignored. Any unreadable or rejected file falls back to
-/// the embedded German default with a diagnostic — the reader always speaks.
+/// tag is reported and ignored; an empty `request.lexiconDir` skips the lookup
+/// (never CWD-relative). Any unreadable or rejected file falls back to the
+/// embedded German default with a diagnostic — the reader always speaks.
 [[nodiscard]] LoadedLexicon loadLexicon(const LexiconRequest& request);
 
 } // namespace vox::app

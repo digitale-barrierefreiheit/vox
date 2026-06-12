@@ -150,6 +150,14 @@ TEST_F(LexiconLoaderTest, AnAbsentFileFallsBackToTheEmbeddedGermanDefault) {
   EXPECT_TRUE(loaded.lexicon.missingRequiredKeys().empty());
 }
 
+TEST_F(LexiconLoaderTest, AnUnknownLexiconDirectorySkipsTheLookup) {
+  // No known directory must never degrade to a CWD-relative read.
+  LexiconRequest request;
+  request.requestedTag = "de";
+
+  expectFallback(loadLexicon(request), "lexicon directory is unknown");
+}
+
 TEST_F(LexiconLoaderTest, ADirectoryWhereTheFileShouldBeIsNotRead) {
   // Only regular files are opened — never directories or (on Windows) device
   // names like "CON.lex" that a hostile tag could smuggle into the path.

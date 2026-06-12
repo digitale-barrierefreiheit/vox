@@ -144,6 +144,13 @@ LoadedLexicon loadLexicon(const LexiconRequest& request) {
     loadFromFile(request.explicitFile, tag, "(VOX_LEXICON)", result);
     return result;
   }
+  if (request.lexiconDir.empty()) {
+    // No known directory must never degrade to a CWD-relative lookup — the
+    // working directory is not a trusted place to read announcement words from.
+    result.diagnostics.emplace_back("the lexicon directory is unknown, so no per-language lookup "
+                                    "is possible; using the embedded German default");
+    return result;
+  }
   const std::string_view effectiveTag = tag.empty() ? DefaultLanguageTag : tag;
   loadFromFile(request.lexiconDir / (std::string(effectiveTag) + ".lex"), effectiveTag,
                "for language \"" + std::string(effectiveTag) + "\"", result);

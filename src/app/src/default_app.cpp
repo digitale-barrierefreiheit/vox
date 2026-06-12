@@ -43,9 +43,9 @@ std::wstring readEnvironment(const wchar_t* name) {
 }
 
 /// The directory holding the running executable, read completely whatever its
-/// length. On genuine failure (length 0) this is the empty path and the lookup
-/// degrades to CWD-relative — the loader validates whatever it finds there and
-/// otherwise falls back to the embedded default.
+/// length. On genuine failure (length 0) this is the empty path, which makes
+/// the loader skip the directory lookup entirely (never CWD-relative) and fall
+/// back to the embedded default with a diagnostic.
 std::filesystem::path executableDirectory() {
   // Starts deliberately small: the grow path runs on every start, so it stays
   // exercised; GetModuleFileNameW reports truncation by filling the buffer.

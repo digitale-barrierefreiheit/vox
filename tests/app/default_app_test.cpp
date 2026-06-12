@@ -10,7 +10,6 @@
 
 #  include <Windows.h>
 
-#  include <array>
 #  include <cwchar>
 #  include <filesystem>
 #  include <fstream>
@@ -85,30 +84,36 @@ void writeFile(const std::filesystem::path& file, std::string_view content) {
 }
 
 /// The directory holding this test executable — where the composition root
-/// looks for `lexicon\<tag>.lex` (#61).
+/// looks for `lexicon\<tag>.lex` (#61). Grows to any path length; empty on
+/// failure, so a test fails on the missing directory instead of touching a
+/// CWD-relative path.
 std::filesystem::path testExecutableDirectory() {
-  std::array<wchar_t, MAX_PATH> buffer{};
-  const DWORD length =
-      ::GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
-  return std::filesystem::path(buffer.data(), buffer.data() + length).parent_path();
+  std::wstring path(8, L'\0');
+  DWORD length = ::GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
+  while (length == path.size()) { // filled buffer = truncated: grow and retry
+    path.resize(path.size() * 2);
+    length = ::GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
+  }
+  path.resize(length);
+  return std::filesystem::path(path).parent_path();
 }
 
 /// The current value of environment variable @p name, or nullopt when unset.
-/// Grows to the required size, so any length is captured faithfully.
+/// Grows to the required size, so any length is captured faithfully — and a
+/// variable that exists with an empty value is captured as "", not as unset.
 std::optional<std::wstring> readEnvironmentValue(const wchar_t* name) {
   std::wstring value(8, L'\0');
-  while (true) {
-    const DWORD written =
-        ::GetEnvironmentVariableW(name, value.data(), static_cast<DWORD>(value.size()));
-    if (written == 0) {
-      return std::nullopt;
-    }
-    if (written < value.size()) {
-      value.resize(written);
-      return value;
-    }
+  ::SetLastError(ERROR_SUCCESS);
+  DWORD written = ::GetEnvironmentVariableW(name, value.data(), static_cast<DWORD>(value.size()));
+  while (written >= value.size()) {
     value.resize(written); // too small: `written` is the required size incl. the NUL
+    written = ::GetEnvironmentVariableW(name, value.data(), static_cast<DWORD>(value.size()));
   }
+  if (written == 0 && ::GetLastError() == ERROR_ENVVAR_NOT_FOUND) {
+    return std::nullopt;
+  }
+  value.resize(written);
+  return value;
 }
 
 /// Sets an environment variable for one test and restores the previous state

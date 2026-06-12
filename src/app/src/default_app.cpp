@@ -7,7 +7,6 @@
 
 #  include <Windows.h>
 
-#  include <array>
 #  include <filesystem>
 #  include <iostream>
 #  include <memory>
@@ -43,15 +42,21 @@ std::wstring readEnvironment(const wchar_t* name) {
   return value;
 }
 
-/// The directory holding the running executable. On failure (length 0) this is
-/// the empty path and on MAX_PATH truncation a cut-off one — either way the
-/// lookup degrades safely: the loader validates whatever it finds there and
+/// The directory holding the running executable, read completely whatever its
+/// length. On genuine failure (length 0) this is the empty path and the lookup
+/// degrades to CWD-relative — the loader validates whatever it finds there and
 /// otherwise falls back to the embedded default.
 std::filesystem::path executableDirectory() {
-  std::array<wchar_t, MAX_PATH> buffer{};
-  const DWORD length =
-      ::GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
-  return std::filesystem::path(buffer.data(), buffer.data() + length).parent_path();
+  // Starts deliberately small: the grow path runs on every start, so it stays
+  // exercised; GetModuleFileNameW reports truncation by filling the buffer.
+  std::wstring path(8, L'\0');
+  DWORD length = ::GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
+  while (length == path.size()) {
+    path.resize(path.size() * 2);
+    length = ::GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
+  }
+  path.resize(length); // 0 on failure: the empty path
+  return std::filesystem::path(path).parent_path();
 }
 
 /// Loads the announcement lexicon per the #61 resolution rule (VOX_LEXICON,

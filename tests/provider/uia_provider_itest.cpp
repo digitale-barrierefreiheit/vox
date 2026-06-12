@@ -358,9 +358,9 @@ TEST_F(UiaProviderItest, StopSilencesFocusEventsAndStartResumesThem) {
     return;
   }
 
-  // stop() guarantees no further callback *begins*; one already in flight may
-  // still land. Let that tail settle, then the count must stay frozen even
-  // though the app keeps changing focus every 200 ms.
+  // A stopped provider swallows new events; an invocation already in flight
+  // may still land. Let that tail settle, then the count must stay frozen
+  // even though the app keeps changing focus every 200 ms.
   provider.stop();
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
   const int afterStop = events.load();

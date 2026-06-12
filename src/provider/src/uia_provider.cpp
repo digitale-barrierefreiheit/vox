@@ -208,14 +208,14 @@ UiaElementData extract(IUIAutomationElement* element) {
 /// COM event sink that forwards UIA focus changes to a std::function.
 ///
 /// The callback is detachable (#60): stop() neutralizes the sink *before*
-/// asking UIA to unregister it, so no callback invocation *begins* after
-/// stop() returns — even when `RemoveFocusChangedEventHandler` fails and UIA
-/// keeps invoking the COM object. The callback is copied under the mutex but
-/// invoked outside it: holding the lock across user code could deadlock with
-/// detach() if the callback (directly or indirectly) stopped the provider.
-/// Consequence: one invocation already past the copy may still complete
-/// concurrently with detach() — the Reader's focus guard drops that tail
-/// (see reader.hpp).
+/// asking UIA to unregister it, so events keep being swallowed even when
+/// `RemoveFocusChangedEventHandler` fails and UIA keeps invoking the COM
+/// object. The callback is copied under the mutex but invoked outside it:
+/// holding the lock across user code could deadlock with detach() if the
+/// callback (directly or indirectly) stopped the provider. Consequence:
+/// detach() only prevents *future* forwarding — an invocation that already
+/// copied the callback may still run after detach() returns. The Reader's
+/// focus guard drops exactly that tail (see reader.hpp).
 class FocusEventHandler : public Microsoft::WRL::RuntimeClass<
                               Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>,
                               IUIAutomationFocusChangedEventHandler> {
@@ -241,10 +241,11 @@ public:
     return S_OK;
   }
 
-  /// Neutralizes the sink: no callback invocation begins after this returns,
-  /// regardless of whether UIA still invokes the COM object because
-  /// unregistration failed. (Deliberately does not wait for an invocation
-  /// already in flight — see the class comment.)
+  /// Prevents any future forwarding: an event entering the sink after this
+  /// returns finds no callback. Deliberately does not wait for an invocation
+  /// already past its callback copy — that one may still run to completion
+  /// concurrently (see the class comment); the caller's teardown guard covers
+  /// that tail.
   void detach() {
     const std::scoped_lock lock(mutex_);
     callback_ = nullptr;
@@ -309,7 +310,8 @@ public:
       handler_.Reset();
     }
     retryShelvedRemovals();
-    if ((stuck || !shelved_.empty()) && automation_) {
+    const bool leftovers = stuck || !shelved_.empty();
+    if (leftovers && automation_) {
       // Escalation of last resort (#60): individual removals kept failing.
       // Safe big hammer — this provider owns its *private* IUIAutomation
       // instance, and these handlers are the only ones registered on it.
@@ -361,10 +363,10 @@ public:
     if (!handler_) {
       return;
     }
-    // Detach FIRST: whatever UIA answers below, no further callback *begins*
-    // once stop() returns — correctness does not depend on unregistration
-    // succeeding (#60). A callback already in flight may still complete; the
-    // Reader's guard covers that tail.
+    // Detach FIRST: whatever UIA answers below, every event reaching the sink
+    // from now on is swallowed — correctness does not depend on unregistration
+    // succeeding (#60). An invocation already past the sink's callback copy
+    // may still run after we return; the Reader's guard drops that tail.
     handler_->detach();
     if (automation_ && FAILED(automation_->RemoveFocusChangedEventHandler(handler_.Get()))) {
       // UIA may still hold and invoke the (now inert) sink: shelve our

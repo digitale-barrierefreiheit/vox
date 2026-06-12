@@ -49,9 +49,10 @@ void Reader::start() {
     }
     worker_ = std::jthread([this] { workerLoop(); });
     // Route the focus callback through a shared guard so it stays safe even if
-    // a provider invokes it after this Reader is destroyed. Since #60 the
-    // provider guarantees no callback *begins* after stop(); the guard drops
-    // the in-flight tail and anything a misbehaving provider might deliver.
+    // a provider invokes it after this Reader is destroyed. Since #60 a
+    // stopped provider swallows new events; the guard drops the invocation
+    // possibly still in flight across a stop — and anything a misbehaving
+    // provider might deliver.
     {
       // Re-attach the single, lifetime-long guard (created in the constructor)
       // under its lock, reusing it across stop()/start() cycles.
@@ -84,7 +85,9 @@ void Reader::stop() {
     const std::scoped_lock lock(guard_->mutex);
     guard_->reader = nullptr;
   }
-  provider_.stop(); // no further callback begins once this returns (#60)
+  // Events are swallowed from here on; the guard detached above already drops
+  // the one invocation possibly still in flight (#60).
+  provider_.stop();
   {
     const std::scoped_lock lock(mutex_);
     running_ = false;

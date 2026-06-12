@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781208623035,
+  "lastUpdate": 1781257484255,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -91,6 +91,35 @@ window.BENCHMARK_DATA = {
           "url": "https://github.com/digitale-barrierefreiheit/vox/commit/dbee5a0c23cf842010d88f0a78700c21adf47472"
         },
         "date": 1781208622118,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.7,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3d1c61d9b3fd6287202a89405ef7b630651fcd50",
+          "message": "feat(provider): make UIA focus-handler unregister/re-register robust (#60)\n\nstop() correctness no longer depends on UIA's RemoveFocusChangedEventHandler\nsucceeding. The focus sink is detachable: stop() neutralizes the callback\nbefore attempting removal, so every event reaching the sink afterwards is\nswallowed, whatever HRESULT UIA answers; the callback is copied under the\nsink mutex but invoked outside it (a callback that itself stops the provider\ncannot self-deadlock), and any invocations already past their callback copy\nare dropped by the Reader's focus guard (detached before provider_.stop()).\nA handler whose removal fails is shelved (bounded at 8 — beyond that,\neverything is unregistered at once) instead of blocking the slot, so a\nstop()/start() cycle reliably resumes notifications; every stop() retries\nshelved removals and the allocation-free teardown escalates to\nRemoveAllEventHandlers on the provider's private IUIAutomation instance.\n\nTests: six unit tests on the mock seam (silenced-after-failed-removal,\nfresh-handler-after-failed-removal, retry-and-release, two destructor\nescalation variants, bounded-shelf escalation) replace the test that pinned\nthe old deficient behavior; an integration test drives the real UIA stack\nvia the #40 test app — events flow after start(), stay silent through five\nfocus cycles after stop(), and resume after a restart.\n\nCloses #60.",
+          "timestamp": "2026-06-12T11:28:09+02:00",
+          "tree_id": "490f6c6cad68729b53101c885e8212a8ee7b329c",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/3d1c61d9b3fd6287202a89405ef7b630651fcd50"
+        },
+        "date": 1781257483891,
         "tool": "customSmallerIsBetter",
         "benches": [
           {

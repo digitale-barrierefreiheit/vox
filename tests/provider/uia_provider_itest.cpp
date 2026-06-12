@@ -346,8 +346,10 @@ bool waitForMoreEvents(const std::atomic<int>& events, int baseline) {
 // stop() silences them even while the app keeps cycling focus, and a second
 // start() resumes delivery (no silent-dead state).
 TEST_F(UiaProviderItest, StopSilencesFocusEventsAndStartResumesThem) {
-  UiaProvider provider;
+  // The counter outlives the provider (declared first): a callback invocation
+  // still in flight across the final stop() must never touch a dead counter.
   std::atomic events{0};
+  UiaProvider provider;
   const auto count = [&events](const AccessibleNode&) { events.fetch_add(1); };
 
   provider.start(count);
@@ -370,6 +372,9 @@ TEST_F(UiaProviderItest, StopSilencesFocusEventsAndStartResumesThem) {
   provider.start(count);
   EXPECT_TRUE(waitForMoreEvents(events, afterStop)) << "no focus event after restart";
   provider.stop();
+  // Let a possible in-flight invocation drain before `events` leaves scope
+  // (the provider destructor does not wait for it either, by design).
+  std::this_thread::sleep_for(std::chrono::milliseconds(300));
 }
 
 } // namespace

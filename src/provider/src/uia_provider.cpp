@@ -344,6 +344,9 @@ public:
     // stop()/start() cycle reliably resumes notifications (#60).
     stop();
     auto handler = Microsoft::WRL::Make<FocusEventHandler>(std::move(onFocusChanged));
+    if (!handler) {
+      return; // allocation failed — don't hand UIA a null sink
+    }
     if (SUCCEEDED(automation_->AddFocusChangedEventHandler(cacheRequest_.Get(), handler.Get()))) {
       handler_ = std::move(handler);
     } // registration failed — nothing was registered, nothing for stop() to remove
@@ -360,11 +363,7 @@ public:
     // may still run after we return; the Reader's guard drops that tail.
     handler_->detach();
     if (automation_ && FAILED(automation_->RemoveFocusChangedEventHandler(handler_.Get()))) {
-      // UIA may still hold and invoke the (now inert) sink: shelve our
-      // reference so the COM object stays valid for those residual calls, and
-      // free the slot so the next start() can register a fresh handler. Later
-      // stop()s and the destructor retry the removal.
-      shelved_.push_back(std::move(handler_));
+      shelveStuckHandler();
     }
     handler_.Reset();
   }
@@ -422,6 +421,25 @@ private:
                     SUCCEEDED(automation_->CreatePropertyCondition(UIA_NamePropertyId, value, out));
     ::VariantClear(&value);
     return ok;
+  }
+
+  /// Keeps a (detached) handler UIA refused to unregister alive for its
+  /// residual invocations, freeing the active slot for the next start().
+  /// Bounded: if removals kept failing across many stop()/start() cycles the
+  /// shelf would grow without bound, so at the cap everything is unregistered
+  /// at once instead — safe here, because the active handler was just
+  /// detached and the next one is not registered yet, so the big hammer hits
+  /// only our own stuck sinks (this provider owns its private IUIAutomation
+  /// instance). Only called with automation_ non-null (the removal just
+  /// failed on it).
+  void shelveStuckHandler() {
+    constexpr std::size_t MaxShelvedHandlers = 8;
+    if (shelved_.size() < MaxShelvedHandlers) {
+      shelved_.push_back(std::move(handler_));
+      return;
+    }
+    automation_->RemoveAllEventHandlers();
+    shelved_.clear(); // inert either way; UIA holds its own refs if still registered
   }
 
   /// Retries unregistering handlers whose removal previously failed (#60),

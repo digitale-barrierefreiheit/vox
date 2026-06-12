@@ -511,6 +511,19 @@ TEST_F(UiaProviderTest, DestructionEscalatesWhenTheActiveHandlerCannotBeRemoved)
   } // no stop(): teardown detaches, fails the removal, and escalates directly
 }
 
+TEST_F(UiaProviderTest, RepeatedRemovalFailuresEscalateInsteadOfGrowingTheShelf) {
+  EXPECT_CALL(automation_, RemoveFocusChangedEventHandler(_)).WillRepeatedly(Return(ErrorFail));
+  // The shelf is capped (at 8): the cycle that would exceed it unregisters
+  // everything at once instead of leaking one stuck handler per cycle.
+  EXPECT_CALL(automation_, RemoveAllEventHandlers()).WillOnce(Return(S_OK));
+  UiaProvider provider;
+  for (int cycle = 0; cycle < 9; ++cycle) {
+    provider.start([](const AccessibleNode&) { /* every removal fails */ });
+    provider.stop();
+  }
+  // The escalation cleared the shelf, so destruction has nothing left to do.
+}
+
 /// A degraded provider (automation creation failed) accepts start()/stop() as
 /// safe no-ops rather than crashing.
 TEST(UiaProviderDegraded, StartAndStopAreNoOpsWhenAutomationIsUnavailable) {

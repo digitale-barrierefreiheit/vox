@@ -4,8 +4,9 @@
 # vox::german — German announcement vocabulary + minimal normalization (ADR-07,
 # §5.2). Pure and OS-independent: words come from a `key = value` table and the
 # canonical `data/lexicon/de.lex` is embedded at configure time, so neither the
-# library nor its tests touch the filesystem. Loading the table from disk is the
-# app's job (#39). Full utterance composition is the Output Manager's (#33).
+# library nor its tests touch the filesystem. The app loads per-language .lex
+# files from disk at runtime (#61); this embedded copy is its always-speakable
+# fallback. Full utterance composition is the Output Manager's (#33).
 
 set(_vox_de_lex "${PROJECT_SOURCE_DIR}/data/lexicon/de.lex")
 file(READ "${_vox_de_lex}" VOX_DE_LEX_CONTENT)

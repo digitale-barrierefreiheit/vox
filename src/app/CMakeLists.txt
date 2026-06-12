@@ -10,7 +10,10 @@
 
 add_library(vox_app STATIC
   src/reader.cpp
-  src/app.cpp)
+  src/app.cpp
+  # The lexicon loader (#61) is the app's one filesystem seam: it reads the
+  # per-language .lex files the pure vox::german deliberately cannot.
+  src/lexicon_loader.cpp)
 add_library(vox::app ALIAS vox_app)
 
 target_include_directories(vox_app
@@ -26,13 +29,12 @@ target_link_libraries(vox_app
     vox::tts
     vox::audio
     vox::input
+    vox::german
     Threads::Threads)
 
 if(WIN32)
-  # The composition root builds the real Windows stack, so it is Windows-only and
-  # pulls in the German lexicon the default output uses.
+  # The composition root builds the real Windows stack, so it is Windows-only.
   target_sources(vox_app PRIVATE src/default_app.cpp)
-  target_link_libraries(vox_app PUBLIC vox::german)
 endif()
 
 vox_configure_target(vox_app)
@@ -44,4 +46,11 @@ if(WIN32)
   vox_configure_target(vox)
   target_link_libraries(vox PRIVATE vox::app)
   set_target_properties(vox PROPERTIES FOLDER "apps")
+  # Ship the per-language lexicon files next to the executable, where the
+  # loader looks for them (lexicon\<tag>.lex, #61).
+  add_custom_command(TARGET vox POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${PROJECT_SOURCE_DIR}/data/lexicon"
+            "$<TARGET_FILE_DIR:vox>/lexicon"
+    COMMENT "Copying lexicon files next to vox")
 endif()

@@ -5,13 +5,18 @@
 /// @brief The production composition root: constructs the real Windows stack.
 #if defined(_WIN32)
 
+#  include <windows.h>
+
+#  include <array>
+#  include <filesystem>
+#  include <iostream>
 #  include <memory>
+#  include <string>
 #  include <utility>
 
 #  include <vox/app/default_app.hpp>
+#  include <vox/app/lexicon_loader.hpp>
 #  include <vox/audio/wasapi_audio_sink.hpp>
-#  include <vox/german/de_lex_data.hpp>
-#  include <vox/german/lexicon.hpp>
 #  include <vox/input/command_handler.hpp>
 #  include <vox/input/iinput_hook.hpp>
 #  include <vox/input/keyboard_hook.hpp>
@@ -21,13 +26,60 @@
 
 namespace vox::app {
 
+namespace {
+
+/// The value of environment variable @p name, or empty when unset (a value
+/// that doesn't fit the buffer — far beyond any sane path or tag — counts as
+/// unset too, which the lexicon loader reports as an unreadable file).
+std::wstring readEnvironment(const wchar_t* name) {
+  std::array<wchar_t, 4096> buffer{};
+  const DWORD written =
+      ::GetEnvironmentVariableW(name, buffer.data(), static_cast<DWORD>(buffer.size()));
+  if (written == 0 || written >= buffer.size()) {
+    return {};
+  }
+  return {buffer.data(), written};
+}
+
+/// The directory holding the running executable. On failure (length 0) this is
+/// the empty path and on MAX_PATH truncation a cut-off one — either way the
+/// lookup degrades safely: the loader validates whatever it finds there and
+/// otherwise falls back to the embedded default.
+std::filesystem::path executableDirectory() {
+  std::array<wchar_t, MAX_PATH> buffer{};
+  const DWORD length =
+      ::GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+  return std::filesystem::path(buffer.data(), buffer.data() + length).parent_path();
+}
+
+/// Loads the announcement lexicon per the #61 resolution rule (VOX_LEXICON,
+/// then lexicon\<VOX_LANGUAGE>.lex next to the executable, then the embedded
+/// German default), reporting every fallback on stderr.
+vox::german::Lexicon loadConfiguredLexicon() {
+  const std::wstring requestedTagWide = readEnvironment(L"VOX_LANGUAGE");
+  // The tag must be ASCII to be valid; non-ASCII survives the narrowing as
+  // non-tag characters, so the loader rejects and reports it.
+  std::string requestedTag;
+  for (const wchar_t letter : requestedTagWide) {
+    requestedTag += (letter < 128) ? static_cast<char>(letter) : '?';
+  }
+  LoadedLexicon loaded = loadLexicon({.explicitFile = readEnvironment(L"VOX_LEXICON"),
+                                      .lexiconDir = executableDirectory() / L"lexicon",
+                                      .requestedTag = std::move(requestedTag)});
+  for (const std::string& line : loaded.diagnostics) {
+    std::cerr << "vox: " << line << '\n';
+  }
+  return std::move(loaded.lexicon);
+}
+
+} // namespace
+
 AppDependencies makeDefaultDependencies() {
   // The engine is built first: the audio sink is configured at its PCM format.
   auto tts = std::make_unique<vox::tts::SapiTtsEngine>(); // prefer German, fall back
   auto audio = std::make_unique<vox::audio::WasapiAudioSink>(tts->format());
   auto provider = std::make_unique<vox::provider::UiaProvider>();
-  vox::output::OutputManager output(
-      vox::german::Lexicon::parse(vox::german::DefaultGermanLexiconData));
+  vox::output::OutputManager output(loadConfiguredLexicon());
 
   return AppDependencies{
       .provider = std::move(provider),

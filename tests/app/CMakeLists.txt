@@ -11,7 +11,13 @@ vox_add_test(
   SOURCES
     reader_test.cpp
     app_test.cpp
+    lexicon_loader_test.cpp
   LINK vox::app vox::german vox::testing Threads::Threads)
+
+# Lets the loader tests validate the shipped .lex files themselves (#61), not
+# just synthetic tables.
+target_compile_definitions(app_test PRIVATE
+  VOX_LEXICON_DATA_DIR="${PROJECT_SOURCE_DIR}/data/lexicon")
 
 set_target_properties(app_test PROPERTIES FOLDER "tests")
 

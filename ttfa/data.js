@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781257484255,
+  "lastUpdate": 1781302237418,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -120,6 +120,35 @@ window.BENCHMARK_DATA = {
           "url": "https://github.com/digitale-barrierefreiheit/vox/commit/3d1c61d9b3fd6287202a89405ef7b630651fcd50"
         },
         "date": 1781257483891,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.7,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5e7d22a92c3bb4a2610681750592f92349dfd273",
+          "message": "feat(app): load the lexicon from per-language files, fall back to the embedded German default (#61)\n\nEvery .lex table declares its language (language = <BCP-47 tag>); Lexicon::parse exposes it while staying filesystem-free. The app-layer loader resolves VOX_LEXICON (authoritative), then lexicon\\<VOX_LANGUAGE>.lex next to the executable (default de), and falls back to the embedded German default on any failure - a file replaces the default wholesale, every fallback is reported on stderr, and the reader always speaks. Hardened per review: any-length env values, regular-files-only opens (no device names/directories), no CWD-relative lookups, never-throwing diagnostics. Ships en.lex as the English reference; the build copies data/lexicon next to vox.exe.",
+          "timestamp": "2026-06-12T23:53:09+02:00",
+          "tree_id": "e3c1681208f1b17476e693c88f62c0f87c8e247b",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/5e7d22a92c3bb4a2610681750592f92349dfd273"
+        },
+        "date": 1781302236957,
         "tool": "customSmallerIsBetter",
         "benches": [
           {

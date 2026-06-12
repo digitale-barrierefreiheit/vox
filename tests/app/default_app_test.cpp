@@ -18,6 +18,7 @@
 #  include <optional>
 #  include <string>
 #  include <string_view>
+#  include <system_error>
 
 #  include <gmock/gmock.h>
 #  include <gtest/gtest.h>
@@ -258,15 +259,23 @@ TEST_F(DefaultAppTest, SpeaksTheWordsOfTheFileVoxLexiconPointsAt) {
 // VOX_LANGUAGE selects a per-language file from `lexicon` next to the
 // executable — the path users take to add their own languages (#61).
 TEST_F(DefaultAppTest, VoxLanguageSelectsALanguageFileNextToTheExecutable) {
-  const std::filesystem::path lexiconDir = testExecutableDirectory() / "lexicon";
+  const std::filesystem::path exeDir = testExecutableDirectory();
+  ASSERT_FALSE(exeDir.empty()); // fail fast rather than touch a CWD-relative path
+  const std::filesystem::path lexiconDir = exeDir / "lexicon";
   std::filesystem::create_directories(lexiconDir);
-  writeFile(lexiconDir / "en.lex", completeTable("en") + "role.button = button-from-en-file\n");
-  const ScopedEnvironment env(L"VOX_LANGUAGE", L"en");
+  // "qaa" is reserved for local use (BCP-47), so this can never clash with a
+  // real language file someone placed next to the binary.
+  const std::filesystem::path file = lexiconDir / "qaa.lex";
+  writeFile(file, completeTable("qaa") + "role.button = button-from-qaa-file\n");
+  const ScopedEnvironment env(L"VOX_LANGUAGE", L"qaa");
 
   const AppDependencies deps = makeDefaultDependencies();
 
-  EXPECT_THAT(deps.output.announce(saveButton()).text, HasSubstr("button-from-en-file"));
-  std::filesystem::remove_all(lexiconDir);
+  EXPECT_THAT(deps.output.announce(saveButton()).text, HasSubstr("button-from-qaa-file"));
+  // Remove only what this test created; the directory goes away only if empty.
+  std::filesystem::remove(file);
+  std::error_code ignored;
+  std::filesystem::remove(lexiconDir, ignored);
 }
 
 } // namespace

@@ -50,6 +50,17 @@ bool equalsIgnoreCaseAscii(std::string_view left, std::string_view right) {
                             [](char a, char b) { return toLowerAscii(a) == toLowerAscii(b); });
 }
 
+/// @p file rendered as UTF-8 for a diagnostic line. `path::string()` would
+/// throw on characters outside the active code page, which must not break the
+/// always-speaks startup path; the UTF-16 → UTF-8 rendering always succeeds.
+std::string utf8PathForDiagnostics(const std::filesystem::path& file) {
+  const std::u8string utf8 = file.u8string();
+  std::string rendered(utf8.size(), '\0');
+  std::ranges::transform(utf8, rendered.begin(),
+                         [](char8_t unit) { return static_cast<char>(unit); });
+  return rendered;
+}
+
 /// Joins @p keys as "a, b, c". @p keys must not be empty.
 std::string joinKeys(const std::vector<std::string>& keys) {
   std::string joined = keys.front();
@@ -84,14 +95,14 @@ bool loadFromFile(const std::filesystem::path& file, std::string_view expectedTa
                   const std::string& context, LoadedLexicon& result) {
   const std::optional<std::string> text = readFile(file);
   if (!text.has_value()) {
-    result.diagnostics.push_back("lexicon file \"" + file.string() + "\" " + context +
-                                 " could not be read; using the embedded German default");
+    result.diagnostics.push_back("lexicon file \"" + utf8PathForDiagnostics(file) + "\" " +
+                                 context + " could not be read; using the embedded German default");
     return false;
   }
   vox::german::Lexicon lexicon = vox::german::Lexicon::parse(*text);
   if (const std::optional<std::string> reason = rejectionReason(lexicon, expectedTag)) {
-    result.diagnostics.push_back("lexicon file \"" + file.string() + "\" " + context +
-                                 " was rejected: " + *reason +
+    result.diagnostics.push_back("lexicon file \"" + utf8PathForDiagnostics(file) + "\" " +
+                                 context + " was rejected: " + *reason +
                                  "; using the embedded German default");
     return false;
   }

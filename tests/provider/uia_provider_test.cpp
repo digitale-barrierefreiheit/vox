@@ -446,16 +446,82 @@ TEST_F(UiaProviderTest, StartDropsTheHandlerWhenRegistrationFails) {
   provider.stop();
 }
 
-TEST_F(UiaProviderTest, StopKeepsTheHandlerWhenRemovalFailsAndStartStaysIdempotent) {
+// --- the #60 contract: stop() silences unconditionally, start() always resumes ---
+
+TEST_F(UiaProviderTest, StopSilencesTheCallbackEvenWhenRemovalFails) {
   UiaProvider provider;
-  provider.start([](const AccessibleNode&) { /* this test only checks stop()/start() */ });
-  // Removal fails: UIA may still hold the handler, so the provider keeps its
-  // reference rather than dropping a still-registered handler.
+  bool called = false;
+  provider.start([&called](const AccessibleNode&) { called = true; });
+  ASSERT_NE(capturedHandler_, nullptr);
   EXPECT_CALL(automation_, RemoveFocusChangedEventHandler(_)).WillRepeatedly(Return(ErrorFail));
   provider.stop();
-  // A subsequent start() sees the retained handler and does not double-register.
-  EXPECT_CALL(automation_, AddFocusChangedEventHandler(_, _)).Times(0);
-  provider.start([](const AccessibleNode&) { /* retained handler path */ });
+  // UIA still holds the handler and may keep invoking it — the detached sink
+  // must swallow the event instead of forwarding it.
+  EXPECT_EQ(capturedHandler_->HandleFocusChangedEvent(&element_), S_OK);
+  EXPECT_FALSE(called);
+}
+
+TEST_F(UiaProviderTest, StartAfterAFailedRemovalRegistersAFreshHandler) {
+  UiaProvider provider;
+  provider.start([](const AccessibleNode&) { /* the soon-to-be-stuck handler */ });
+  IUIAutomationFocusChangedEventHandler* stuck = capturedHandler_;
+  ASSERT_NE(stuck, nullptr);
+  EXPECT_CALL(automation_, RemoveFocusChangedEventHandler(_)).WillRepeatedly(Return(ErrorFail));
+  provider.stop();
+
+  // The stuck handler is shelved, not blocking: a new start() must register a
+  // fresh handler and deliver events to the new callback (no silent-dead state).
+  bool called = false;
+  provider.start([&called](const AccessibleNode&) { called = true; });
+  ASSERT_NE(capturedHandler_, nullptr);
+  EXPECT_NE(capturedHandler_, stuck);
+  EXPECT_EQ(capturedHandler_->HandleFocusChangedEvent(&element_), S_OK);
+  EXPECT_TRUE(called);
+}
+
+TEST_F(UiaProviderTest, ALaterStopRetriesAndReleasesTheShelvedHandler) {
+  UiaProvider provider;
+  provider.start([](const AccessibleNode&) { /* this test only checks the retry */ });
+  // First stop: removal fails, the handler is shelved.
+  EXPECT_CALL(automation_, RemoveFocusChangedEventHandler(_)).WillOnce(Return(ErrorFail));
+  provider.stop();
+  // Next stop: the retry succeeds and the shelf empties — so the destructor
+  // has nothing left to escalate.
+  EXPECT_CALL(automation_, RemoveFocusChangedEventHandler(_)).WillOnce(Return(S_OK));
+  provider.stop();
+  EXPECT_CALL(automation_, RemoveAllEventHandlers()).Times(0);
+}
+
+TEST_F(UiaProviderTest, DestructionEscalatesToRemoveAllWhenRemovalKeepsFailing) {
+  EXPECT_CALL(automation_, RemoveFocusChangedEventHandler(_)).WillRepeatedly(Return(ErrorFail));
+  EXPECT_CALL(automation_, RemoveAllEventHandlers()).WillOnce(Return(S_OK));
+  {
+    UiaProvider provider;
+    provider.start([](const AccessibleNode&) { /* this test only checks teardown */ });
+    provider.stop(); // shelves the handler (removal keeps failing)
+  } // the destructor retries, then escalates to RemoveAllEventHandlers
+}
+
+TEST_F(UiaProviderTest, DestructionEscalatesWhenTheActiveHandlerCannotBeRemoved) {
+  EXPECT_CALL(automation_, RemoveFocusChangedEventHandler(_)).WillRepeatedly(Return(ErrorFail));
+  EXPECT_CALL(automation_, RemoveAllEventHandlers()).WillOnce(Return(S_OK));
+  {
+    UiaProvider provider;
+    provider.start([](const AccessibleNode&) { /* destroyed while still registered */ });
+  } // no stop(): teardown detaches, fails the removal, and escalates directly
+}
+
+TEST_F(UiaProviderTest, RepeatedRemovalFailuresEscalateInsteadOfGrowingTheShelf) {
+  EXPECT_CALL(automation_, RemoveFocusChangedEventHandler(_)).WillRepeatedly(Return(ErrorFail));
+  // The shelf is capped (at 8): the cycle that would exceed it unregisters
+  // everything at once instead of leaking one stuck handler per cycle.
+  EXPECT_CALL(automation_, RemoveAllEventHandlers()).WillOnce(Return(S_OK));
+  UiaProvider provider;
+  for (int cycle = 0; cycle < 9; ++cycle) {
+    provider.start([](const AccessibleNode&) { /* every removal fails */ });
+    provider.stop();
+  }
+  // The escalation cleared the shelf, so destruction has nothing left to do.
 }
 
 /// A degraded provider (automation creation failed) accepts start()/stop() as

@@ -29,6 +29,7 @@
 #include <Windows.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <format>
@@ -327,6 +328,53 @@ TEST_F(UiaProviderItest, ReadsEachNonFocusableControl) {
     EXPECT_EQ(output.announce(*node).text, expected.utterance)
         << "utterance mismatch on " << describe(*node);
   }
+}
+
+// Waits until more focus events than @p baseline arrived (the app cycles focus
+// every 200 ms), within the same ~10 s budget as the focused-element polling.
+bool waitForMoreEvents(const std::atomic<int>& events, int baseline) {
+  for (int attempt = 0; attempt < MaxPollAttempts; ++attempt) {
+    if (events.load() > baseline) {
+      return true;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(PollIntervalMs));
+  }
+  return false;
+}
+
+// The #60 contract against the real UIA stack: focus events flow after start(),
+// stop() silences them even while the app keeps cycling focus, and a second
+// start() resumes delivery (no silent-dead state).
+TEST_F(UiaProviderItest, StopSilencesFocusEventsAndStartResumesThem) {
+  // The counter outlives the provider (declared first): a callback invocation
+  // still in flight across the final stop() must never touch a dead counter.
+  std::atomic events{0};
+  UiaProvider provider;
+  const auto count = [&events](const AccessibleNode&) { events.fetch_add(1); };
+
+  provider.start(count);
+  if (!waitForMoreEvents(events, 0)) {
+    provider.stop();
+    skipOrFail("VOX_REQUIRE_UIA_TREE is set but no focus event arrived after start().",
+               "No focus events observed (no interactive desktop?).");
+    return;
+  }
+
+  // A stopped provider swallows new events; an invocation already in flight
+  // may still land. Let that tail settle, then the count must stay frozen
+  // even though the app keeps changing focus every 200 ms.
+  provider.stop();
+  std::this_thread::sleep_for(std::chrono::milliseconds(300));
+  const int afterStop = events.load();
+  std::this_thread::sleep_for(std::chrono::seconds(1)); // ~5 focus cycles
+  EXPECT_EQ(events.load(), afterStop) << "a focus event was delivered after stop()";
+
+  provider.start(count);
+  EXPECT_TRUE(waitForMoreEvents(events, afterStop)) << "no focus event after restart";
+  provider.stop();
+  // Let a possible in-flight invocation drain before `events` leaves scope
+  // (the provider destructor does not wait for it either, by design).
+  std::this_thread::sleep_for(std::chrono::milliseconds(300));
 }
 
 } // namespace

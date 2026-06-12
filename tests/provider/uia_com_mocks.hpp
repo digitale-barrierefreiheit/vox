@@ -301,9 +301,9 @@ public:
               (__RPC__in_opt IUIAutomationFocusChangedEventHandler * handler),
               (override, Calltype(STDMETHODCALLTYPE)));
 
-  HRESULT STDMETHODCALLTYPE RemoveAllEventHandlers() override {
-    return E_NOTIMPL;
-  }
+  // Mocked (not stubbed): the provider's destructor escalates to this when
+  // individual focus-handler removals keep failing (#60).
+  MOCK_METHOD(HRESULT, RemoveAllEventHandlers, (), (override, Calltype(STDMETHODCALLTYPE)));
 
   HRESULT STDMETHODCALLTYPE
   IntNativeArrayToSafeArray(__RPC__in_ecount_full(arrayCount) int* array, int arrayCount,

@@ -16,8 +16,10 @@ namespace vox::app {
 
 /// @brief Builds the production @ref AppDependencies: the real UIA provider, the
 ///        SAPI engine (preferring a German voice), the WASAPI sink at the
-///        engine's format, the German output, and a factory that makes the
-///        Windows `KeyboardHook`.
+///        engine's format, the output speaking the configured lexicon
+///        (`VOX_LEXICON` / `lexicon\<VOX_LANGUAGE>.lex` next to the executable,
+///        falling back to the embedded German default, #61), and a factory that
+///        makes the Windows `KeyboardHook`.
 /// @throws vox::tts::EngineError if no usable SAPI voice is available.
 [[nodiscard]] AppDependencies makeDefaultDependencies();
 

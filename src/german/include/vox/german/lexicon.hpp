@@ -5,12 +5,14 @@
 /// @brief German announcement vocabulary: role and state words (ADR-07, §5.2).
 ///
 /// The `Lexicon` maps a provider-independent control role (#32) and an
-/// announceable state concept onto the German word a screen-reader user hears.
+/// announceable state concept onto the word a screen-reader user hears.
 /// It is pure and OS-independent: it is built by parsing a `key = value` text
-/// table (`Lexicon::parse`), never by touching the filesystem — loading the
-/// `de.lex` file from disk is the app's job (#39). The composition of a full
-/// utterance from a node is the Output Manager's job (#33); this layer only
-/// supplies words.
+/// table (`Lexicon::parse`), never by touching the filesystem — loading a
+/// `.lex` file from disk is the app's job (#61). A table declares the language
+/// it stands for (`language = <BCP-47 tag>`), so users and contributors can
+/// supply files for languages beyond the canonical German `de.lex` (#34). The
+/// composition of a full utterance from a node is the Output Manager's job
+/// (#33); this layer only supplies words.
 #ifndef VOX_GERMAN_LEXICON_HPP
 #define VOX_GERMAN_LEXICON_HPP
 
@@ -44,7 +46,8 @@ enum class StateConcept : std::uint8_t {
 /// Number of `StateConcept` values; used to size the lookup table.
 inline constexpr std::size_t StateConceptCount = 9;
 
-/// German announcement vocabulary, built from a `key = value` table.
+/// Announcement vocabulary, built from a `key = value` table (German by
+/// default; the table's `language` declaration says what it holds, #61).
 ///
 /// Lookups are O(1) and return a view into storage that stays valid for the
 /// Lexicon's lifetime. A missing entry yields an empty view (the caller skips
@@ -57,15 +60,22 @@ public:
   /// Blank lines and lines beginning with `#` (after leading spaces) are
   /// ignored; a line with no `=` is skipped. Keys and values are trimmed of
   /// surrounding ASCII whitespace. Later keys override earlier ones. Recognized
-  /// keys are `role.<role>` (e.g. `role.button`) and `state.<concept>` (e.g.
+  /// keys are `language` (the BCP-47 tag the table stands for, e.g. `de`),
+  /// `role.<role>` (e.g. `role.button`), and `state.<concept>` (e.g.
   /// `state.checked`); unrecognized keys are ignored. Never reads the
   /// filesystem; its only failure mode is allocation (`std::bad_alloc`).
   [[nodiscard]] static Lexicon parse(std::string_view text);
 
-  /// @brief The German word for a control @p role, or empty if none.
+  /// @brief The language tag the table declared (`language = …`), or empty if
+  ///        it declared none. Not normalized; matching is the loader's job.
+  [[nodiscard]] std::string_view language() const;
+
+  /// @brief The announcement word for a control @p role (in the table's
+  ///        declared language), or empty if none.
   [[nodiscard]] std::string_view role(vox::model::Role role) const;
 
-  /// @brief The German word for a state @p stateConcept, or empty if none.
+  /// @brief The announcement word for a state @p stateConcept (in the table's
+  ///        declared language), or empty if none.
   [[nodiscard]] std::string_view state(StateConcept stateConcept) const;
 
   /// @brief Required `role.*` / `state.*` keys that are missing or empty.
@@ -75,6 +85,7 @@ public:
   [[nodiscard]] std::vector<std::string> missingRequiredKeys() const;
 
 private:
+  std::string language_;                                  ///< Declared BCP-47 tag, or empty.
   std::array<std::string, 10> roleWords_;                 ///< Indexed by vox::model::Role.
   std::array<std::string, StateConceptCount> stateWords_; ///< By StateConcept.
 };

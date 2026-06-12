@@ -68,6 +68,9 @@ Lexicon Lexicon::parse(std::string_view text) {
   }
 
   Lexicon lexicon;
+  if (const auto found = entries.find("language"); found != entries.end()) {
+    lexicon.language_ = std::string(found->second);
+  }
   for (std::size_t i = 0; i < RoleSuffix.size(); ++i) {
     const std::string key = "role." + std::string(RoleSuffix.at(i));
     if (const auto found = entries.find(key); found != entries.end()) {
@@ -81,6 +84,10 @@ Lexicon Lexicon::parse(std::string_view text) {
     }
   }
   return lexicon;
+}
+
+std::string_view Lexicon::language() const {
+  return language_;
 }
 
 std::string_view Lexicon::role(vox::model::Role role) const {

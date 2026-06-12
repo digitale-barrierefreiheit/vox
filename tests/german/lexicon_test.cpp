@@ -62,16 +62,42 @@ TEST(Lexicon, UnknownRoleStaysEmptyEvenIfTableDefinesIt) {
   EXPECT_TRUE(lex.role(Role::Unknown).empty());
 }
 
+TEST(Lexicon, ExposesTheDeclaredLanguage) {
+  const Lexicon lex = Lexicon::parse("language = de\nrole.button = Schaltfläche\n");
+  EXPECT_EQ(lex.language(), "de");
+}
+
+TEST(Lexicon, LanguageIsEmptyWhenNotDeclared) {
+  EXPECT_TRUE(Lexicon::parse("role.button = Schaltfläche\n").language().empty());
+}
+
+TEST(Lexicon, LanguageIsTrimmedAndLaterDeclarationsOverride) {
+  const Lexicon lex = Lexicon::parse("language =  fr \nlanguage = de-AT\n");
+  EXPECT_EQ(lex.language(), "de-AT");
+}
+
+// The language declaration is metadata, not a word: it must never count as a
+// missing announcement key.
+TEST(Lexicon, LanguageIsNotARequiredKey) {
+  const Lexicon lex = Lexicon::parse("");
+  EXPECT_TRUE(lex.language().empty());
+  for (const auto& key : lex.missingRequiredKeys()) {
+    EXPECT_NE(key, "language");
+  }
+}
+
 TEST(Lexicon, MissingRequiredKeysCountsGaps) {
   // 9 roles (excluding the intentionally-empty Unknown) + 9 state concepts.
   EXPECT_EQ(Lexicon::parse("").missingRequiredKeys().size(), 18U);
   EXPECT_EQ(Lexicon::parse("role.button = Schaltfläche").missingRequiredKeys().size(), 17U);
 }
 
-// The table that actually ships must define every word the MVP announces.
-TEST(Lexicon, ShippedGermanTableIsComplete) {
+// The table that actually ships must define every word the MVP announces, and
+// must declare the language it stands for (#61).
+TEST(Lexicon, ShippedGermanTableIsCompleteAndDeclaresGerman) {
   const Lexicon lex = Lexicon::parse(DefaultGermanLexiconData);
   EXPECT_TRUE(lex.missingRequiredKeys().empty());
+  EXPECT_EQ(lex.language(), "de");
 }
 
 TEST(Lexicon, ShippedGermanWords) {

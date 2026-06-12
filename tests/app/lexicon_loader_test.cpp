@@ -24,6 +24,7 @@ namespace {
 
 using vox::app::isLanguageTag;
 using vox::app::LexiconOrigin;
+using vox::app::LexiconRequest;
 using vox::app::LoadedLexicon;
 using vox::app::loadLexicon;
 using vox::model::Role;
@@ -48,6 +49,20 @@ std::string completeTableWithButton(std::string_view language, std::string_view 
   return completeTable(language) + "role.button = " + std::string(buttonWord) + "\n";
 }
 
+/// Asserts @p loaded took the file path and speaks @p buttonWord from it.
+void expectLoadedFile(const LoadedLexicon& loaded, std::string_view buttonWord) {
+  EXPECT_EQ(loaded.origin, LexiconOrigin::File);
+  EXPECT_EQ(loaded.lexicon.role(Role::Button), buttonWord);
+}
+
+/// Asserts @p loaded fell back to the embedded German default with exactly one
+/// diagnostic mentioning @p diagnosticPart.
+void expectFallback(const LoadedLexicon& loaded, std::string_view diagnosticPart) {
+  EXPECT_EQ(loaded.origin, LexiconOrigin::EmbeddedDefault);
+  ASSERT_EQ(loaded.diagnostics.size(), 1U);
+  EXPECT_THAT(loaded.diagnostics.front(), HasSubstr(std::string(diagnosticPart)));
+}
+
 class LexiconLoaderTest : public ::testing::Test {
 protected:
   [[nodiscard]] const std::filesystem::path& dir() const {
@@ -60,6 +75,25 @@ protected:
     std::ofstream stream(file, std::ios::binary);
     stream << content;
     return file;
+  }
+
+  /// Loads from the test directory for @p requestedTag (empty = none).
+  [[nodiscard]] LoadedLexicon load(std::string_view requestedTag) const {
+    LexiconRequest request;
+    request.lexiconDir = dir_;
+    request.requestedTag = std::string(requestedTag);
+    return loadLexicon(request);
+  }
+
+  /// Loads @p explicitFile (the VOX_LEXICON path), with the test directory
+  /// still in place to prove it is *not* consulted.
+  [[nodiscard]] LoadedLexicon loadExplicit(const std::filesystem::path& explicitFile,
+                                           std::string_view requestedTag = "") const {
+    LexiconRequest request;
+    request.explicitFile = explicitFile;
+    request.lexiconDir = dir_;
+    request.requestedTag = std::string(requestedTag);
+    return loadLexicon(request);
   }
 
 private:
@@ -81,11 +115,10 @@ private:
 TEST_F(LexiconLoaderTest, LoadsTheGermanFileWhenNoLanguageIsRequested) {
   writeFile("de.lex", completeTableWithButton("de", "Knopf-aus-Datei"));
 
-  const LoadedLexicon loaded = loadLexicon({.lexiconDir = dir()});
+  const LoadedLexicon loaded = load("");
 
-  EXPECT_EQ(loaded.origin, LexiconOrigin::File);
+  expectLoadedFile(loaded, "Knopf-aus-Datei");
   EXPECT_EQ(loaded.path, dir() / "de.lex");
-  EXPECT_EQ(loaded.lexicon.role(Role::Button), "Knopf-aus-Datei");
   EXPECT_TRUE(loaded.diagnostics.empty());
 }
 
@@ -93,28 +126,25 @@ TEST_F(LexiconLoaderTest, LoadsTheRequestedLanguageFile) {
   writeFile("de.lex", completeTableWithButton("de", "Schaltfläche"));
   writeFile("en.lex", completeTableWithButton("en", "button-from-file"));
 
-  const LoadedLexicon loaded = loadLexicon({.lexiconDir = dir(), .requestedTag = "en"});
+  const LoadedLexicon loaded = load("en");
 
-  EXPECT_EQ(loaded.origin, LexiconOrigin::File);
-  EXPECT_EQ(loaded.lexicon.role(Role::Button), "button-from-file");
+  expectLoadedFile(loaded, "button-from-file");
   EXPECT_TRUE(loaded.diagnostics.empty());
 }
 
 TEST_F(LexiconLoaderTest, TheLanguageMatchIsAsciiCaseInsensitive) {
   writeFile("en.lex", completeTable("EN"));
 
-  const LoadedLexicon loaded = loadLexicon({.lexiconDir = dir(), .requestedTag = "en"});
+  const LoadedLexicon loaded = load("en");
 
   EXPECT_EQ(loaded.origin, LexiconOrigin::File);
   EXPECT_TRUE(loaded.diagnostics.empty());
 }
 
 TEST_F(LexiconLoaderTest, AnAbsentFileFallsBackToTheEmbeddedGermanDefault) {
-  const LoadedLexicon loaded = loadLexicon({.lexiconDir = dir(), .requestedTag = "en"});
+  const LoadedLexicon loaded = load("en");
 
-  EXPECT_EQ(loaded.origin, LexiconOrigin::EmbeddedDefault);
-  ASSERT_EQ(loaded.diagnostics.size(), 1U);
-  EXPECT_THAT(loaded.diagnostics.front(), HasSubstr("could not be read"));
+  expectFallback(loaded, "could not be read");
   // The fallback always speaks: the embedded default is complete German.
   EXPECT_EQ(loaded.lexicon.role(Role::Button), "Schaltfläche");
   EXPECT_TRUE(loaded.lexicon.missingRequiredKeys().empty());
@@ -123,11 +153,7 @@ TEST_F(LexiconLoaderTest, AnAbsentFileFallsBackToTheEmbeddedGermanDefault) {
 TEST_F(LexiconLoaderTest, AFileWithoutALanguageDeclarationIsRejected) {
   writeFile("de.lex", "role.button = Knopf\n");
 
-  const LoadedLexicon loaded = loadLexicon({.lexiconDir = dir()});
-
-  EXPECT_EQ(loaded.origin, LexiconOrigin::EmbeddedDefault);
-  ASSERT_EQ(loaded.diagnostics.size(), 1U);
-  EXPECT_THAT(loaded.diagnostics.front(), HasSubstr("declares no language"));
+  expectFallback(load(""), "declares no language");
 }
 
 TEST_F(LexiconLoaderTest, AMismatchedLanguageDeclarationIsRejected) {
@@ -135,21 +161,15 @@ TEST_F(LexiconLoaderTest, AMismatchedLanguageDeclarationIsRejected) {
   // spoken as German.
   writeFile("de.lex", completeTable("en"));
 
-  const LoadedLexicon loaded = loadLexicon({.lexiconDir = dir(), .requestedTag = "de"});
-
-  EXPECT_EQ(loaded.origin, LexiconOrigin::EmbeddedDefault);
-  ASSERT_EQ(loaded.diagnostics.size(), 1U);
-  EXPECT_THAT(loaded.diagnostics.front(), HasSubstr("\"de\" was expected"));
+  expectFallback(load("de"), "\"de\" was expected");
 }
 
 TEST_F(LexiconLoaderTest, AnIncompleteTableIsRejected) {
   writeFile("de.lex", "language = de\nrole.button = Knopf\n");
 
-  const LoadedLexicon loaded = loadLexicon({.lexiconDir = dir()});
+  const LoadedLexicon loaded = load("");
 
-  EXPECT_EQ(loaded.origin, LexiconOrigin::EmbeddedDefault);
-  ASSERT_EQ(loaded.diagnostics.size(), 1U);
-  EXPECT_THAT(loaded.diagnostics.front(), HasSubstr("missing required keys"));
+  expectFallback(loaded, "missing required keys");
   EXPECT_THAT(loaded.diagnostics.front(), HasSubstr("state.checked"));
 }
 
@@ -159,24 +179,20 @@ TEST_F(LexiconLoaderTest, AnExplicitFileWinsAndItsDeclaredLanguageStands) {
   const std::filesystem::path custom =
       writeFile("custom.lex", completeTableWithButton("en", "my-button"));
 
-  const LoadedLexicon loaded = loadLexicon({.explicitFile = custom, .lexiconDir = dir()});
+  const LoadedLexicon loaded = loadExplicit(custom);
 
-  EXPECT_EQ(loaded.origin, LexiconOrigin::File);
+  expectLoadedFile(loaded, "my-button");
   EXPECT_EQ(loaded.path, custom);
-  EXPECT_EQ(loaded.lexicon.role(Role::Button), "my-button");
   EXPECT_TRUE(loaded.diagnostics.empty());
 }
 
 TEST_F(LexiconLoaderTest, AnExplicitFileMustMatchAnExplicitlyRequestedLanguage) {
   const std::filesystem::path custom = writeFile("custom.lex", completeTable("en"));
 
-  const LoadedLexicon loaded =
-      loadLexicon({.explicitFile = custom, .lexiconDir = dir(), .requestedTag = "de"});
+  const LoadedLexicon loaded = loadExplicit(custom, "de");
 
-  EXPECT_EQ(loaded.origin, LexiconOrigin::EmbeddedDefault);
-  ASSERT_EQ(loaded.diagnostics.size(), 1U);
+  expectFallback(loaded, "\"de\" was expected");
   EXPECT_THAT(loaded.diagnostics.front(), HasSubstr("VOX_LEXICON"));
-  EXPECT_THAT(loaded.diagnostics.front(), HasSubstr("\"de\" was expected"));
 }
 
 TEST_F(LexiconLoaderTest, ABrokenExplicitFileFallsBackToTheDefaultNotTheDirectory) {
@@ -184,60 +200,55 @@ TEST_F(LexiconLoaderTest, ABrokenExplicitFileFallsBackToTheDefaultNotTheDirector
   // silently re-enable what they replaced.
   writeFile("de.lex", completeTableWithButton("de", "Knopf-aus-Datei"));
 
-  const LoadedLexicon loaded =
-      loadLexicon({.explicitFile = dir() / "missing.lex", .lexiconDir = dir()});
+  const LoadedLexicon loaded = loadExplicit(dir() / "missing.lex");
 
-  EXPECT_EQ(loaded.origin, LexiconOrigin::EmbeddedDefault);
+  expectFallback(loaded, "VOX_LEXICON");
   EXPECT_EQ(loaded.lexicon.role(Role::Button), "Schaltfläche");
-  ASSERT_EQ(loaded.diagnostics.size(), 1U);
-  EXPECT_THAT(loaded.diagnostics.front(), HasSubstr("VOX_LEXICON"));
 }
 
 TEST_F(LexiconLoaderTest, AnInvalidRequestedTagIsReportedAndIgnored) {
   // "../evil" would otherwise become a path; the tag grammar forbids it.
   writeFile("de.lex", completeTableWithButton("de", "Knopf-aus-Datei"));
 
-  const LoadedLexicon loaded = loadLexicon({.lexiconDir = dir(), .requestedTag = "../evil"});
+  const LoadedLexicon loaded = load("../evil");
 
-  EXPECT_EQ(loaded.origin, LexiconOrigin::File);
-  EXPECT_EQ(loaded.lexicon.role(Role::Button), "Knopf-aus-Datei");
+  expectLoadedFile(loaded, "Knopf-aus-Datei");
   ASSERT_EQ(loaded.diagnostics.size(), 1U);
   EXPECT_THAT(loaded.diagnostics.front(), HasSubstr("not a language tag"));
 }
 
 TEST(IsLanguageTag, AcceptsBcp47ShapedTags) {
-  EXPECT_TRUE(isLanguageTag("de"));
-  EXPECT_TRUE(isLanguageTag("en-US"));
-  EXPECT_TRUE(isLanguageTag("de-AT-1996"));
+  for (const std::string_view tag : {"de", "en-US", "de-AT-1996"}) {
+    EXPECT_TRUE(isLanguageTag(tag)) << tag;
+  }
 }
 
 TEST(IsLanguageTag, RejectsEverythingThatCouldEscapeAFileName) {
-  EXPECT_FALSE(isLanguageTag(""));
-  EXPECT_FALSE(isLanguageTag(".."));
-  EXPECT_FALSE(isLanguageTag("de/at"));
-  EXPECT_FALSE(isLanguageTag("de\\at"));
-  EXPECT_FALSE(isLanguageTag("de.at"));
-  EXPECT_FALSE(isLanguageTag("de at"));
-  EXPECT_FALSE(isLanguageTag("dé"));
+  for (const std::string_view tag : {"", "..", "de/at", "de\\at", "de.at", "de at", "dé"}) {
+    EXPECT_FALSE(isLanguageTag(tag)) << tag;
+  }
 }
 
 // The files that actually ship next to the executable must pass the loader's
 // own validation — for both supported languages (#61).
 #ifdef VOX_LEXICON_DATA_DIR
+LoadedLexicon loadShipped(std::string_view requestedTag) {
+  LexiconRequest request;
+  request.lexiconDir = VOX_LEXICON_DATA_DIR;
+  request.requestedTag = std::string(requestedTag);
+  return loadLexicon(request);
+}
+
 TEST(ShippedLexicons, GermanFileLoadsThroughTheLoader) {
-  const LoadedLexicon loaded =
-      loadLexicon({.lexiconDir = VOX_LEXICON_DATA_DIR, .requestedTag = "de"});
-  EXPECT_EQ(loaded.origin, LexiconOrigin::File);
+  const LoadedLexicon loaded = loadShipped("de");
+  expectLoadedFile(loaded, "Schaltfläche");
   EXPECT_TRUE(loaded.diagnostics.empty());
-  EXPECT_EQ(loaded.lexicon.role(Role::Button), "Schaltfläche");
 }
 
 TEST(ShippedLexicons, EnglishFileLoadsThroughTheLoader) {
-  const LoadedLexicon loaded =
-      loadLexicon({.lexiconDir = VOX_LEXICON_DATA_DIR, .requestedTag = "en"});
-  EXPECT_EQ(loaded.origin, LexiconOrigin::File);
+  const LoadedLexicon loaded = loadShipped("en");
+  expectLoadedFile(loaded, "button");
   EXPECT_TRUE(loaded.diagnostics.empty());
-  EXPECT_EQ(loaded.lexicon.role(Role::Button), "button");
   EXPECT_TRUE(loaded.lexicon.missingRequiredKeys().empty());
 }
 #endif // VOX_LEXICON_DATA_DIR

@@ -4,6 +4,7 @@
 /// @file
 /// @brief Implementation of the per-language lexicon loader (#61).
 #include <algorithm>
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <ios>
@@ -42,6 +43,15 @@ bool equalsIgnoreCaseAscii(std::string_view left, std::string_view right) {
                             [](char a, char b) { return toLowerAscii(a) == toLowerAscii(b); });
 }
 
+/// Joins @p keys as "a, b, c". @p keys must not be empty.
+std::string joinKeys(const std::vector<std::string>& keys) {
+  std::string joined = keys.front();
+  for (std::size_t i = 1; i < keys.size(); ++i) {
+    joined += ", " + keys.at(i);
+  }
+  return joined;
+}
+
 /// Why @p lexicon must not be used (it would mis-speak or mix languages), or
 /// nullopt when it is acceptable. An empty @p expectedTag waives the match —
 /// the declaration itself is still required.
@@ -54,14 +64,8 @@ std::optional<std::string> rejectionReason(const vox::german::Lexicon& lexicon,
     return "it declares language \"" + std::string(lexicon.language()) + "\" but \"" +
            std::string(expectedTag) + "\" was expected";
   }
-  const std::vector<std::string> missing = lexicon.missingRequiredKeys();
-  if (!missing.empty()) {
-    std::string keys;
-    for (const std::string& key : missing) {
-      keys += keys.empty() ? "" : ", ";
-      keys += key;
-    }
-    return "it is missing required keys: " + keys;
+  if (const std::vector<std::string> missing = lexicon.missingRequiredKeys(); !missing.empty()) {
+    return "it is missing required keys: " + joinKeys(missing);
   }
   return std::nullopt;
 }
@@ -90,6 +94,19 @@ bool loadFromFile(const std::filesystem::path& file, std::string_view expectedTa
   return true;
 }
 
+/// @p requestedTag if it is a usable language tag, empty otherwise (none was
+/// requested, or an invalid one — reported to @p diagnostics — is ignored).
+std::string_view sanitizedTag(std::string_view requestedTag,
+                              std::vector<std::string>& diagnostics) {
+  if (requestedTag.empty() || isLanguageTag(requestedTag)) {
+    return requestedTag;
+  }
+  diagnostics.push_back("requested language \"" + std::string(requestedTag) +
+                        "\" (VOX_LANGUAGE) is not a language tag (ASCII letters, "
+                        "digits, \"-\"); ignoring it");
+  return {};
+}
+
 } // namespace
 
 bool isLanguageTag(std::string_view tag) {
@@ -100,15 +117,9 @@ bool isLanguageTag(std::string_view tag) {
 }
 
 LoadedLexicon loadLexicon(const LexiconRequest& request) {
-  LoadedLexicon result{.lexicon =
-                           vox::german::Lexicon::parse(vox::german::DefaultGermanLexiconData)};
-  std::string_view tag = request.requestedTag;
-  if (!tag.empty() && !isLanguageTag(tag)) {
-    result.diagnostics.push_back("requested language \"" + std::string(tag) +
-                                 "\" (VOX_LANGUAGE) is not a language tag (ASCII letters, "
-                                 "digits, \"-\"); ignoring it");
-    tag = {};
-  }
+  LoadedLexicon result;
+  result.lexicon = vox::german::Lexicon::parse(vox::german::DefaultGermanLexiconData);
+  const std::string_view tag = sanitizedTag(request.requestedTag, result.diagnostics);
   if (!request.explicitFile.empty()) {
     // An explicit file is authoritative: a broken VOX_LEXICON falls back to the
     // embedded default, never silently to a directory lookup the user replaced.

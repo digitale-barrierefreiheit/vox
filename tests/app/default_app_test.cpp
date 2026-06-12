@@ -8,8 +8,6 @@
 ///        whole factory run with no installed voice, device, or UI Automation.
 #if defined(_WIN32)
 
-#  include <Windows.h>
-
 #  include <cwchar>
 #  include <filesystem>
 #  include <fstream>
@@ -30,6 +28,11 @@
 #  include <vox/model/role.hpp>
 #  include <vox/provider/uia_test_seam.hpp>
 #  include <vox/tts/sapi_test_seam.hpp>
+
+// After the vox headers (repo convention): windows.h drags in a global
+// enumerator `Unknown` (winioctl.h, _MEDIA_TYPE) that would otherwise read as
+// shadowed by Role::Unknown / Source::Unknown above (Sonar S1117).
+#  include <Windows.h>
 
 #  include "sapi_com_mocks.hpp" // the tts SAPI mock chain (on the include path)
 

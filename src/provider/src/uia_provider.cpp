@@ -242,8 +242,8 @@ public:
   }
 
   /// Prevents any future forwarding: an event entering the sink after this
-  /// returns finds no callback. Deliberately does not wait for an invocation
-  /// already past its callback copy — that one may still run to completion
+  /// returns finds no callback. Deliberately does not wait for invocations
+  /// already past their callback copy — those may still run to completion
   /// concurrently (see the class comment); the caller's teardown guard covers
   /// that tail.
   void detach() {
@@ -343,13 +343,13 @@ public:
     // stuck one is shelved there, so the slot below is always free — a
     // stop()/start() cycle reliably resumes notifications (#60).
     stop();
+    // The null check guards an allocation failure in Make (never hand UIA a
+    // null sink); on registration failure nothing is kept for stop() to remove.
     auto handler = Microsoft::WRL::Make<FocusEventHandler>(std::move(onFocusChanged));
-    if (!handler) {
-      return; // allocation failed — don't hand UIA a null sink
-    }
-    if (SUCCEEDED(automation_->AddFocusChangedEventHandler(cacheRequest_.Get(), handler.Get()))) {
+    if (handler &&
+        SUCCEEDED(automation_->AddFocusChangedEventHandler(cacheRequest_.Get(), handler.Get()))) {
       handler_ = std::move(handler);
-    } // registration failed — nothing was registered, nothing for stop() to remove
+    }
   }
 
   void stop() {
@@ -359,8 +359,8 @@ public:
     }
     // Detach FIRST: whatever UIA answers below, every event reaching the sink
     // from now on is swallowed — correctness does not depend on unregistration
-    // succeeding (#60). An invocation already past the sink's callback copy
-    // may still run after we return; the Reader's guard drops that tail.
+    // succeeding (#60). Invocations already past the sink's callback copy may
+    // still run after we return; the Reader's guard drops that tail.
     handler_->detach();
     if (automation_ && FAILED(automation_->RemoveFocusChangedEventHandler(handler_.Get()))) {
       shelveStuckHandler();
@@ -433,8 +433,7 @@ private:
   /// instance). Only called with automation_ non-null (the removal just
   /// failed on it).
   void shelveStuckHandler() {
-    constexpr std::size_t MaxShelvedHandlers = 8;
-    if (shelved_.size() < MaxShelvedHandlers) {
+    if (constexpr std::size_t MaxShelvedHandlers = 8; shelved_.size() < MaxShelvedHandlers) {
       shelved_.push_back(std::move(handler_));
       return;
     }

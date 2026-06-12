@@ -40,10 +40,10 @@ namespace detail {
 /// Keeps the provider's focus callback safe if it fires after the Reader is
 /// gone. Two layers since #60: a stopped UiaProvider swallows every event
 /// reaching its sink (detached before unregistration, whatever UIA answers),
-/// and this guard drops the one invocation possibly already past the sink's
-/// callback copy when the stop happened — plus anything a future, misbehaving
-/// IProvider might deliver. The callback holds a shared_ptr to this guard and
-/// only touches `reader` while it is non-null under the lock; Reader::stop()
+/// and this guard drops any invocations already past the sink's callback copy
+/// when the stop happened — plus anything a future, misbehaving IProvider
+/// might deliver. The callback holds a shared_ptr to this guard and only
+/// touches `reader` while it is non-null under the lock; Reader::stop()
 /// detaches it before teardown.
 struct ReaderFocusGuard {
   std::mutex mutex;

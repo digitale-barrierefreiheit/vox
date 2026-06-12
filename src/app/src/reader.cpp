@@ -86,7 +86,7 @@ void Reader::stop() {
     guard_->reader = nullptr;
   }
   // Events are swallowed from here on; the guard detached above already drops
-  // the one invocation possibly still in flight (#60).
+  // any invocations still in flight (#60).
   provider_.stop();
   {
     const std::scoped_lock lock(mutex_);

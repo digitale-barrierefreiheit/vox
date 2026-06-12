@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781302237418,
+  "lastUpdate": 1781306181491,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -149,6 +149,35 @@ window.BENCHMARK_DATA = {
           "url": "https://github.com/digitale-barrierefreiheit/vox/commit/5e7d22a92c3bb4a2610681750592f92349dfd273"
         },
         "date": 1781302236957,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.7,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4861c7f3148f2cfba39b855b8702bf9d0ae72c7d",
+          "message": "fix(app): include windows.h after the vox headers (Sonar S1117 on dev)\n\nwindows.h drags in a global enumerator Unknown (winioctl.h, _MEDIA_TYPE); the #61 composition-root TUs were the only ones including it before the vox headers, making Sonar read Role::Unknown / Source::Unknown as shadowing it. windows.h now follows the vox includes (repo convention), restoring the order under which nothing is shadowed.",
+          "timestamp": "2026-06-13T00:58:25+02:00",
+          "tree_id": "eda19e4fb2fd911ea7f05a2f275723caee4a3008",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/4861c7f3148f2cfba39b855b8702bf9d0ae72c7d"
+        },
+        "date": 1781306181016,
         "tool": "customSmallerIsBetter",
         "benches": [
           {

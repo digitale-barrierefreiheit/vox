@@ -59,6 +59,14 @@ std::filesystem::path executableDirectory() {
   return std::filesystem::path(path).parent_path();
 }
 
+/// The per-language lexicon directory next to the executable — or empty when
+/// the executable directory is unknown, so the loader skips the lookup instead
+/// of being handed the CWD-relative path "lexicon".
+std::filesystem::path lexiconDirectory() {
+  const std::filesystem::path exeDir = executableDirectory();
+  return exeDir.empty() ? exeDir : exeDir / L"lexicon";
+}
+
 /// Loads the announcement lexicon per the #61 resolution rule (VOX_LEXICON,
 /// then lexicon\<VOX_LANGUAGE>.lex next to the executable, then the embedded
 /// German default), reporting every fallback on stderr.
@@ -71,7 +79,7 @@ vox::german::Lexicon loadConfiguredLexicon() {
     requestedTag += (letter < 128) ? static_cast<char>(letter) : '?';
   }
   LoadedLexicon loaded = loadLexicon({.explicitFile = readEnvironment(L"VOX_LEXICON"),
-                                      .lexiconDir = executableDirectory() / L"lexicon",
+                                      .lexiconDir = lexiconDirectory(),
                                       .requestedTag = std::move(requestedTag)});
   for (const std::string& line : loaded.diagnostics) {
     std::cerr << "vox: " << line << '\n';

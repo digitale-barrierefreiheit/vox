@@ -5,7 +5,7 @@
 /// @brief The production composition root: constructs the real Windows stack.
 #if defined(_WIN32)
 
-#  include <windows.h>
+#  include <Windows.h>
 
 #  include <array>
 #  include <filesystem>
@@ -28,23 +28,19 @@ namespace vox::app {
 
 namespace {
 
-/// The value of environment variable @p name, or empty when unset.
+/// The value of environment variable @p name, or empty when unset (or set to
+/// the empty string — both mean "not configured").
 std::wstring readEnvironment(const wchar_t* name) {
   // The buffer starts deliberately small: any real value takes the grow-once
   // path, so it stays exercised; the loop reads every length faithfully.
   std::wstring value(8, L'\0');
-  while (true) {
-    const DWORD written =
-        ::GetEnvironmentVariableW(name, value.data(), static_cast<DWORD>(value.size()));
-    if (written == 0) {
-      return {}; // unset (or set to the empty string — both mean "not configured")
-    }
-    if (written < value.size()) {
-      value.resize(written);
-      return value;
-    }
+  DWORD written = ::GetEnvironmentVariableW(name, value.data(), static_cast<DWORD>(value.size()));
+  while (written >= value.size()) {
     value.resize(written); // too small: `written` is the required size incl. the NUL
+    written = ::GetEnvironmentVariableW(name, value.data(), static_cast<DWORD>(value.size()));
   }
+  value.resize(written); // on success `written` excludes the NUL; 0 when unset
+  return value;
 }
 
 /// The directory holding the running executable. On failure (length 0) this is

@@ -108,9 +108,9 @@ std::string_view sanitizedTag(std::string_view requestedTag,
   if (requestedTag.empty() || isLanguageTag(requestedTag)) {
     return requestedTag;
   }
-  diagnostics.push_back("requested language \"" + std::string(requestedTag) +
-                        "\" (VOX_LANGUAGE) is not a language tag (ASCII letters, "
-                        "digits, \"-\"); ignoring it");
+  diagnostics.push_back(
+      R"(requested language ")" + std::string(requestedTag) +
+      R"(" (VOX_LANGUAGE) is not a language tag (ASCII letters, digits, "-"); ignoring it)");
   return {};
 }
 

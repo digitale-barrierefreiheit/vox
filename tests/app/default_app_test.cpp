@@ -8,7 +8,7 @@
 ///        whole factory run with no installed voice, device, or UI Automation.
 #if defined(_WIN32)
 
-#  include <windows.h>
+#  include <Windows.h>
 
 #  include <array>
 #  include <cwchar>
@@ -93,18 +93,31 @@ std::filesystem::path testExecutableDirectory() {
   return std::filesystem::path(buffer.data(), buffer.data() + length).parent_path();
 }
 
+/// The current value of environment variable @p name, or nullopt when unset.
+/// Grows to the required size, so any length is captured faithfully.
+std::optional<std::wstring> readEnvironmentValue(const wchar_t* name) {
+  std::wstring value(8, L'\0');
+  while (true) {
+    const DWORD written =
+        ::GetEnvironmentVariableW(name, value.data(), static_cast<DWORD>(value.size()));
+    if (written == 0) {
+      return std::nullopt;
+    }
+    if (written < value.size()) {
+      value.resize(written);
+      return value;
+    }
+    value.resize(written); // too small: `written` is the required size incl. the NUL
+  }
+}
+
 /// Sets an environment variable for one test and restores the previous state
 /// (the prior value, or unset) on exit, so nothing leaks across tests or into
 /// a developer's environment.
 class ScopedEnvironment {
 public:
-  ScopedEnvironment(const wchar_t* name, const std::wstring& value) : name_(name) {
-    std::array<wchar_t, 4096> buffer{};
-    const DWORD written =
-        ::GetEnvironmentVariableW(name_, buffer.data(), static_cast<DWORD>(buffer.size()));
-    if (written > 0 && written < buffer.size()) {
-      previous_ = std::wstring(buffer.data(), written);
-    }
+  ScopedEnvironment(const wchar_t* name, const std::wstring& value)
+      : name_(name), previous_(readEnvironmentValue(name)) {
     ::SetEnvironmentVariableW(name_, value.c_str());
   }
 

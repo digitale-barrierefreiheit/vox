@@ -5,8 +5,6 @@
 /// @brief The production composition root: constructs the real Windows stack.
 #if defined(_WIN32)
 
-#  include <Windows.h>
-
 #  include <filesystem>
 #  include <iostream>
 #  include <memory>
@@ -22,6 +20,11 @@
 #  include <vox/output/output_manager.hpp>
 #  include <vox/provider/uia_provider.hpp>
 #  include <vox/tts/sapi_tts_engine.hpp>
+
+// After the vox headers (repo convention): windows.h drags in a global
+// enumerator `Unknown` (winioctl.h, _MEDIA_TYPE) that would otherwise read as
+// shadowed by Role::Unknown / Source::Unknown above (Sonar S1117).
+#  include <Windows.h>
 
 namespace vox::app {
 

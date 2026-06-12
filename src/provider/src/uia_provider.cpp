@@ -310,16 +310,7 @@ public:
       handler_.Reset();
     }
     retryShelvedRemovals();
-    const bool leftovers = stuck || !shelved_.empty();
-    if (leftovers && automation_) {
-      // Escalation of last resort (#60): individual removals kept failing.
-      // Safe big hammer — this provider owns its *private* IUIAutomation
-      // instance, and these handlers are the only ones registered on it.
-      automation_->RemoveAllEventHandlers();
-      // The sinks are detached (inert), and UIA holds its own COM references
-      // to anything still registered — releasing ours cannot dangle.
-      shelved_.clear();
-    }
+    escalateLeftoverRemovals(stuck);
     cacheRequest_.Reset();
     automation_.Reset();
     if (comInitialized_) {
@@ -443,6 +434,24 @@ private:
     std::erase_if(shelved_, [this](const ComPtr<FocusEventHandler>& stuck) {
       return SUCCEEDED(automation_->RemoveFocusChangedEventHandler(stuck.Get()));
     });
+  }
+
+  /// Escalation of last resort at teardown (#60): when individual removals
+  /// kept failing — the just-detached active handler (@p stuck) or shelved
+  /// ones — unregister everything at once. Safe big hammer: this provider
+  /// owns its *private* IUIAutomation instance, and these handlers are the
+  /// only ones registered on it. The sinks are detached (inert), and UIA
+  /// holds its own COM references to anything still registered — releasing
+  /// our references cannot dangle.
+  void escalateLeftoverRemovals(bool stuck) {
+    if (!automation_) {
+      return;
+    }
+    if (!stuck && shelved_.empty()) {
+      return; // nothing left over — every handler was unregistered cleanly
+    }
+    automation_->RemoveAllEventHandlers();
+    shelved_.clear();
   }
 
   bool comInitialized_ = false;

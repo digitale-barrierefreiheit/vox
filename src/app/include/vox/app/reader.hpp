@@ -84,6 +84,9 @@ private:
   void onFocusChanged(const vox::model::AccessibleNode& node);
   void bargeIn();
   void workerLoop();
+  /// @brief Announces, synthesizes, and (unless stop() has begun) drains one node.
+  ///        Swallows any synthesis failure so the worker loop keeps running.
+  void speakUtterance(const vox::model::AccessibleNode& node);
 
   vox::provider::IProvider& provider_;
   vox::tts::ITtsEngine& tts_;

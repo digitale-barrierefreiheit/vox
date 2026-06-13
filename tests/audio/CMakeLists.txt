@@ -12,6 +12,7 @@ vox_add_test(
     pcm_buffer_test.cpp
     pcm_ring_test.cpp
     pcm_converter_test.cpp
+    ring_push_test.cpp
     fake_audio_sink_test.cpp
   LINK vox::audio vox::testing Threads::Threads)
 

@@ -16,6 +16,7 @@
 #  include <future>
 #  include <memory>
 #  include <span>
+#  include <thread>
 #  include <vector>
 
 #  include <gmock/gmock.h>
@@ -302,11 +303,83 @@ TEST_F(WasapiAcquisitionTest, AcceptsAnExtensibleFloatMixFormat) {
   EXPECT_NO_THROW(sink.stop());
 }
 
-TEST_F(WasapiAcquisitionTest, WriteAndFlushBeforeStartAreNoOps) {
+TEST_F(WasapiAcquisitionTest, WriteDrainAndFlushBeforeStartAreNoOps) {
   WasapiAudioSink sink(AudioFormat{22050, 16, 1});
   const std::vector<std::byte> pcm(8, std::byte{0});
   EXPECT_NO_THROW(sink.write(pcm)); // not running: write() returns immediately
+  EXPECT_NO_THROW(sink.drain());    // not running: drain() returns immediately
   EXPECT_NO_THROW(sink.flush());    // no audio event yet: flush() is a no-op
+}
+
+// At end of stream the producer calls drain() so the resampler's group-delay tail
+// reaches the device — covering the converter's drain path on the live sink.
+TEST_F(WasapiAcquisitionTest, DrainFlushesTheResamplerTailAfterAWrite) {
+  WasapiAudioSink sink(AudioFormat{22050, 16, 1});
+  ASSERT_NO_THROW(sink.start());
+  const std::vector<std::byte> pcm(441 * sizeof(std::int16_t), std::byte{0});
+  EXPECT_NO_THROW(sink.write(pcm));
+  EXPECT_NO_THROW(sink.drain()); // buffered tail still belongs to this stream: emit it
+  EXPECT_NO_THROW(sink.stop());
+}
+
+// A barge-in bumps the flush generation, so a drain that lands afterwards finds a
+// stale tail: it drops it (the flush already cleared the ring) instead of pushing.
+TEST_F(WasapiAcquisitionTest, DrainAfterAFlushDropsTheStaleTail) {
+  std::future<void> reset = resetSignal(S_OK);
+  WasapiAudioSink sink(AudioFormat{22050, 16, 1});
+  ASSERT_NO_THROW(sink.start());
+  const std::vector<std::byte> pcm(441 * sizeof(std::int16_t), std::byte{0});
+  sink.write(pcm);
+  sink.flush(); // barge-in -> the converter's buffered tail is now stale
+  ASSERT_EQ(reset.wait_for(WaitTimeout), std::future_status::ready);
+  EXPECT_NO_THROW(sink.drain());
+  EXPECT_NO_THROW(sink.stop());
+}
+
+// The first write of a new stream (a new generation after barge-in) resets the
+// converter, so the previous utterance's filter history never bleeds into it.
+TEST_F(WasapiAcquisitionTest, AWriteAfterAFlushResetsTheConverter) {
+  std::future<void> reset = resetSignal(S_OK);
+  WasapiAudioSink sink(AudioFormat{22050, 16, 1});
+  ASSERT_NO_THROW(sink.start());
+  const std::vector<std::byte> pcm(441 * sizeof(std::int16_t), std::byte{0});
+  sink.write(pcm);
+  sink.flush();
+  ASSERT_EQ(reset.wait_for(WaitTimeout), std::future_status::ready);
+  EXPECT_NO_THROW(sink.write(pcm)); // new generation: converter is reset, then pushes
+  EXPECT_NO_THROW(sink.stop());
+}
+
+// A barge-in that lands while a write is back-pressuring must leave nothing behind:
+// pushAll re-arms the flush so a frame that slipped into the ring after the render
+// cleared it is dropped too. Drives the post-push re-arm under real threads — the
+// mock render only services audio on a flush, so this oversized write fills the ring
+// and blocks until a flush bumps the generation and the producer abandons.
+TEST_F(WasapiAcquisitionTest, AWriteRacingABargeInReArmsTheFlush) {
+  WasapiAudioSink sink(AudioFormat{22050, 16, 1});
+  ASSERT_NO_THROW(sink.start());
+  const std::vector<std::byte> big(256U * 1024U, std::byte{0}); // far larger than the ring
+  std::atomic done{false};
+  std::jthread producer([&sink, &big, &done] {
+    sink.write(big);
+    done.store(true, std::memory_order_release);
+  });
+  // Flush until the back-pressured producer observes the generation bump and
+  // abandons; on the way out pushAll re-arms the flush (the branch under test). A
+  // deadline keeps a regression in the abandon path from hanging the suite: on
+  // timeout, stop() releases the producer (stopRequested_) before we join.
+  const auto deadline = std::chrono::steady_clock::now() + WaitTimeout;
+  while (!done.load(std::memory_order_acquire)) {
+    if (std::chrono::steady_clock::now() >= deadline) {
+      sink.stop();
+      producer.join();
+      FAIL() << "write() did not abandon after a barge-in within the deadline";
+    }
+    sink.flush();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  producer.join();
+  EXPECT_NO_THROW(sink.stop());
 }
 
 TEST_F(WasapiAcquisitionTest, RenderThreadStopsWhenAFlushResetFails) {

@@ -32,6 +32,8 @@ public:
 
   void stop() override {}
 
+  void drain() override {} // end of stream: nothing is buffered here to flush
+
   void flush() override {} // barge-in: nothing is queued here to drop
 
   void write(std::span<const std::byte> pcm) override {

@@ -12,7 +12,6 @@
 /// device and clear the ring, giving barge-in within one buffer period.
 #include <algorithm>
 #include <atomic>
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -27,6 +26,7 @@
 #include <vector>
 
 #include <vox/audio/audio_format.hpp>
+#include <vox/audio/detail/ring_push.hpp>
 #include <vox/audio/errors.hpp>
 #include <vox/audio/pcm_converter.hpp>
 #include <vox/audio/pcm_ring.hpp>
@@ -256,31 +256,31 @@ public:
       return;
     }
     const std::uint64_t generation = flushGeneration_.load(std::memory_order_acquire);
+    startStreamIfNewGeneration(generation);
 
     scratch_.clear();
     converter_->convert(pcm, scratch_);
+    pushAll(scratch_, generation);
+  }
 
-    std::span<const std::byte> remaining{scratch_};
-    while (!remaining.empty()) {
-      if (stopRequested_.load(std::memory_order_acquire) ||
-          flushGeneration_.load(std::memory_order_acquire) != generation) {
-        return; // stopped or barged-in: abandon this (now stale) audio
-      }
-      if (flushRequested_.load(std::memory_order_acquire)) {
-        // A flush is pending; wait for the render thread to clear the ring so
-        // this fresh audio is not discarded along with the stale data.
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        continue;
-      }
-      // `remaining` (whole frames from the converter) and the ring's free space
-      // (frame-aligned capacity, frame-aligned in-flight) are both frame
-      // multiples, so `written` is too — a frame is never split mid-write.
-      const std::size_t written = ring_->write(remaining);
-      remaining = remaining.subspan(written);
-      if (written == 0U) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1)); // full; let it drain
-      }
+  // End of the current stream (an utterance finished synthesizing): flush the
+  // converter's group-delay tail so the last few milliseconds play. A barge-in
+  // bumps the generation; when that happened the buffered tail is stale (the
+  // flush already cleared the ring), so drop it and reset for the next stream.
+  void drain() {
+    const std::shared_lock lock(stateMutex_);
+    if (!running_.load(std::memory_order_acquire)) {
+      return;
     }
+    const std::uint64_t generation = flushGeneration_.load(std::memory_order_acquire);
+    if (generation != converterGeneration_) {
+      converter_->reset(); // barged-in: the buffered tail is stale, so drop it
+      converterGeneration_ = generation;
+      return;
+    }
+    scratch_.clear();
+    converter_->drain(scratch_); // emit the FIR tail, then push it like any frames
+    pushAll(scratch_, generation);
   }
 
   void flush() {
@@ -289,10 +289,7 @@ public:
     // Bump the generation first so a blocked producer abandons stale audio, then
     // ask the render thread to drop what is buffered and reset the device.
     flushGeneration_.fetch_add(1, std::memory_order_acq_rel);
-    flushRequested_.store(true, std::memory_order_release);
-    if (audioEvent_ != nullptr) {
-      ::SetEvent(audioEvent_); // wake the render thread now, even if the stream is silent
-    }
+    requestRenderFlush();
   }
 
   // Idempotent: also releases a partially-acquired device (e.g. after a failed
@@ -380,6 +377,9 @@ private:
     }
     frameBytes_ = mixFormat.nBlockAlign;
     converter_.emplace(sourceFormat_, mixFormat.nSamplesPerSec, mixFormat.nChannels, sampleFormat);
+    // The fresh converter matches the current generation, so the first write()
+    // after a (re)start does not see a spurious change and reset it.
+    converterGeneration_ = flushGeneration_.load(std::memory_order_acquire);
   }
 
   /// Initializes the shared-mode, event-driven stream and fetches the render
@@ -487,6 +487,50 @@ private:
                                frameBytes_);
   }
 
+  /// Resets the converter when a barge-in (a generation bump) began a new stream,
+  /// so the previous utterance's filter history never blends into this one.
+  /// Producer-thread only (write()/drain()), so converterGeneration_ needs no lock.
+  void startStreamIfNewGeneration(std::uint64_t generation) {
+    if (generation != converterGeneration_) {
+      converter_->reset();
+      converterGeneration_ = generation;
+    }
+  }
+
+  /// Signals the render thread to service a flush: drop what is buffered and reset
+  /// the device. flush() bumps the generation first (so producers abandon stale
+  /// audio); pushAll's post-push re-arm reuses just the signal, so the producer/
+  /// consumer wakeup lives in one place.
+  void requestRenderFlush() {
+    flushRequested_.store(true, std::memory_order_release);
+    if (audioEvent_ != nullptr) {
+      ::SetEvent(audioEvent_); // wake the render thread now, even if the stream is silent
+    }
+  }
+
+  /// Pushes whole frames into the ring with back-pressure — the one loop shared by
+  /// write() and drain(). Abandons (dropping the rest) when the sink stopped or a
+  /// barge-in bumped @p generation; backs off while a flush is being serviced or
+  /// the ring is momentarily full. The branch logic is unit-tested thread-free in
+  /// detail::pushFramesToRing; here we only bind it to the live atomics.
+  void pushAll(std::span<const std::byte> frames, std::uint64_t generation) {
+    detail::pushFramesToRing(*ring_, frames,
+                             detail::makePushHooks(
+                                 [this, generation] {
+                                   return stopRequested_.load(std::memory_order_acquire) ||
+                                          flushGeneration_.load(std::memory_order_acquire) !=
+                                              generation;
+                                 },
+                                 [this] { return flushRequested_.load(std::memory_order_acquire); },
+                                 detail::backOffOneTick));
+    // If a barge-in raced this push (the generation moved while we were pushing), a
+    // frame may have slipped into the ring after the render cleared it; re-arm the
+    // flush so the render drops it too, keeping barge-in frame-exact.
+    if (flushGeneration_.load(std::memory_order_acquire) != generation) {
+      requestRenderFlush();
+    }
+  }
+
   AudioFormat sourceFormat_;
   std::optional<ComApartment> apartment_; // COM for the start()/stop() thread
 
@@ -501,6 +545,10 @@ private:
   std::optional<PcmConverter> converter_;
   std::unique_ptr<PcmRing> ring_;
   std::vector<std::byte> scratch_; // reused by write() on the producer thread
+  // The flush generation the converter's buffered state belongs to. Touched only
+  // on the producer thread (write()/drain()), so it needs no atomic; lets drain()
+  // tell a real tail from a barged-in one and write() reset across a barge-in.
+  std::uint64_t converterGeneration_{0};
 
   std::jthread renderThread_;
   std::atomic<bool> running_{false};
@@ -524,6 +572,10 @@ void WasapiAudioSink::start() {
 
 void WasapiAudioSink::write(std::span<const std::byte> pcm) {
   impl_->write(pcm);
+}
+
+void WasapiAudioSink::drain() {
+  impl_->drain();
 }
 
 void WasapiAudioSink::flush() {

@@ -68,8 +68,8 @@ SelectedVoice selected(const VoiceDescriptor& voice, VoiceChoice choice) {
 /// The voice the request *prefers*, before any fallback: the explicit VOX_VOICE
 /// name when set, otherwise the requested language. An explicit name that is
 /// set but missing yields nullopt without trying the language — a broken
-/// override must not re-enable what it replaced — so the caller goes straight
-/// to the fallback either way nullopt is returned.
+/// override must not re-enable what it replaced. A nullopt result sends
+/// selectVoice() on to the fallback (or, under `required`, to no selection).
 std::optional<SelectedVoice> preferredVoice(std::span<const VoiceDescriptor> available,
                                             const VoiceSelectionRequest& request) {
   if (!request.explicitVoice.empty()) {

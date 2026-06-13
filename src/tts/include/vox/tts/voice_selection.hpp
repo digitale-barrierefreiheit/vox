@@ -96,11 +96,11 @@ struct SelectedVoice {
 /// Precedence: a non-empty `request.explicitVoice` is authoritative — the
 /// first voice with that name (ASCII case-insensitive) is chosen; when no such
 /// voice exists, the language preference is *skipped* (a broken override must
-/// not silently re-enable what it replaced) and the fallback chain applies
-/// directly. Otherwise the first voice matching `request.language` (compared
-/// by primary subtag, case-insensitive) is chosen. Without a match,
-/// `request.required` yields no selection (the CI gate); otherwise the
-/// system-default voice, or the first available one, is the fallback.
+/// not silently re-enable what it replaced) and selection proceeds to the
+/// match-or-fallback step below. Otherwise the first voice matching
+/// `request.language` (compared by primary subtag, case-insensitive) is chosen.
+/// Without a match, `request.required` yields no selection (the CI gate);
+/// otherwise the system-default voice, or the first available one, is used.
 ///
 /// @return The chosen voice with its provenance, or `std::nullopt` when none
 ///         is acceptable (an empty set, or `required` without a match).

@@ -113,6 +113,12 @@ std::string requestedLanguage() {
   return tag;
 }
 
+/// A non-empty label for @p voice in diagnostics: its name, or its id when the
+/// SAPI token carried no "Name" attribute (so a message never reads `using ""`).
+const std::string& voiceLabel(const vox::tts::SelectedVoice& voice) {
+  return voice.name.empty() ? voice.id : voice.name;
+}
+
 /// Reports how the voice request worked out (#88): fallbacks and divergences
 /// go to stderr here — the engine itself does no I/O.
 void reportVoiceOutcome(const vox::tts::VoiceSelectionRequest& request,
@@ -120,17 +126,17 @@ void reportVoiceOutcome(const vox::tts::VoiceSelectionRequest& request,
   using enum vox::tts::VoiceChoice;
   if (!request.explicitVoice.empty() && voice.choice != ExplicitName) {
     std::cerr << "vox: voice \"" << request.explicitVoice
-              << "\" (VOX_VOICE) is not installed; using \"" << voice.name << "\"\n";
+              << "\" (VOX_VOICE) is not installed; using \"" << voiceLabel(voice) << "\"\n";
   } else if (voice.choice == Fallback) {
-    std::cerr << "vox: no \"" << request.language << "\" voice is installed; using \"" << voice.name
-              << "\"\n";
+    std::cerr << "vox: no \"" << request.language << "\" voice is installed; using \""
+              << voiceLabel(voice) << "\"\n";
     // Only warn about a real divergence: a known voice language that differs
     // from the request (compared case-insensitively by primary subtag).
   } else if (voice.choice == ExplicitName && !voice.language.empty() &&
              !vox::tts::sameLanguage(voice.language, request.language)) {
-    std::cerr << "vox: voice \"" << voice.name << "\" (VOX_VOICE) speaks \"" << voice.language
-              << "\" while the requested language (VOX_LANGUAGE) is \"" << request.language
-              << "\"; the explicit voice wins\n";
+    std::cerr << "vox: voice \"" << voiceLabel(voice) << "\" (VOX_VOICE) speaks \""
+              << voice.language << "\" while the requested language (VOX_LANGUAGE) is \""
+              << request.language << "\"; the explicit voice wins\n";
   }
 }
 

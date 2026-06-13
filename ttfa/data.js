@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781374130235,
+  "lastUpdate": 1781387842155,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -241,6 +241,35 @@ window.BENCHMARK_DATA = {
           {
             "name": "ttfaPipeline p50",
             "value": 1,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d1eb53e4a083c57028842aa2bb96a71ea21a89ba",
+          "message": "fix(ci): test-summary shows the check only once all expected jobs report (#65)\n\nThe test-results PR comment rendered a green \"All passed\" as soon as the jobs that had reported so far were clean, so a partial run — or a job that died before publishing JUnit — read as all-green. The verdict now keys off the expected job set seeded by the init step (x64, x86, de-DE, asan, tsan): the check appears only once every expected job has reported and none failed; an hourglass while any are still pending; a cross as soon as a job fails or comes back without results.\n\n- Set-based completeness (not a bare count); a no-JUnit job is recorded as an 'unavailable' cross; the init 'jobs' input is trimmed + de-duplicated; the X/Y counter reads 'expected jobs reported' when seeded.\n- The action's IO was extracted behind injectable seams (actions-io.ts: makeIo/liveDeps/main, comment.ts liveClient, util.ts errorMessage) so the entry logic is unit-tested — action coverage 88% -> 100% line with no exclusions.",
+          "timestamp": "2026-06-13T23:42:52+02:00",
+          "tree_id": "df611e0a8aaa02c903eed520261816e93169c97c",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/d1eb53e4a083c57028842aa2bb96a71ea21a89ba"
+        },
+        "date": 1781387841886,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.5,
             "unit": "us"
           }
         ]

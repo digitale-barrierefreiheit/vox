@@ -190,10 +190,18 @@ void Reader::workerLoop() {
       tts_.synthesize(utterance.text,
                       [this](std::span<const std::byte> pcm) { audio_.write(pcm); });
       // Natural end of the utterance: flush the resampler's group-delay tail so the
-      // final milliseconds play. The sink drops this tail if a barge-in intervened
-      // (it tracks the flush generation), and abandons it harmlessly if we are
-      // already stopping, so draining unconditionally here is safe.
-      audio_.drain();
+      // final milliseconds play. Skip it once stop() has cleared running_ — the
+      // synthesize() above was cancelled for shutdown, and draining could back-
+      // pressure on a full ring, delaying teardown for audio stop() then discards.
+      // A barge-in's tail is still dropped by the sink's flush-generation guard.
+      bool stillRunning = false;
+      {
+        const std::scoped_lock lock(mutex_);
+        stillRunning = running_;
+      }
+      if (stillRunning) {
+        audio_.drain();
+      }
       // A failed announcement (e.g. a SAPI error) must not escape the worker
       // thread; drop this utterance and keep going.
       // NOLINTNEXTLINE(bugprone-empty-catch)

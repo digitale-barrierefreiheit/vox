@@ -61,7 +61,11 @@ public:
   }
 
   void drain() override {
-    drainCount_.fetch_add(1, std::memory_order_relaxed);
+    {
+      const std::scoped_lock lock(mutex_);
+      drainCount_.fetch_add(1, std::memory_order_relaxed);
+    }
+    cv_.notify_all(); // wake waitForDrain()
   }
 
   void flush() override {
@@ -79,6 +83,14 @@ public:
       observed_ = bytesWritten_;
     }
     return produced;
+  }
+
+  /// @brief Blocks until the worker has drained at least once (the end-of-stream
+  ///        tail flush ran), or @p timeout elapses.
+  [[nodiscard]] bool waitForDrain(std::chrono::milliseconds timeout) {
+    std::unique_lock lock(mutex_);
+    return cv_.wait_for(lock, timeout,
+                        [this] { return drainCount_.load(std::memory_order_relaxed) > 0; });
   }
 
   [[nodiscard]] int flushCount() const noexcept {
@@ -128,6 +140,41 @@ private:
   std::mutex mutex_;
   std::condition_variable cv_;
   bool attempted_{false};
+};
+
+/// A TTS engine that parks inside synthesize() until cancelled, so a test can land
+/// stop() while the worker is mid-utterance and verify it then skips the
+/// end-of-stream drain.
+class BlockingTts : public FakeTtsEngine {
+public:
+  void synthesize(std::string_view /*utf8Text*/,
+                  const vox::tts::ITtsEngine::PcmSink& /*sink*/) override {
+    std::unique_lock lock(mutex_);
+    cancelled_ = false; // a fresh utterance ignores a cancel from before it began
+    blocked_ = true;
+    blockedCv_.notify_all();
+    cancelledCv_.wait(lock, [this] { return cancelled_; });
+  }
+
+  void cancel() override {
+    {
+      const std::scoped_lock lock(mutex_);
+      cancelled_ = true;
+    }
+    cancelledCv_.notify_all();
+  }
+
+  [[nodiscard]] bool waitUntilBlocked(std::chrono::milliseconds timeout) {
+    std::unique_lock lock(mutex_);
+    return blockedCv_.wait_for(lock, timeout, [this] { return blocked_; });
+  }
+
+private:
+  std::mutex mutex_;
+  std::condition_variable blockedCv_;
+  std::condition_variable cancelledCv_;
+  bool blocked_{false};
+  bool cancelled_{false};
 };
 
 OutputManager germanOutput() {
@@ -180,11 +227,25 @@ TEST(Reader, DrainsTheSinkAfterAnUtterance) {
 
   reader.start();
   provider.simulateFocusChange(button("OK"));
-  ASSERT_TRUE(audio.waitForWrite(WaitTimeout)); // synthesis has begun streaming
-  reader.stop(); // joins the worker, so its post-synthesis drain() has happened
+  ASSERT_TRUE(audio.waitForDrain(WaitTimeout)); // synthesis finished and the tail was drained
+  reader.stop();
 
   // The worker flushes the resampler's group-delay tail once the utterance ends.
   EXPECT_EQ(audio.drainCount(), 1);
+}
+
+TEST(Reader, SkipsTheEndOfStreamDrainWhenStoppingMidUtterance) {
+  FakeProvider provider;
+  BlockingTts tts;
+  SyncAudioSink audio;
+  Reader reader(provider, tts, audio, germanOutput());
+
+  reader.start();
+  provider.simulateFocusChange(button("OK"));
+  ASSERT_TRUE(tts.waitUntilBlocked(WaitTimeout)); // the worker is parked inside synthesize()
+  reader.stop(); // clears running_ and cancels synthesis -> the worker skips the drain
+
+  EXPECT_EQ(audio.drainCount(), 0);
 }
 
 TEST(Reader, NavigationKeyBargesIn) {

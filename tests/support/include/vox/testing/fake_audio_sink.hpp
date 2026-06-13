@@ -37,10 +37,16 @@ public:
   }
 
   void drain() override {
+    if (!started_) {
+      return; // before-start no-op, matching write() and the real sink
+    }
     ++drainCount_; // end of stream: the fake buffers raw PCM, so nothing to flush
   }
 
   void flush() override {
+    if (!started_) {
+      return; // before-start no-op, matching write()
+    }
     ++flushCount_;
     buffered_.clear(); // barge-in drops what is queued
   }

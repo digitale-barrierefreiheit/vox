@@ -365,8 +365,16 @@ TEST_F(WasapiAcquisitionTest, AWriteRacingABargeInReArmsTheFlush) {
     done.store(true, std::memory_order_release);
   });
   // Flush until the back-pressured producer observes the generation bump and
-  // abandons; on the way out pushAll re-arms the flush (the branch under test).
+  // abandons; on the way out pushAll re-arms the flush (the branch under test). A
+  // deadline keeps a regression in the abandon path from hanging the suite: on
+  // timeout, stop() releases the producer (stopRequested_) before we join.
+  const auto deadline = std::chrono::steady_clock::now() + WaitTimeout;
   while (!done.load(std::memory_order_acquire)) {
+    if (std::chrono::steady_clock::now() >= deadline) {
+      sink.stop();
+      producer.join();
+      FAIL() << "write() did not abandon after a barge-in within the deadline";
+    }
     sink.flush();
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }

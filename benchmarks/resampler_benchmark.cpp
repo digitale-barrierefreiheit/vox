@@ -64,7 +64,9 @@ void resampleChunk(benchmark::State& state) {
   const std::vector<std::byte> chunk = makeChunk();
   PcmConverter converter{EngineFormat, 48000, 2, SampleFormat::Float32};
   std::vector<std::byte> out;
-  out.reserve(ChunkSamples * 4 * sizeof(float)); // pre-grown, reused like the sink's scratch
+  // Pre-grown so steady-state convert() never reallocates: one chunk upsampled
+  // 22.05 -> 48 kHz (~2.18x) to stereo float32. Reserve above 2.18x x 2 ch x float.
+  out.reserve(ChunkSamples * 3U * 2U * sizeof(float)); // ~96 KiB, reused like the sink's scratch
 
   std::vector<double> samplesUs;
   samplesUs.reserve(static_cast<std::size_t>(state.max_iterations));

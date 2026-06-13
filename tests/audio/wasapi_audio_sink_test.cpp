@@ -359,8 +359,8 @@ TEST_F(WasapiAcquisitionTest, AWriteRacingABargeInReArmsTheFlush) {
   WasapiAudioSink sink(AudioFormat{22050, 16, 1});
   ASSERT_NO_THROW(sink.start());
   const std::vector<std::byte> big(256U * 1024U, std::byte{0}); // far larger than the ring
-  std::atomic<bool> done{false};
-  std::thread producer([&sink, &big, &done] {
+  std::atomic done{false};
+  std::jthread producer([&sink, &big, &done] {
     sink.write(big);
     done.store(true, std::memory_order_release);
   });

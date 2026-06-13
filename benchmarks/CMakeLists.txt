@@ -16,6 +16,7 @@ endif()
 
 add_executable(vox_benchmarks
   main.cpp
+  resampler_benchmark.cpp
   ttfa_pipeline_benchmark.cpp)
 if(WIN32)
   # The real-engine measurement drives SAPI and is Windows-only.
@@ -25,6 +26,7 @@ endif()
 vox_configure_target(vox_benchmarks)
 target_link_libraries(vox_benchmarks PRIVATE
   vox::app
+  vox::audio
   vox::german
   vox::testing
   benchmark::benchmark)

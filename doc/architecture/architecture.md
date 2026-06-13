@@ -320,6 +320,7 @@ Techniques applied to the hot paths:
 - **Arena / bump allocators** for transient per-operation scratch: allocate, use, then reset with a single pointer move — never free individually.
 - **Pre-allocated ring buffers** for Helper↔Core and the audio pipeline — fixed size, zero per-message allocation.
 - **Resident PCM**: the Tier-0 phrase cache lives in memory as pre-decoded PCM. The **audio render callback never allocates, never takes a contended lock, and never page-faults** (consider `VirtualLock` on audio buffers; guard against priority inversion).
+- **Pre-built resampler kernel**: `PcmConverter` resamples TTS PCM to the device mix format with a **windowed-sinc polyphase** filter (#55) whose kernel and sample history are allocated once at construction, so converting each delivered chunk allocates nothing on the producer path (ADR-10); at equal rates it degrades to an exact, zero-delay passthrough.
 - **Thread-local reusable scratch** (e.g., a growable UTF-16 buffer reset between utterances) instead of constructing fresh strings in loops.
 - **Private heap** (`HeapCreate`; the Low-Fragmentation Heap is the default on modern Windows) per subsystem to isolate the allocations that remain and cut cross-thread contention.
 - **Helper side**: write straight into the SHM ring → **zero allocation in the host's heap** on the hot path.

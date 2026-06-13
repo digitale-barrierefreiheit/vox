@@ -154,6 +154,7 @@ public:
     blocked_ = true;
     blockedCv_.notify_all();
     cancelledCv_.wait(lock, [this] { return cancelled_; });
+    blocked_ = false; // clear so a reused BlockingTts blocks afresh on the next utterance
   }
 
   void cancel() override {

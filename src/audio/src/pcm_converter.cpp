@@ -71,12 +71,15 @@ double besselI0(double x) {
   return sum;
 }
 
-/// Kaiser window over u ∈ [-1, 1]; zero outside.
-double kaiser(double u, double beta) {
-  if (std::abs(u) >= 1.0) {
-    return 0.0;
-  }
-  return besselI0(beta * std::sqrt(1.0 - (u * u))) / besselI0(beta);
+/// Kaiser window over u ∈ [-1, 1] at the fixed KaiserBeta. The endpoints u = ±1
+/// evaluate to I0(0)/I0(KaiserBeta) (small but non-zero), not zero — so the guard
+/// row (phase == Phases) stays continuous with phase 0 at the wrap boundary. The
+/// radicand is clamped so |u| ≥ 1 stays finite (no sqrt of a negative), though the
+/// kernel only ever samples it on [-1, 1].
+double kaiser(double u) {
+  const double radicand = 1.0 - (u * u);
+  const double arg = radicand > 0.0 ? std::sqrt(radicand) : 0.0;
+  return besselI0(KaiserBeta * arg) / besselI0(KaiserBeta);
 }
 
 } // namespace
@@ -113,8 +116,7 @@ void PcmConverter::buildKernel() {
       // Distance from the output point to this tap's source sample, in source-
       // sample units: tap 0 is the oldest (HalfTaps-1 ahead), tap Taps-1 newest.
       const double x = frac + (static_cast<double>(HalfTaps) - 1.0 - static_cast<double>(tap));
-      const double h =
-          normalizedSinc(2.0 * cutoff * x) * kaiser(x / static_cast<double>(HalfTaps), KaiserBeta);
+      const double h = normalizedSinc(2.0 * cutoff * x) * kaiser(x / static_cast<double>(HalfTaps));
       kernel_[(phase * Taps) + tap] = static_cast<float>(h);
       rowSum += h;
     }

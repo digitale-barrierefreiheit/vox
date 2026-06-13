@@ -15,6 +15,9 @@ export interface JobColumn {
   s: number;
   /** status code per testNames index */
   status: string;
+  /** The job ran but published no JUnit (e.g. its build failed first) — counts as not
+   *  passing, so a missing report can never leave the run reading as all-green. */
+  u?: boolean;
 }
 
 /** The full run state, embedded (as JSON) in the comment so every job can rebuild it. */
@@ -22,13 +25,20 @@ export interface MatrixState {
   runNumber: string;
   runUrl: string;
   commit: string;
+  /** Every test job expected to report this run, seeded by the init step. The overall
+   *  verdict is ✅ only once all of these have reported and none failed; until then the
+   *  summary stays ⏳ so a partial run never reads as all-passed. */
+  expectedJobs: string[];
   jobOrder: string[];
   testNames: string[];
   jobs: Record<string, JobColumn>;
 }
 
-export function emptyState(meta: Pick<MatrixState, 'runNumber' | 'runUrl' | 'commit'>): MatrixState {
-  return { ...meta, jobOrder: [], testNames: [], jobs: {} };
+export function emptyState(
+  meta: Pick<MatrixState, 'runNumber' | 'runUrl' | 'commit'>,
+  expectedJobs: string[] = [],
+): MatrixState {
+  return { ...meta, expectedJobs, jobOrder: [], testNames: [], jobs: {} };
 }
 
 /** Fold one job's results into the state (idempotent — re-reporting replaces the column). */
@@ -45,6 +55,31 @@ export function mergeJob(state: MatrixState, job: string, parsed: ParsedJob): vo
     .join('');
   state.jobs[job] = { p: parsed.passed, f: parsed.failed, s: parsed.skipped, status };
   if (!state.jobOrder.includes(job)) state.jobOrder.push(job);
+}
+
+/** Record a job that ran but produced no JUnit (its build failed, or the runner died before
+ *  tests): an empty column flagged `u`, so the verdict treats it as not-passing rather than
+ *  simply absent (which would otherwise read as "still waiting" forever). */
+export function mergeUnavailable(state: MatrixState, job: string): void {
+  const status = state.testNames.map(() => '-').join('');
+  state.jobs[job] = { p: 0, f: 0, s: 0, status, u: true };
+  if (!state.jobOrder.includes(job)) state.jobOrder.push(job);
+}
+
+/** Apply one action invocation to the state: `init` seeds the expected-job set; a `report`
+ *  folds in this job's column, or marks it unavailable when it produced no JUnit. Pure, so
+ *  index.ts's merge closure stays a one-liner and this decision is unit-tested directly. */
+export function applyReport(
+  state: MatrixState,
+  opts: { create: boolean; job: string; result: ParsedJob | null; expectedJobs: string[] },
+): void {
+  if (opts.create) {
+    state.expectedJobs = opts.expectedJobs;
+  } else if (opts.result) {
+    mergeJob(state, opts.job, opts.result);
+  } else {
+    mergeUnavailable(state, opts.job);
+  }
 }
 
 const runMarker = (runId: string): string => `<!-- vox-test-matrix run=${runId} -->`;
@@ -64,7 +99,13 @@ const isStringArray = (v: unknown): boolean => Array.isArray(v) && v.every((x) =
 function isJobColumn(v: unknown): boolean {
   if (typeof v !== 'object' || v === null) return false;
   const c = v as Record<string, unknown>;
-  return typeof c.p === 'number' && typeof c.f === 'number' && typeof c.s === 'number' && typeof c.status === 'string';
+  return (
+    typeof c.p === 'number' &&
+    typeof c.f === 'number' &&
+    typeof c.s === 'number' &&
+    typeof c.status === 'string' &&
+    (c.u === undefined || typeof c.u === 'boolean')
+  );
 }
 
 function hasStringMeta(s: Record<string, unknown>): boolean {
@@ -91,6 +132,7 @@ function isMatrixState(v: unknown): v is MatrixState {
   const s = v as Record<string, unknown>;
   return (
     hasStringMeta(s) &&
+    isStringArray(s.expectedJobs) &&
     isStringArray(s.jobOrder) &&
     isStringArray(s.testNames) &&
     columnsValid(s.jobs, (s.testNames as string[]).length) &&
@@ -107,6 +149,11 @@ export function parseState(body: string): MatrixState | null {
   if (end < 0) return null;
   try {
     const decoded = decodeState(body.slice(start, end).trim());
+    // Back-fill expectedJobs for a comment written before the field existed, so a run that
+    // is in flight across a deploy still parses (and merges) instead of resetting mid-run.
+    if (decoded && typeof decoded === 'object' && (decoded as Record<string, unknown>).expectedJobs === undefined) {
+      (decoded as Record<string, unknown>).expectedJobs = [];
+    }
     return isMatrixState(decoded) ? decoded : null;
   } catch {
     return null;
@@ -128,12 +175,32 @@ export const codeCell = (s: string): string => {
   return `${fence}${pad}${safe}${pad}${fence}`;
 };
 
-/** The one-line headline: running, some-failed, or all-passed. */
-function renderStatusLine(jobCount: number, totals: { p: number; f: number; s: number }): string {
-  if (jobCount === 0) return '⏳ Tests running… results appear as each job finishes.';
-  if (totals.f > 0)
-    return `❌ **${totals.f} failed**, ${totals.p} passed, ${totals.s} skipped — ${jobCount} job(s) reported`;
-  return `✅ **All ${totals.p} passed** (${totals.s} skipped) — ${jobCount} job(s) reported`;
+/** The one-line headline. ✅ is reserved for a fully-reported, all-passed run: every expected
+ *  job has reported and none failed. ❌ the moment any job fails or comes back without results.
+ *  ⏳ while still waiting on expected jobs — so a partial run is never shown as all-green. */
+function renderStatusLine(state: MatrixState, totals: { p: number; f: number; s: number }): string {
+  const reported = state.jobOrder.length;
+  const failed = state.jobOrder.filter((j) => state.jobs[j].f > 0 || state.jobs[j].u);
+  // The gate is set-based: every *expected* job must have reported. A count alone would pass
+  // if an unexpected job stood in for a missing expected one.
+  const pending = state.expectedJobs.filter((j) => !state.jobOrder.includes(j));
+  // Completeness is enforced only when the expected set was seeded; an empty set (e.g. a
+  // legacy comment) falls back to "all reported jobs", so the denominator is the live count.
+  const seeded = state.expectedJobs.length > 0;
+  const total = seeded ? state.expectedJobs.length : reported;
+  const done = total - pending.length;
+
+  if (failed.length > 0) {
+    const noResults = failed.filter((j) => state.jobs[j].u);
+    const parts: string[] = [];
+    if (totals.f > 0) parts.push(`**${totals.f} failed**`);
+    if (noResults.length > 0) parts.push(`**${noResults.length} job(s) without results** (${noResults.map(cell).join(', ')})`);
+    return `❌ ${parts.join(', ')}, ${totals.p} passed, ${totals.s} skipped — ${done}/${total} jobs reported`;
+  }
+  if (reported === 0) return '⏳ Tests running… results appear as each job finishes.';
+  if (pending.length > 0)
+    return `⏳ ${totals.p} passed, ${totals.s} skipped so far — ${done}/${total} jobs reported (waiting for ${pending.map(cell).join(', ')})`;
+  return `✅ **All ${totals.p} passed** (${totals.s} skipped) — ${total} jobs reported`;
 }
 
 /** Render the whole comment body (marker + tables + embedded state). */
@@ -148,12 +215,14 @@ export function renderComment(runId: string, state: MatrixState): string {
   );
 
   const header = `### 🧪 Test results — run [#${state.runNumber}](${state.runUrl}) \`${state.commit}\``;
-  const statusLine = renderStatusLine(jobs.length, totals);
+  const statusLine = renderStatusLine(state, totals);
 
   let summary = '| Job | ✅ | ❌ | ⏭️ | Total |\n|---|--:|--:|--:|--:|\n';
   for (const j of jobs) {
     const c = state.jobs[j];
-    summary += `| ${cell(j)} | ${c.p} | ${c.f} | ${c.s} | ${c.p + c.f + c.s} |\n`;
+    summary += c.u
+      ? `| ${cell(j)} | — | ⚠️ | — | no results |\n`
+      : `| ${cell(j)} | ${c.p} | ${c.f} | ${c.s} | ${c.p + c.f + c.s} |\n`;
   }
 
   const colHead = `| Test | ${jobs.map(cell).join(' | ')} |\n|---|${jobs.map(() => ':-:').join('|')}|`;

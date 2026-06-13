@@ -32644,16 +32644,19 @@ const io = {
         await _actions_core__WEBPACK_IMPORTED_MODULE_1__.summary.addRaw(markdown, true).write();
     },
     upsertComment: async (create, job, prNumber, result) => {
+        // init seeds the expected-job set so the verdict knows when the run is complete; report
+        // steps pass nothing here and inherit it from the comment's embedded state.
+        const expectedJobs = (_actions_core__WEBPACK_IMPORTED_MODULE_1__.getInput('jobs') || '')
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean);
         try {
             await (0,_comment_js__WEBPACK_IMPORTED_MODULE_5__/* .upsert */ .el)({
                 token: _actions_core__WEBPACK_IMPORTED_MODULE_1__.getInput('token') || process.env.GITHUB_TOKEN || '',
                 runId: process.env.GITHUB_RUN_ID ?? '',
                 prNumber,
                 create,
-                merge: (state) => {
-                    if (result)
-                        (0,_render_js__WEBPACK_IMPORTED_MODULE_4__/* .mergeJob */ .aF)(state, job, result);
-                },
+                merge: (state) => (0,_render_js__WEBPACK_IMPORTED_MODULE_4__/* .applyReport */ .h8)(state, { create, job, result, expectedJobs }),
             });
         }
         catch (err) {
@@ -32743,17 +32746,18 @@ function parseJunit(xml) {
 /* harmony export */ __nccwpck_require__.d(__webpack_exports__, {
 /* harmony export */   Bu: () => (/* binding */ parseState),
 /* harmony export */   MZ: () => (/* binding */ codeCell),
-/* harmony export */   aF: () => (/* binding */ mergeJob),
+/* harmony export */   h8: () => (/* binding */ applyReport),
 /* harmony export */   p$: () => (/* binding */ emptyState),
 /* harmony export */   qW: () => (/* binding */ runMarker),
 /* harmony export */   wQ: () => (/* binding */ renderComment)
 /* harmony export */ });
+/* unused harmony exports mergeJob, mergeUnavailable */
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
 const CODE = { passed: 'P', failed: 'F', skipped: 'S' };
 const ICON = { P: '✅', F: '❌', S: '⏭️', '-': '—' };
-function emptyState(meta) {
-    return { ...meta, jobOrder: [], testNames: [], jobs: {} };
+function emptyState(meta, expectedJobs = []) {
+    return { ...meta, expectedJobs, jobOrder: [], testNames: [], jobs: {} };
 }
 /** Fold one job's results into the state (idempotent — re-reporting replaces the column). */
 function mergeJob(state, job, parsed) {
@@ -32772,6 +32776,29 @@ function mergeJob(state, job, parsed) {
     if (!state.jobOrder.includes(job))
         state.jobOrder.push(job);
 }
+/** Record a job that ran but produced no JUnit (its build failed, or the runner died before
+ *  tests): an empty column flagged `u`, so the verdict treats it as not-passing rather than
+ *  simply absent (which would otherwise read as "still waiting" forever). */
+function mergeUnavailable(state, job) {
+    const status = state.testNames.map(() => '-').join('');
+    state.jobs[job] = { p: 0, f: 0, s: 0, status, u: true };
+    if (!state.jobOrder.includes(job))
+        state.jobOrder.push(job);
+}
+/** Apply one action invocation to the state: `init` seeds the expected-job set; a `report`
+ *  folds in this job's column, or marks it unavailable when it produced no JUnit. Pure, so
+ *  index.ts's merge closure stays a one-liner and this decision is unit-tested directly. */
+function applyReport(state, opts) {
+    if (opts.create) {
+        state.expectedJobs = opts.expectedJobs;
+    }
+    else if (opts.result) {
+        mergeJob(state, opts.job, opts.result);
+    }
+    else {
+        mergeUnavailable(state, opts.job);
+    }
+}
 const runMarker = (runId) => `<!-- vox-test-matrix run=${runId} -->`;
 const STATE_OPEN = '<!-- vox-test-matrix-state:';
 const STATE_CLOSE = '-->';
@@ -32785,7 +32812,11 @@ function isJobColumn(v) {
     if (typeof v !== 'object' || v === null)
         return false;
     const c = v;
-    return typeof c.p === 'number' && typeof c.f === 'number' && typeof c.s === 'number' && typeof c.status === 'string';
+    return (typeof c.p === 'number' &&
+        typeof c.f === 'number' &&
+        typeof c.s === 'number' &&
+        typeof c.status === 'string' &&
+        (c.u === undefined || typeof c.u === 'boolean'));
 }
 function hasStringMeta(s) {
     return typeof s.runNumber === 'string' && typeof s.runUrl === 'string' && typeof s.commit === 'string';
@@ -32811,6 +32842,7 @@ function isMatrixState(v) {
         return false;
     const s = v;
     return (hasStringMeta(s) &&
+        isStringArray(s.expectedJobs) &&
         isStringArray(s.jobOrder) &&
         isStringArray(s.testNames) &&
         columnsValid(s.jobs, s.testNames.length) &&
@@ -32827,6 +32859,11 @@ function parseState(body) {
         return null;
     try {
         const decoded = decodeState(body.slice(start, end).trim());
+        // Back-fill expectedJobs for a comment written before the field existed, so a run that
+        // is in flight across a deploy still parses (and merges) instead of resetting mid-run.
+        if (decoded && typeof decoded === 'object' && decoded.expectedJobs === undefined) {
+            decoded.expectedJobs = [];
+        }
         return isMatrixState(decoded) ? decoded : null;
     }
     catch {
@@ -32845,13 +32882,34 @@ const codeCell = (s) => {
     const pad = safe.startsWith('`') || safe.endsWith('`') ? ' ' : '';
     return `${fence}${pad}${safe}${pad}${fence}`;
 };
-/** The one-line headline: running, some-failed, or all-passed. */
-function renderStatusLine(jobCount, totals) {
-    if (jobCount === 0)
+/** The one-line headline. ✅ is reserved for a fully-reported, all-passed run: every expected
+ *  job has reported and none failed. ❌ the moment any job fails or comes back without results.
+ *  ⏳ while still waiting on expected jobs — so a partial run is never shown as all-green. */
+function renderStatusLine(state, totals) {
+    const reported = state.jobOrder.length;
+    const failed = state.jobOrder.filter((j) => state.jobs[j].f > 0 || state.jobs[j].u);
+    // The gate is set-based: every *expected* job must have reported. A count alone would pass
+    // if an unexpected job stood in for a missing expected one.
+    const pending = state.expectedJobs.filter((j) => !state.jobOrder.includes(j));
+    // Completeness is enforced only when the expected set was seeded; an empty set (e.g. a
+    // legacy comment) falls back to "all reported jobs", so the denominator is the live count.
+    const seeded = state.expectedJobs.length > 0;
+    const total = seeded ? state.expectedJobs.length : reported;
+    const done = total - pending.length;
+    if (failed.length > 0) {
+        const noResults = failed.filter((j) => state.jobs[j].u);
+        const parts = [];
+        if (totals.f > 0)
+            parts.push(`**${totals.f} failed**`);
+        if (noResults.length > 0)
+            parts.push(`**${noResults.length} job(s) without results** (${noResults.map(cell).join(', ')})`);
+        return `❌ ${parts.join(', ')}, ${totals.p} passed, ${totals.s} skipped — ${done}/${total} jobs reported`;
+    }
+    if (reported === 0)
         return '⏳ Tests running… results appear as each job finishes.';
-    if (totals.f > 0)
-        return `❌ **${totals.f} failed**, ${totals.p} passed, ${totals.s} skipped — ${jobCount} job(s) reported`;
-    return `✅ **All ${totals.p} passed** (${totals.s} skipped) — ${jobCount} job(s) reported`;
+    if (pending.length > 0)
+        return `⏳ ${totals.p} passed, ${totals.s} skipped so far — ${done}/${total} jobs reported (waiting for ${pending.map(cell).join(', ')})`;
+    return `✅ **All ${totals.p} passed** (${totals.s} skipped) — ${total} jobs reported`;
 }
 /** Render the whole comment body (marker + tables + embedded state). */
 function renderComment(runId, state) {
@@ -32861,11 +32919,13 @@ function renderComment(runId, state) {
         return { p: a.p + c.p, f: a.f + c.f, s: a.s + c.s };
     }, { p: 0, f: 0, s: 0 });
     const header = `### 🧪 Test results — run [#${state.runNumber}](${state.runUrl}) \`${state.commit}\``;
-    const statusLine = renderStatusLine(jobs.length, totals);
+    const statusLine = renderStatusLine(state, totals);
     let summary = '| Job | ✅ | ❌ | ⏭️ | Total |\n|---|--:|--:|--:|--:|\n';
     for (const j of jobs) {
         const c = state.jobs[j];
-        summary += `| ${cell(j)} | ${c.p} | ${c.f} | ${c.s} | ${c.p + c.f + c.s} |\n`;
+        summary += c.u
+            ? `| ${cell(j)} | — | ⚠️ | — | no results |\n`
+            : `| ${cell(j)} | ${c.p} | ${c.f} | ${c.s} | ${c.p + c.f + c.s} |\n`;
     }
     const colHead = `| Test | ${jobs.map(cell).join(' | ')} |\n|---|${jobs.map(() => ':-:').join('|')}|`;
     const row = (i) => `| ${codeCell(state.testNames[i])} | ${jobs.map((j) => ICON[codeAt(state.jobs[j], i)]).join(' | ')} |`;

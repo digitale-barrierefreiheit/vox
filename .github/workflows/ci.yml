@@ -55,6 +55,10 @@ jobs:
       - uses: ./.github/actions/test-matrix
         with:
           mode: init
+          # Every test job expected to report below. The summary stays ⏳ until all of these
+          # have reported and shows ✅ only once they all pass, so a partial run is never
+          # read as all-green. Keep in sync with the `report` jobs' `job:` labels.
+          jobs: x64,x86,de-DE,asan,tsan
 
   # ---------------------------------------------------------------------------
   # Shipping toolchain: MSVC, static CRT, 64-bit and 32-bit (R12 wire layout).

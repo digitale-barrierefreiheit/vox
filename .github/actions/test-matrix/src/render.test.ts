@@ -3,9 +3,11 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { emptyState, mergeJob, parseState, renderComment } from './render.js';
+import { applyReport, emptyState, mergeJob, mergeUnavailable, parseState, renderComment } from './render.js';
+import type { ParsedJob } from './junit.js';
 
 const meta = { runNumber: '42', runUrl: 'https://x/42', commit: 'abc1234' };
+const pass = (name: string): ParsedJob => ({ passed: 1, failed: 0, skipped: 0, total: 1, tests: { [name]: 'passed' } });
 
 test('summary, failure matrix, full matrix, and embedded state round-trip', () => {
   const s = emptyState(meta);
@@ -90,4 +92,55 @@ test('parseState rejects state with a malformed job column or missing meta', () 
   assert.equal(parseState(encode({ ...base, runUrl: undefined, jobs: {} })), null);
   // non-string entry in testNames
   assert.equal(parseState(encode({ ...base, testNames: [1], jobs: {} })), null);
+});
+
+test('with an expected set, a partial run stays ⏳ and never shows a premature ✅', () => {
+  const s = emptyState(meta, ['x64', 'x86', 'de-DE', 'asan', 'tsan']);
+  mergeJob(s, 'x64', { passed: 3, failed: 0, skipped: 0, total: 3, tests: { 'A.a': 'passed', 'A.b': 'passed', 'A.c': 'passed' } });
+  const body = renderComment('r', s);
+  assert.match(body, /⏳ 3 passed, 0 skipped so far — 1\/5 jobs reported/);
+  assert.match(body, /waiting for x86, de-DE, asan, tsan/);
+  assert.doesNotMatch(body, /✅ \*\*All/); // only 1 of 5 has reported
+});
+
+test('✅ appears only once every expected job has reported and passed', () => {
+  const s = emptyState(meta, ['x64', 'tsan']);
+  mergeJob(s, 'x64', { passed: 2, failed: 0, skipped: 0, total: 2, tests: { 'A.a': 'passed', 'A.b': 'passed' } });
+  assert.match(renderComment('r', s), /⏳/); // 1 of 2 — still waiting
+  mergeJob(s, 'tsan', { passed: 1, failed: 0, skipped: 0, total: 1, tests: { 'A.a': 'passed' } });
+  assert.match(renderComment('r', s), /✅ \*\*All 3 passed\*\* \(0 skipped\) — 2 jobs reported/);
+});
+
+test('a job that published no results forces ❌, never a stuck ⏳ or a green ✅', () => {
+  const s = emptyState(meta, ['x64', 'asan']);
+  mergeJob(s, 'x64', { passed: 2, failed: 0, skipped: 0, total: 2, tests: { 'A.a': 'passed', 'A.b': 'passed' } });
+  mergeUnavailable(s, 'asan'); // asan ran but produced no JUnit (e.g. its build failed)
+  const body = renderComment('r', s);
+  assert.match(body, /❌ \*\*1 job\(s\) without results\*\* \(asan\)/);
+  assert.doesNotMatch(body, /✅ \*\*All/);
+  assert.match(body, /\| asan \| — \| ⚠️ \| — \| no results \|/); // summary row marks it
+});
+
+test('applyReport: init seeds the expected set; report folds a column or marks it unavailable', () => {
+  const s = emptyState(meta);
+  applyReport(s, { create: true, job: '', result: null, expectedJobs: ['x64', 'asan'] });
+  assert.deepEqual(s.expectedJobs, ['x64', 'asan']);
+  assert.deepEqual(s.jobOrder, []); // init adds no column of its own
+
+  applyReport(s, { create: false, job: 'x64', result: pass('A.a'), expectedJobs: [] });
+  assert.deepEqual(s.jobOrder, ['x64']);
+
+  applyReport(s, { create: false, job: 'asan', result: null, expectedJobs: [] });
+  assert.deepEqual(s.jobOrder, ['x64', 'asan']);
+  assert.equal(s.jobs['asan'].u, true);
+});
+
+test('parseState back-fills expectedJobs for a legacy comment, and round-trips a seeded one', () => {
+  const legacy = { runNumber: '1', runUrl: 'x', commit: 'c', jobOrder: ['x64'], testNames: ['A.a'], jobs: { x64: { p: 1, f: 0, s: 0, status: 'P' } } };
+  const legacyBody = `<!-- vox-test-matrix-state: ${Buffer.from(JSON.stringify(legacy)).toString('base64')} -->`;
+  assert.deepEqual(parseState(legacyBody)?.expectedJobs, []); // parses, with no completeness gate
+
+  const s = emptyState(meta, ['x64', 'tsan']);
+  mergeJob(s, 'x64', pass('A.a'));
+  assert.deepEqual(parseState(renderComment('r', s))?.expectedJobs, ['x64', 'tsan']); // survives round-trip
 });

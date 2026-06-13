@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import * as core from '@actions/core';
 import * as github from '@actions/github';
 import { parseJunit } from './junit.js';
-import { mergeJob } from './render.js';
+import { applyReport } from './render.js';
 import { upsert } from './comment.js';
 import { run, type Io } from './report.js';
 
@@ -25,15 +25,19 @@ const io: Io = {
     await core.summary.addRaw(markdown, true).write();
   },
   upsertComment: async (create, job, prNumber, result) => {
+    // init seeds the expected-job set so the verdict knows when the run is complete; report
+    // steps pass nothing here and inherit it from the comment's embedded state.
+    const expectedJobs = (core.getInput('jobs') || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
     try {
       await upsert({
         token: core.getInput('token') || process.env.GITHUB_TOKEN || '',
         runId: process.env.GITHUB_RUN_ID ?? '',
         prNumber,
         create,
-        merge: (state) => {
-          if (result) mergeJob(state, job, result);
-        },
+        merge: (state) => applyReport(state, { create, job, result, expectedJobs }),
       });
     } catch (err) {
       core.warning(`test-matrix: could not update the PR comment (${err instanceof Error ? err.message : err}).`);

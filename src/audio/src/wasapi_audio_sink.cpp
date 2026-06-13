@@ -12,7 +12,6 @@
 /// device and clear the ring, giving barge-in within one buffer period.
 #include <algorithm>
 #include <atomic>
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -27,6 +26,7 @@
 #include <vector>
 
 #include <vox/audio/audio_format.hpp>
+#include <vox/audio/detail/ring_push.hpp>
 #include <vox/audio/errors.hpp>
 #include <vox/audio/pcm_converter.hpp>
 #include <vox/audio/pcm_ring.hpp>
@@ -260,28 +260,7 @@ public:
 
     scratch_.clear();
     converter_->convert(pcm, scratch_);
-
-    std::span<const std::byte> remaining{scratch_};
-    while (!remaining.empty()) {
-      if (stopRequested_.load(std::memory_order_acquire) ||
-          flushGeneration_.load(std::memory_order_acquire) != generation) {
-        return; // stopped or barged-in: abandon this (now stale) audio
-      }
-      if (flushRequested_.load(std::memory_order_acquire)) {
-        // A flush is pending; wait for the render thread to clear the ring so
-        // this fresh audio is not discarded along with the stale data.
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        continue;
-      }
-      // `remaining` (whole frames from the converter) and the ring's free space
-      // (frame-aligned capacity, frame-aligned in-flight) are both frame
-      // multiples, so `written` is too — a frame is never split mid-write.
-      const std::size_t written = ring_->write(remaining);
-      remaining = remaining.subspan(written);
-      if (written == 0U) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1)); // full; let it drain
-      }
-    }
+    pushAll(scratch_, generation);
   }
 
   // End of the current stream (an utterance finished synthesizing): flush the
@@ -300,11 +279,8 @@ public:
       return;
     }
     scratch_.clear();
-    converter_->drain(scratch_); // emit the FIR tail, then reset streaming state
-    // The tail is a few hundred bytes — far below the ring's free space once an
-    // utterance has streamed — so a single best-effort write places it; whatever
-    // would not fit is the trailing sub-millisecond, safe to drop.
-    (void)ring_->write(scratch_);
+    converter_->drain(scratch_); // emit the FIR tail, then push it like any frames
+    pushAll(scratch_, generation);
   }
 
   void flush() {
@@ -522,6 +498,21 @@ private:
       converter_->reset();
       converterGeneration_ = generation;
     }
+  }
+
+  /// Pushes whole frames into the ring with back-pressure — the one loop shared by
+  /// write() and drain(). Abandons (dropping the rest) when the sink stopped or a
+  /// barge-in bumped @p generation; backs off while a flush is being serviced or
+  /// the ring is momentarily full. The branch logic is unit-tested thread-free in
+  /// detail::pushFramesToRing; here we only bind it to the live atomics.
+  void pushAll(std::span<const std::byte> frames, std::uint64_t generation) {
+    detail::pushFramesToRing(
+        *ring_, frames,
+        [this, generation] {
+          return stopRequested_.load(std::memory_order_acquire) ||
+                 flushGeneration_.load(std::memory_order_acquire) != generation;
+        },
+        [this] { return flushRequested_.load(std::memory_order_acquire); }, detail::backOffOneTick);
   }
 
   AudioFormat sourceFormat_;

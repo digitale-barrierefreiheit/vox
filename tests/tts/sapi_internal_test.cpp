@@ -67,7 +67,7 @@ TEST(SapiToUtf8, RejectsInvalidUtf16) {
 
 TEST(SapiFirstLcid, ParsesASingleHexLcid) {
   EXPECT_EQ(firstLcid(L"407"), 0x407UL); // de-DE
-  EXPECT_EQ(firstLcid(L"c07"), 0xC07UL); // de-CH
+  EXPECT_EQ(firstLcid(L"c07"), 0xC07UL); // de-AT
   EXPECT_EQ(firstLcid(L""), 0UL);
 }
 

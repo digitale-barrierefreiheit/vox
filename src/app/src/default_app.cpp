@@ -85,7 +85,9 @@ std::string utf8FromWide(std::wstring_view wide) {
   };
   const int bytes = toUtf8(nullptr, 0);
   std::string out(static_cast<std::size_t>(bytes > 0 ? bytes : 0), '\0');
-  toUtf8(out.data(), static_cast<int>(out.size()));
+  const int written = toUtf8(out.data(), static_cast<int>(out.size()));
+  out.resize(
+      static_cast<std::size_t>(written > 0 ? written : 0)); // shrink to written; empty on fail
   return out;
 }
 

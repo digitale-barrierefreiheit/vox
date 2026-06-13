@@ -42,7 +42,17 @@ public:
                SampleFormat targetFormat);
 
   /// @brief Converts @p sourcePcm (16-bit mono) and appends target frames to @p out.
+  ///
+  /// The linear-phase FIR delays output by its group delay, so the last ~taps/2
+  /// source samples of a stream stay buffered until the next call. Call drain() at
+  /// end of stream to flush them.
   void convert(std::span<const std::byte> sourcePcm, std::vector<std::byte>& out);
+
+  /// @brief Flushes the resampler's group-delay tail — the trailing ~taps/2 source
+  ///        samples the FIR still held back — appending the final frames to @p out,
+  ///        then resets streaming state. Call once the stream has ended; a no-op
+  ///        at equal rates (the exact passthrough buffers nothing).
+  void drain(std::vector<std::byte>& out);
 
   /// @brief Clears streaming state so the next convert() starts fresh.
   void reset() noexcept;

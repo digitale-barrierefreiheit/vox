@@ -37,6 +37,12 @@ public:
   ///         pass complete frames in the configured source format.
   virtual void write(std::span<const std::byte> pcm) = 0;
 
+  /// @brief Signals the end of the current PCM stream: flush any buffered
+  ///        resampler tail so the utterance plays in full. Called on the producer
+  ///        thread after the last write(). Unlike flush() it does not discard
+  ///        audio; a stream that was barged-in has its tail dropped by the sink.
+  virtual void drain() = 0;
+
   /// @brief Drops all queued and in-flight audio within one buffer period.
   ///        Safe to call from another thread (barge-in on a keypress).
   virtual void flush() = 0;

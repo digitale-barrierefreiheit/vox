@@ -36,6 +36,10 @@ public:
     ++writeCount_;
   }
 
+  void drain() override {
+    ++drainCount_; // end of stream: the fake buffers raw PCM, so nothing to flush
+  }
+
   void flush() override {
     ++flushCount_;
     buffered_.clear(); // barge-in drops what is queued
@@ -71,11 +75,17 @@ public:
     return flushCount_;
   }
 
+  /// @brief Number of `drain()` calls (one per completed utterance).
+  [[nodiscard]] int drainCount() const noexcept {
+    return drainCount_;
+  }
+
 private:
   std::vector<std::byte> buffered_;
   std::size_t bytesWritten_{0};
   int writeCount_{0};
   int flushCount_{0};
+  int drainCount_{0};
   bool started_{false};
 };
 

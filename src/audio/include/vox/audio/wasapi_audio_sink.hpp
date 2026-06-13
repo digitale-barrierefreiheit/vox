@@ -57,6 +57,10 @@ public:
   ///         samples.
   void write(std::span<const std::byte> pcm) override;
 
+  /// @brief Flushes the resampler tail to the device so a completed utterance
+  ///        plays in full; drops it instead if a barge-in intervened.
+  void drain() override;
+
   /// @brief Drops queued + in-flight audio within one buffer period (barge-in).
   void flush() override;
 

@@ -256,6 +256,7 @@ public:
       return;
     }
     const std::uint64_t generation = flushGeneration_.load(std::memory_order_acquire);
+    startStreamIfNewGeneration(generation);
 
     scratch_.clear();
     converter_->convert(pcm, scratch_);
@@ -281,6 +282,29 @@ public:
         std::this_thread::sleep_for(std::chrono::milliseconds(1)); // full; let it drain
       }
     }
+  }
+
+  // End of the current stream (an utterance finished synthesizing): flush the
+  // converter's group-delay tail so the last few milliseconds play. A barge-in
+  // bumps the generation; when that happened the buffered tail is stale (the
+  // flush already cleared the ring), so drop it and reset for the next stream.
+  void drain() {
+    const std::shared_lock lock(stateMutex_);
+    if (!running_.load(std::memory_order_acquire)) {
+      return;
+    }
+    const std::uint64_t generation = flushGeneration_.load(std::memory_order_acquire);
+    if (generation != converterGeneration_) {
+      converter_->reset(); // barged-in: the buffered tail is stale, so drop it
+      converterGeneration_ = generation;
+      return;
+    }
+    scratch_.clear();
+    converter_->drain(scratch_); // emit the FIR tail, then reset streaming state
+    // The tail is a few hundred bytes — far below the ring's free space once an
+    // utterance has streamed — so a single best-effort write places it; whatever
+    // would not fit is the trailing sub-millisecond, safe to drop.
+    (void)ring_->write(scratch_);
   }
 
   void flush() {
@@ -380,6 +404,9 @@ private:
     }
     frameBytes_ = mixFormat.nBlockAlign;
     converter_.emplace(sourceFormat_, mixFormat.nSamplesPerSec, mixFormat.nChannels, sampleFormat);
+    // The fresh converter matches the current generation, so the first write()
+    // after a (re)start does not see a spurious change and reset it.
+    converterGeneration_ = flushGeneration_.load(std::memory_order_acquire);
   }
 
   /// Initializes the shared-mode, event-driven stream and fetches the render
@@ -487,6 +514,16 @@ private:
                                frameBytes_);
   }
 
+  /// Resets the converter when a barge-in (a generation bump) began a new stream,
+  /// so the previous utterance's filter history never blends into this one.
+  /// Producer-thread only (write()/drain()), so converterGeneration_ needs no lock.
+  void startStreamIfNewGeneration(std::uint64_t generation) {
+    if (generation != converterGeneration_) {
+      converter_->reset();
+      converterGeneration_ = generation;
+    }
+  }
+
   AudioFormat sourceFormat_;
   std::optional<ComApartment> apartment_; // COM for the start()/stop() thread
 
@@ -501,6 +538,10 @@ private:
   std::optional<PcmConverter> converter_;
   std::unique_ptr<PcmRing> ring_;
   std::vector<std::byte> scratch_; // reused by write() on the producer thread
+  // The flush generation the converter's buffered state belongs to. Touched only
+  // on the producer thread (write()/drain()), so it needs no atomic; lets drain()
+  // tell a real tail from a barged-in one and write() reset across a barge-in.
+  std::uint64_t converterGeneration_{0};
 
   std::jthread renderThread_;
   std::atomic<bool> running_{false};
@@ -524,6 +565,10 @@ void WasapiAudioSink::start() {
 
 void WasapiAudioSink::write(std::span<const std::byte> pcm) {
   impl_->write(pcm);
+}
+
+void WasapiAudioSink::drain() {
+  impl_->drain();
 }
 
 void WasapiAudioSink::flush() {

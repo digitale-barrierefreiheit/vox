@@ -87,6 +87,10 @@ public:
     // no-op: start() always throws, so the pipeline never reaches write().
   }
 
+  void drain() override {
+    // no-op: see write().
+  }
+
   void flush() override {
     // no-op: see write().
   }

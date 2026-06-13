@@ -302,11 +302,51 @@ TEST_F(WasapiAcquisitionTest, AcceptsAnExtensibleFloatMixFormat) {
   EXPECT_NO_THROW(sink.stop());
 }
 
-TEST_F(WasapiAcquisitionTest, WriteAndFlushBeforeStartAreNoOps) {
+TEST_F(WasapiAcquisitionTest, WriteDrainAndFlushBeforeStartAreNoOps) {
   WasapiAudioSink sink(AudioFormat{22050, 16, 1});
   const std::vector<std::byte> pcm(8, std::byte{0});
   EXPECT_NO_THROW(sink.write(pcm)); // not running: write() returns immediately
+  EXPECT_NO_THROW(sink.drain());    // not running: drain() returns immediately
   EXPECT_NO_THROW(sink.flush());    // no audio event yet: flush() is a no-op
+}
+
+// At end of stream the producer calls drain() so the resampler's group-delay tail
+// reaches the device — covering the converter's drain path on the live sink.
+TEST_F(WasapiAcquisitionTest, DrainFlushesTheResamplerTailAfterAWrite) {
+  WasapiAudioSink sink(AudioFormat{22050, 16, 1});
+  ASSERT_NO_THROW(sink.start());
+  const std::vector<std::byte> pcm(441 * sizeof(std::int16_t), std::byte{0});
+  EXPECT_NO_THROW(sink.write(pcm));
+  EXPECT_NO_THROW(sink.drain()); // buffered tail still belongs to this stream: emit it
+  EXPECT_NO_THROW(sink.stop());
+}
+
+// A barge-in bumps the flush generation, so a drain that lands afterwards finds a
+// stale tail: it drops it (the flush already cleared the ring) instead of pushing.
+TEST_F(WasapiAcquisitionTest, DrainAfterAFlushDropsTheStaleTail) {
+  std::future<void> reset = resetSignal(S_OK);
+  WasapiAudioSink sink(AudioFormat{22050, 16, 1});
+  ASSERT_NO_THROW(sink.start());
+  const std::vector<std::byte> pcm(441 * sizeof(std::int16_t), std::byte{0});
+  sink.write(pcm);
+  sink.flush(); // barge-in -> the converter's buffered tail is now stale
+  ASSERT_EQ(reset.wait_for(WaitTimeout), std::future_status::ready);
+  EXPECT_NO_THROW(sink.drain());
+  EXPECT_NO_THROW(sink.stop());
+}
+
+// The first write of a new stream (a new generation after barge-in) resets the
+// converter, so the previous utterance's filter history never bleeds into it.
+TEST_F(WasapiAcquisitionTest, AWriteAfterAFlushResetsTheConverter) {
+  std::future<void> reset = resetSignal(S_OK);
+  WasapiAudioSink sink(AudioFormat{22050, 16, 1});
+  ASSERT_NO_THROW(sink.start());
+  const std::vector<std::byte> pcm(441 * sizeof(std::int16_t), std::byte{0});
+  sink.write(pcm);
+  sink.flush();
+  ASSERT_EQ(reset.wait_for(WaitTimeout), std::future_status::ready);
+  EXPECT_NO_THROW(sink.write(pcm)); // new generation: converter is reset, then pushes
+  EXPECT_NO_THROW(sink.stop());
 }
 
 TEST_F(WasapiAcquisitionTest, RenderThreadStopsWhenAFlushResetFails) {

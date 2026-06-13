@@ -294,4 +294,48 @@ TEST(PcmConverter, DownsamplingProducesRoughlyHalfTheFrames) {
   EXPECT_NEAR(static_cast<double>(frames), 0.5 * InputSamples, 64.0);
 }
 
+// --- drain (end-of-stream tail flush, #55) ----------------------------------
+
+TEST(PcmConverter, DrainFlushesTheGroupDelayTail) {
+  PcmConverter converter{AudioFormat{22050, 16, 1}, 44100, 1, SampleFormat::Int16};
+  std::vector<std::byte> out;
+  constexpr std::size_t InputSamples = 1000;
+  converter.convert(constantInt16(500, InputSamples), out);
+  const std::size_t afterConvert = out.size() / sizeof(std::int16_t);
+
+  converter.drain(out);
+  const std::size_t afterDrain = out.size() / sizeof(std::int16_t);
+
+  // convert() holds back the FIR group delay (~HalfTaps source samples); drain()
+  // emits that tail, bringing the total to the full ~2x upsampled frame count.
+  EXPECT_GT(afterDrain, afterConvert);
+  EXPECT_NEAR(static_cast<double>(afterDrain), 2.0 * InputSamples, 2.0);
+}
+
+TEST(PcmConverter, DrainOnEqualRatesEmitsNothing) {
+  PcmConverter converter{AudioFormat{48000, 16, 1}, 48000, 1, SampleFormat::Int16};
+  std::vector<std::byte> out;
+  converter.convert(constantInt16(1000, 16), out);
+  const std::size_t before = out.size();
+  converter.drain(out);
+  EXPECT_EQ(out.size(), before); // the exact passthrough buffers no tail
+}
+
+TEST(PcmConverter, DrainResetsStreamingStateForTheNextStream) {
+  const std::vector<std::byte> input = constantInt16(1500, 200);
+
+  PcmConverter reused{AudioFormat{22050, 16, 1}, 48000, 1, SampleFormat::Float32};
+  std::vector<std::byte> scratch;
+  reused.convert(input, scratch);
+  reused.drain(scratch); // ends the first stream and resets state
+  std::vector<std::byte> second;
+  reused.convert(input, second);
+
+  PcmConverter fresh{AudioFormat{22050, 16, 1}, 48000, 1, SampleFormat::Float32};
+  std::vector<std::byte> freshOut;
+  fresh.convert(input, freshOut);
+
+  EXPECT_EQ(second, freshOut); // after drain, a new stream starts identically
+}
+
 } // namespace

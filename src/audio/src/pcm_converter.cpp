@@ -57,7 +57,7 @@ double normalizedSinc(double x) {
 }
 
 /// Modified Bessel function of the first kind, order 0 — for the Kaiser window.
-double besselI0(double x) {
+constexpr double besselI0(double x) {
   double sum = 1.0;
   double term = 1.0;
   for (int k = 1; k < 64; ++k) {
@@ -71,15 +71,19 @@ double besselI0(double x) {
   return sum;
 }
 
+/// 1 / I0(KaiserBeta): the constant Kaiser normalization denominator, folded once
+/// at compile time so kaiser() does not recompute it on every tap.
+constexpr double InvKaiserI0 = 1.0 / besselI0(KaiserBeta);
+
 /// Kaiser window over u ∈ [-1, 1] at the fixed KaiserBeta. The endpoints u = ±1
-/// evaluate to I0(0)/I0(KaiserBeta) (small but non-zero), not zero — so the guard
-/// row (phase == Phases) stays continuous with phase 0 at the wrap boundary. The
+/// evaluate to I0(0)·InvKaiserI0 (small but non-zero), not zero — so the guard row
+/// (phase == Phases) stays continuous with phase 0 at the wrap boundary. The
 /// radicand is clamped so |u| ≥ 1 stays finite (no sqrt of a negative), though the
 /// kernel only ever samples it on [-1, 1].
 double kaiser(double u) {
   const double radicand = 1.0 - (u * u);
   const double arg = radicand > 0.0 ? std::sqrt(radicand) : 0.0;
-  return besselI0(KaiserBeta * arg) / besselI0(KaiserBeta);
+  return besselI0(KaiserBeta * arg) * InvKaiserI0;
 }
 
 } // namespace
@@ -203,6 +207,25 @@ void PcmConverter::convert(std::span<const std::byte> sourcePcm, std::vector<std
       nextOutput_ += step_;
     }
   }
+}
+
+void PcmConverter::drain(std::vector<std::byte>& out) {
+  if (bypass_) {
+    return; // the exact passthrough buffers nothing
+  }
+  // Feed HalfTaps zeros so the FIR can emit every output still centered on a real
+  // source sample — its group-delay tail — treating the post-stream as silence.
+  // Having fed exactly HalfTaps zeros, the normal emit condition stops at the last
+  // real output (no spurious silence frames). Reset after, so the next stream
+  // starts clean.
+  for (std::size_t i = 0; i < HalfTaps; ++i) {
+    pushSample(0.0F);
+    while (static_cast<std::uint64_t>(std::floor(nextOutput_)) + HalfTaps + 1U <= inputCount_) {
+      emitResampled(out);
+      nextOutput_ += step_;
+    }
+  }
+  reset();
 }
 
 void PcmConverter::reset() noexcept {

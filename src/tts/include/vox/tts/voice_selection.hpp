@@ -2,13 +2,18 @@
 // SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
 
 /// @file
-/// @brief Pure, policy-driven choice of a TTS voice from the available set.
+/// @brief Pure, request-driven choice of a TTS voice from the available set.
 ///
 /// Voice selection is the one piece of the SAPI backend with real branching, so
 /// it lives here as a pure function over plain descriptors — unit-tested without
 /// any installed voice or COM. The Windows backend enumerates real SAPI voices
-/// into `VoiceDescriptor`s and applies this; ADR-07 wants German, but the MVP
-/// must still speak on an English-only machine, hence the two policies.
+/// into `VoiceDescriptor`s and applies this. Since #88 the selection is driven
+/// by a requested language (`VOX_LANGUAGE`, default German per ADR-07) shared
+/// with the lexicon, plus an optional explicit voice (`VOX_VOICE`) that wins
+/// over the language preference. The MVP must still speak on a machine without
+/// a matching voice, hence the unchanged fallback chain; the caller reads the
+/// outcome's provenance (@ref VoiceChoice) to report fallbacks — this module
+/// does no I/O.
 #ifndef VOX_TTS_VOICE_SELECTION_HPP
 #define VOX_TTS_VOICE_SELECTION_HPP
 
@@ -16,6 +21,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace vox::tts {
@@ -23,28 +29,53 @@ namespace vox::tts {
 /// A backend-neutral description of one installed voice.
 struct VoiceDescriptor {
   std::string id;        ///< Opaque backend identifier (e.g. a SAPI token id).
-  std::string name;      ///< Human-readable voice name (diagnostics only).
-  bool isGerman{false};  ///< True if the voice's primary language is German.
+  std::string name;      ///< Human-readable voice name (diagnostics, VOX_VOICE).
+  std::string language;  ///< BCP-47 primary subtag ("de", "en", …); empty = unknown.
   bool isDefault{false}; ///< True if it is the system default voice.
 
   /// Two descriptors are equal iff every field matches.
   [[nodiscard]] friend bool operator==(const VoiceDescriptor&, const VoiceDescriptor&) = default;
 };
 
-/// How hard to insist on a German voice.
-enum class VoiceSelectionPolicy : std::uint8_t {
-  RequireGerman, ///< Only a German voice is acceptable; otherwise none is chosen.
-  PreferGerman,  ///< Prefer German, but fall back to another voice if needed.
+/// What the caller asks of @ref selectVoice (#88).
+struct VoiceSelectionRequest {
+  std::string language{"de"}; ///< Requested language tag (`VOX_LANGUAGE`; ADR-07 default).
+  std::string explicitVoice;  ///< Voice name to use verbatim (`VOX_VOICE`), or empty.
+  bool required{false};       ///< True: no voice in the requested language means no selection.
+};
+
+/// How the selected voice was chosen — the caller's signal for fallback warnings.
+enum class VoiceChoice : std::uint8_t {
+  ExplicitName,      ///< The requested `VOX_VOICE` name matched.
+  RequestedLanguage, ///< A voice in the requested language.
+  Fallback,          ///< The system default voice (or the first available one).
 };
 
 /// The outcome of selecting a voice.
 struct SelectedVoice {
-  std::string id;       ///< The chosen voice's @ref VoiceDescriptor::id.
-  bool isGerman{false}; ///< True if the chosen voice is German (false = fallback).
+  std::string id;                            ///< The chosen voice's @ref VoiceDescriptor::id.
+  std::string name;                          ///< The chosen voice's name (for diagnostics).
+  std::string language;                      ///< The chosen voice's primary subtag (may be empty).
+  VoiceChoice choice{VoiceChoice::Fallback}; ///< Provenance.
 
-  /// Two selections are equal iff both fields match.
+  /// Two selections are equal iff every field matches.
   [[nodiscard]] friend bool operator==(const SelectedVoice&, const SelectedVoice&) = default;
 };
+
+/// @brief The primary subtag of a BCP-47 @p tag ("de-AT" → "de"); the whole
+///        @p tag when it has no subtags.
+[[nodiscard]] std::string_view primarySubtag(std::string_view tag);
+
+/// @brief True if @p left and @p right denote the same primary language —
+///        primary subtags compared ASCII case-insensitively, so "de-AT", "de"
+///        and "DE" all match. Two empty tags count as the same.
+[[nodiscard]] bool sameLanguage(std::string_view left, std::string_view right);
+
+/// @brief The BCP-47 primary subtag for a Windows LANGID / LCID @p langId
+///        (e.g. 0x407 → "de", 0x409 → "en"), or empty when unmapped. Only the
+///        primary-language bits are considered, so every regional variant of a
+///        mapped language resolves to the same subtag.
+[[nodiscard]] std::string_view languageTagFromLangId(unsigned long langId);
 
 /// @brief Merges two discovery passes into one selectable voice list (#52).
 ///
@@ -60,16 +91,21 @@ struct SelectedVoice {
 [[nodiscard]] std::vector<VoiceDescriptor> mergeVoices(std::vector<VoiceDescriptor> primary,
                                                        std::span<const VoiceDescriptor> secondary);
 
-/// @brief Chooses a voice from @p available according to @p policy.
+/// @brief Chooses a voice from @p available according to @p request (#88).
 ///
-/// Prefers the first German voice. Under `PreferGerman`, if none is German it
-/// falls back to the system-default voice, or the first available one. Under
-/// `RequireGerman`, a non-German set yields no selection.
+/// Precedence: a non-empty `request.explicitVoice` is authoritative — the
+/// first voice with that name (ASCII case-insensitive) is chosen; when no such
+/// voice exists, the language preference is *skipped* (a broken override must
+/// not silently re-enable what it replaced) and selection proceeds to the
+/// match-or-fallback step below. Otherwise the first voice matching
+/// `request.language` (compared by primary subtag, case-insensitive) is chosen.
+/// Without a match, `request.required` yields no selection (the CI gate);
+/// otherwise the system-default voice, or the first available one, is used.
 ///
-/// @return The chosen voice, or `std::nullopt` when none is acceptable (an empty
-///         set, or `RequireGerman` with no German voice).
+/// @return The chosen voice with its provenance, or `std::nullopt` when none
+///         is acceptable (an empty set, or `required` without a match).
 [[nodiscard]] std::optional<SelectedVoice> selectVoice(std::span<const VoiceDescriptor> available,
-                                                       VoiceSelectionPolicy policy);
+                                                       const VoiceSelectionRequest& request);
 
 } // namespace vox::tts
 

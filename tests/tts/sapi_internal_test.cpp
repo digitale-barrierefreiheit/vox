@@ -19,7 +19,7 @@
 
 namespace {
 
-using vox::tts::detail::languageIsGerman;
+using vox::tts::detail::firstLcid;
 using vox::tts::detail::readAttribute;
 using vox::tts::detail::toUtf8;
 using vox::tts::detail::toWide;
@@ -63,28 +63,25 @@ TEST(SapiToUtf8, RejectsInvalidUtf16) {
   EXPECT_TRUE(toUtf8(loneHighSurrogate).empty());
 }
 
-// ---- languageIsGerman -------------------------------------------------------
+// ---- firstLcid ----------------------------------------------------------------
 
-TEST(SapiLanguageIsGerman, MatchesGermanPrimaryLanguage) {
-  EXPECT_TRUE(languageIsGerman(L"407")); // de-DE
-  EXPECT_TRUE(languageIsGerman(L"c07")); // de-CH (still LANG_GERMAN primary)
+TEST(SapiFirstLcid, ParsesASingleHexLcid) {
+  EXPECT_EQ(firstLcid(L"407"), 0x407UL); // de-DE
+  EXPECT_EQ(firstLcid(L"c07"), 0xC07UL); // de-AT
+  EXPECT_EQ(firstLcid(L""), 0UL);
 }
 
-TEST(SapiLanguageIsGerman, RejectsNonGerman) {
-  EXPECT_FALSE(languageIsGerman(L"409")); // en-US
-  EXPECT_FALSE(languageIsGerman(L""));
+TEST(SapiFirstLcid, TakesTheFirstEntryOfAList) {
+  // The first entry is the voice's principal language (#88).
+  EXPECT_EQ(firstLcid(L"409;407"), 0x409UL);
+  EXPECT_EQ(firstLcid(L"407;409"), 0x407UL);
 }
 
-TEST(SapiLanguageIsGerman, ScansSemicolonSeparatedList) {
-  EXPECT_TRUE(languageIsGerman(L"409;407"));  // German not first
-  EXPECT_TRUE(languageIsGerman(L"407;409"));  // German first
-  EXPECT_FALSE(languageIsGerman(L"409;809")); // none German
-}
-
-TEST(SapiLanguageIsGerman, ToleratesEmptyTokensAndGarbage) {
-  EXPECT_TRUE(languageIsGerman(L";407;")); // empty tokens around a match
-  EXPECT_FALSE(languageIsGerman(L";;"));   // only empty tokens
-  EXPECT_FALSE(languageIsGerman(L"zzz"));  // wcstoul -> 0, not German
+TEST(SapiFirstLcid, ToleratesEmptyTokensAndGarbage) {
+  EXPECT_EQ(firstLcid(L";407;"), 0x407UL);   // empty tokens around a value
+  EXPECT_EQ(firstLcid(L";;"), 0UL);          // only empty tokens
+  EXPECT_EQ(firstLcid(L"zzz"), 0UL);         // wcstoul -> 0: not a LCID
+  EXPECT_EQ(firstLcid(L"zzz;409"), 0x409UL); // garbage skipped, next one wins
 }
 
 // ---- readAttribute ----------------------------------------------------------

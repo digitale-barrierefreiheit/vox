@@ -30,12 +30,14 @@ namespace vox::tts {
 /// SAPI5-backed TTS engine. Streams 22.05 kHz/16-bit/mono PCM.
 class SapiTtsEngine : public ITtsEngine {
 public:
-  /// @brief Creates an engine, selecting a voice per @p policy (default: prefer
-  ///        German, fall back to the system voice so it still speaks on an
-  ///        English-only machine).
+  /// @brief Creates an engine, selecting a voice per @p request (#88; default:
+  ///        prefer a German voice, fall back to the system voice so it still
+  ///        speaks on an English-only machine). The outcome — including how the
+  ///        voice was chosen — is exposed via selectedVoice(); reporting any
+  ///        fallback is the caller's job, this engine does no I/O.
   /// @throws vox::tts::EngineError if COM/SAPI cannot be initialized or no usable
-  ///         voice is available under @p policy.
-  explicit SapiTtsEngine(VoiceSelectionPolicy policy = VoiceSelectionPolicy::PreferGerman);
+  ///         voice is available under @p request.
+  explicit SapiTtsEngine(const VoiceSelectionRequest& request = {});
   ~SapiTtsEngine() override;
 
   SapiTtsEngine(const SapiTtsEngine&) = delete;

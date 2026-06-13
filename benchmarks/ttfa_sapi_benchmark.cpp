@@ -72,7 +72,7 @@ bool synthesizeOrFail(benchmark::State& state, vox::tts::SapiTtsEngine& engine,
 /// diagnostics — the CI perf gate must not pass silently.
 std::unique_ptr<vox::tts::SapiTtsEngine> makeEngineOrFail(benchmark::State& state) {
   try {
-    return std::make_unique<vox::tts::SapiTtsEngine>(vox::tts::VoiceSelectionPolicy::PreferGerman);
+    return std::make_unique<vox::tts::SapiTtsEngine>(); // default request: prefer German (#88)
   } catch (const std::runtime_error& error) {
     vox::bench::failBenchmark(state, std::string("the SAPI engine is unusable: ") + error.what());
     return nullptr;

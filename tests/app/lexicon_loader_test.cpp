@@ -202,13 +202,30 @@ TEST_F(LexiconLoaderTest, AnExplicitFileWinsAndItsDeclaredLanguageStands) {
   EXPECT_TRUE(loaded.diagnostics.empty());
 }
 
-TEST_F(LexiconLoaderTest, AnExplicitFileMustMatchAnExplicitlyRequestedLanguage) {
-  const std::filesystem::path custom = writeFile("custom.lex", completeTable("en"));
+TEST_F(LexiconLoaderTest, AnExplicitFileWithADifferentLanguageWinsWithAWarning) {
+  // The per-part override has the higher precedence (#88): VOX_LEXICON's
+  // declared language stands even against a set VOX_LANGUAGE — reported, not
+  // rejected.
+  const std::filesystem::path custom =
+      writeFile("custom.lex", completeTableWithButton("en", "my-button"));
 
   const LoadedLexicon loaded = loadExplicit(custom, "de");
 
-  expectFallback(loaded, "\"de\" was expected");
-  EXPECT_THAT(loaded.diagnostics.front(), HasSubstr("VOX_LEXICON"));
+  expectLoadedFile(loaded, "my-button");
+  ASSERT_EQ(loaded.diagnostics.size(), 1U);
+  EXPECT_THAT(loaded.diagnostics.front(), HasSubstr("the explicit file wins"));
+}
+
+TEST_F(LexiconLoaderTest, AnExplicitFileSharingThePrimaryLanguageDoesNotWarn) {
+  // A "de" table satisfies a "de-AT" request: the primary subtags match, so
+  // there is no divergence to warn about (consistent with voice-side matching).
+  const std::filesystem::path custom =
+      writeFile("custom.lex", completeTableWithButton("de", "Knopf-aus-Datei"));
+
+  const LoadedLexicon loaded = loadExplicit(custom, "de-AT");
+
+  expectLoadedFile(loaded, "Knopf-aus-Datei");
+  EXPECT_TRUE(loaded.diagnostics.empty());
 }
 
 TEST_F(LexiconLoaderTest, ABrokenExplicitFileFallsBackToTheDefaultNotTheDirectory) {
@@ -230,7 +247,7 @@ TEST_F(LexiconLoaderTest, AnInvalidRequestedTagIsReportedAndIgnored) {
 
   expectLoadedFile(loaded, "Knopf-aus-Datei");
   ASSERT_EQ(loaded.diagnostics.size(), 1U);
-  EXPECT_THAT(loaded.diagnostics.front(), HasSubstr("not a language tag"));
+  EXPECT_THAT(loaded.diagnostics.front(), HasSubstr("not a valid language tag"));
 }
 
 TEST(IsLanguageTag, AcceptsBcp47ShapedTags) {
@@ -241,6 +258,14 @@ TEST(IsLanguageTag, AcceptsBcp47ShapedTags) {
 
 TEST(IsLanguageTag, RejectsEverythingThatCouldEscapeAFileName) {
   for (const std::string_view tag : {"", "..", "de/at", "de\\at", "de.at", "de at", "dé"}) {
+    EXPECT_FALSE(isLanguageTag(tag)) << tag;
+  }
+}
+
+TEST(IsLanguageTag, RejectsMalformedTagStructure) {
+  // Right character set, wrong shape: empty subtags (leading/trailing/doubled
+  // hyphens), a too-short or non-alphabetic primary, or an over-long subtag.
+  for (const std::string_view tag : {"-", "de-", "-de", "de--AT", "d", "123", "abcdefghi"}) {
     EXPECT_FALSE(isLanguageTag(tag)) << tag;
   }
 }

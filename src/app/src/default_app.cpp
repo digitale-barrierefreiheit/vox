@@ -5,10 +5,12 @@
 /// @brief The production composition root: constructs the real Windows stack.
 #if defined(_WIN32)
 
+#  include <cstddef>
 #  include <filesystem>
 #  include <iostream>
 #  include <memory>
 #  include <string>
+#  include <string_view>
 #  include <utility>
 
 #  include <vox/app/default_app.hpp>
@@ -70,20 +72,81 @@ std::filesystem::path lexiconDirectory() {
   return exeDir.empty() ? exeDir : exeDir / L"lexicon";
 }
 
-/// Loads the announcement lexicon per the #61 resolution rule (VOX_LEXICON,
-/// then lexicon\<VOX_LANGUAGE>.lex next to the executable, then the embedded
-/// German default), reporting every fallback on stderr.
-vox::german::Lexicon loadConfiguredLexicon() {
-  const std::wstring requestedTagWide = readEnvironment(L"VOX_LANGUAGE");
-  // The tag must be ASCII to be valid; non-ASCII survives the narrowing as
-  // non-tag characters, so the loader rejects and reports it.
-  std::string requestedTag;
-  for (const wchar_t letter : requestedTagWide) {
-    requestedTag += (letter < 128) ? static_cast<char>(letter) : '?';
+/// @p wide rendered as UTF-8 (voice names may carry non-ASCII characters). The
+/// explicit length (not -1) means the buffer need not be NUL-terminated, so a
+/// string_view is a faithful input.
+std::string utf8FromWide(std::wstring_view wide) {
+  if (wide.empty()) {
+    return {};
   }
+  const auto toUtf8 = [wide](char* out, int capacity) {
+    return ::WideCharToMultiByte(CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()), out,
+                                 capacity, nullptr, nullptr);
+  };
+  const int bytes = toUtf8(nullptr, 0);
+  std::string out(static_cast<std::size_t>(bytes > 0 ? bytes : 0), '\0');
+  const int written = toUtf8(out.data(), static_cast<int>(out.size()));
+  out.resize(
+      static_cast<std::size_t>(written > 0 ? written : 0)); // shrink to written; empty on fail
+  return out;
+}
+
+/// The language the user asked for (#88): a validated VOX_LANGUAGE, or the
+/// ADR-07 default "de" — reporting an unusable tag on stderr. The result
+/// drives both the voice selection and the lexicon resolution.
+std::string requestedLanguage() {
+  // The tag must be ASCII to be valid; non-ASCII survives the narrowing as
+  // non-tag characters, so the validation below rejects it.
+  std::string tag;
+  for (const wchar_t letter : readEnvironment(L"VOX_LANGUAGE")) {
+    tag += (letter < 128) ? static_cast<char>(letter) : '?';
+  }
+  if (tag.empty()) {
+    return std::string(DefaultLanguageTag);
+  }
+  if (!isLanguageTag(tag)) {
+    std::cerr << "vox: requested language \"" << tag
+              << R"(" (VOX_LANGUAGE) is not a valid language tag; using ")" << DefaultLanguageTag
+              << "\"\n";
+    return std::string(DefaultLanguageTag);
+  }
+  return tag;
+}
+
+/// A non-empty label for @p voice in diagnostics: its name, or its id when the
+/// SAPI token carried no "Name" attribute (so a message never reads `using ""`).
+const std::string& voiceLabel(const vox::tts::SelectedVoice& voice) {
+  return voice.name.empty() ? voice.id : voice.name;
+}
+
+/// Reports how the voice request worked out (#88): fallbacks and divergences
+/// go to stderr here — the engine itself does no I/O.
+void reportVoiceOutcome(const vox::tts::VoiceSelectionRequest& request,
+                        const vox::tts::SelectedVoice& voice) {
+  using enum vox::tts::VoiceChoice;
+  if (!request.explicitVoice.empty() && voice.choice != ExplicitName) {
+    std::cerr << "vox: voice \"" << request.explicitVoice
+              << "\" (VOX_VOICE) is not installed; using \"" << voiceLabel(voice) << "\"\n";
+  } else if (voice.choice == Fallback) {
+    std::cerr << "vox: no \"" << request.language << "\" voice is installed; using \""
+              << voiceLabel(voice) << "\"\n";
+    // Only warn about a real divergence: a known voice language that differs
+    // from the request (compared case-insensitively by primary subtag).
+  } else if (voice.choice == ExplicitName && !voice.language.empty() &&
+             !vox::tts::sameLanguage(voice.language, request.language)) {
+    std::cerr << "vox: voice \"" << voiceLabel(voice) << "\" (VOX_VOICE) speaks \""
+              << voice.language << "\" while the requested language (VOX_LANGUAGE) is \""
+              << request.language << "\"; the explicit voice wins\n";
+  }
+}
+
+/// Loads the announcement lexicon for @p languageTag per the #61/#88 rules
+/// (VOX_LEXICON authoritative, then lexicon\<tag>.lex next to the executable,
+/// then the embedded German default), reporting every fallback on stderr.
+vox::german::Lexicon loadConfiguredLexicon(const std::string& languageTag) {
   LoadedLexicon loaded = loadLexicon({.explicitFile = readEnvironment(L"VOX_LEXICON"),
                                       .lexiconDir = lexiconDirectory(),
-                                      .requestedTag = std::move(requestedTag)});
+                                      .requestedTag = languageTag});
   for (const std::string& line : loaded.diagnostics) {
     std::cerr << "vox: " << line << '\n';
   }
@@ -93,11 +156,19 @@ vox::german::Lexicon loadConfiguredLexicon() {
 } // namespace
 
 AppDependencies makeDefaultDependencies() {
+  // One requested language drives both the voice and the lexicon (#88);
+  // VOX_VOICE / VOX_LEXICON override their part with higher precedence.
+  const std::string languageTag = requestedLanguage();
+  vox::tts::VoiceSelectionRequest voiceRequest;
+  voiceRequest.language = languageTag;
+  voiceRequest.explicitVoice = utf8FromWide(readEnvironment(L"VOX_VOICE"));
+
   // The engine is built first: the audio sink is configured at its PCM format.
-  auto tts = std::make_unique<vox::tts::SapiTtsEngine>(); // prefer German, fall back
+  auto tts = std::make_unique<vox::tts::SapiTtsEngine>(voiceRequest);
+  reportVoiceOutcome(voiceRequest, tts->selectedVoice());
   auto audio = std::make_unique<vox::audio::WasapiAudioSink>(tts->format());
   auto provider = std::make_unique<vox::provider::UiaProvider>();
-  vox::output::OutputManager output(loadConfiguredLexicon());
+  vox::output::OutputManager output(loadConfiguredLexicon(languageTag));
 
   return AppDependencies{
       .provider = std::move(provider),

@@ -59,7 +59,7 @@ using Microsoft::WRL::RuntimeClassFlags;
 // live in detail/ so the suite tests every branch directly (#68/#72). The COM
 // PcmSinkStream below stays here (its IStream ABI surface is exercised through
 // the engine), keeping this the only translation unit that needs the SDK glue.
-using detail::languageIsGerman;
+using detail::firstLcid;
 using detail::readAttribute;
 using detail::toUtf8;
 using detail::toWide;
@@ -314,15 +314,15 @@ void setTokenCategoryFactory(TokenCategoryFactory factory) {
 
 class SapiTtsEngine::Impl {
 public:
-  explicit Impl(VoiceSelectionPolicy policy) {
+  explicit Impl(const VoiceSelectionRequest& request) {
     if (const HRESULT hr = createVoice(voice_.ReleaseAndGetAddressOf()); FAILED(hr) || !voice_) {
       throw EngineError(static_cast<std::uint32_t>(effectiveError(hr)),
                         "SapiTtsEngine: failed to create the SAPI voice");
     }
     enumerateVoices();
-    const std::optional<SelectedVoice> chosen = selectVoice(descriptors_, policy);
+    const std::optional<SelectedVoice> chosen = selectVoice(descriptors_, request);
     if (!chosen) {
-      throw EngineError("SapiTtsEngine: no usable voice for the requested policy");
+      throw EngineError("SapiTtsEngine: no usable voice for the requested language or voice name");
     }
     selected_ = *chosen;
     const auto token = idToToken_.find(selected_.id);
@@ -467,7 +467,8 @@ private:
     VoiceDescriptor descriptor;
     descriptor.id = toUtf8(wideId.c_str());
     descriptor.name = toUtf8(readAttribute(token.Get(), L"Name").c_str());
-    descriptor.isGerman = languageIsGerman(readAttribute(token.Get(), L"Language"));
+    descriptor.language =
+        std::string(languageTagFromLangId(firstLcid(readAttribute(token.Get(), L"Language"))));
     descriptor.isDefault = !defaultId.empty() && wideId == defaultId;
     if (descriptor.id.empty()) {
       return;
@@ -485,7 +486,8 @@ private:
   std::atomic<bool> cancelled_{false};
 };
 
-SapiTtsEngine::SapiTtsEngine(VoiceSelectionPolicy policy) : impl_(std::make_unique<Impl>(policy)) {}
+SapiTtsEngine::SapiTtsEngine(const VoiceSelectionRequest& request)
+    : impl_(std::make_unique<Impl>(request)) {}
 
 SapiTtsEngine::~SapiTtsEngine() = default;
 

@@ -216,6 +216,18 @@ TEST_F(LexiconLoaderTest, AnExplicitFileWithADifferentLanguageWinsWithAWarning) 
   EXPECT_THAT(loaded.diagnostics.front(), HasSubstr("the explicit file wins"));
 }
 
+TEST_F(LexiconLoaderTest, AnExplicitFileSharingThePrimaryLanguageDoesNotWarn) {
+  // A "de" table satisfies a "de-AT" request: the primary subtags match, so
+  // there is no divergence to warn about (consistent with voice-side matching).
+  const std::filesystem::path custom =
+      writeFile("custom.lex", completeTableWithButton("de", "Knopf-aus-Datei"));
+
+  const LoadedLexicon loaded = loadExplicit(custom, "de-AT");
+
+  expectLoadedFile(loaded, "Knopf-aus-Datei");
+  EXPECT_TRUE(loaded.diagnostics.empty());
+}
+
 TEST_F(LexiconLoaderTest, ABrokenExplicitFileFallsBackToTheDefaultNotTheDirectory) {
   // The user replaced the lookup with VOX_LEXICON; a broken value must not
   // silently re-enable what they replaced.

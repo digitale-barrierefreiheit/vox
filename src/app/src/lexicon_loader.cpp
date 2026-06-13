@@ -50,6 +50,13 @@ bool equalsIgnoreCaseAscii(std::string_view left, std::string_view right) {
                             [](char a, char b) { return toLowerAscii(a) == toLowerAscii(b); });
 }
 
+/// The primary subtag of a BCP-47 tag ("de-AT" → "de"). Lexicon files declare a
+/// language at any granularity; comparisons are by primary subtag so a `de`
+/// table satisfies a `de-AT` request (consistent with voice-side matching).
+std::string_view primarySubtag(std::string_view tag) {
+  return tag.substr(0, tag.find('-'));
+}
+
 /// @p file rendered as UTF-8 for a diagnostic line. `path::string()` would
 /// throw on characters outside the active code page, which must not break the
 /// always-speaks startup path; the UTF-16 → UTF-8 rendering always succeeds.
@@ -145,7 +152,8 @@ LoadedLexicon loadLexicon(const LexiconRequest& request) {
     // per-part override has the higher precedence (#88), so a divergence is
     // reported, not rejected.
     if (loadFromFile(request.explicitFile, /*expectedTag=*/{}, "(VOX_LEXICON)", result) &&
-        !tag.empty() && !equalsIgnoreCaseAscii(result.lexicon.language(), tag)) {
+        !tag.empty() &&
+        !equalsIgnoreCaseAscii(primarySubtag(result.lexicon.language()), primarySubtag(tag))) {
       result.diagnostics.push_back("lexicon file (VOX_LEXICON) declares language \"" +
                                    std::string(result.lexicon.language()) +
                                    "\" while the requested language (VOX_LANGUAGE) is \"" +

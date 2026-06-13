@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781387842155,
+  "lastUpdate": 1781394222296,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -265,6 +265,35 @@ window.BENCHMARK_DATA = {
           "url": "https://github.com/digitale-barrierefreiheit/vox/commit/d1eb53e4a083c57028842aa2bb96a71ea21a89ba"
         },
         "date": 1781387841886,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.5,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8fa26d7c2bad4e2f382a9a25732f732927ea04f3",
+          "message": "docs(requirements): capture milestone-1 discovered requirements as REQ-001..020 (#83)\n\nCapture milestone 1's discovered domain/business requirements as 20 REQ-<id>\ndocuments (17 implemented, 3 pending) under doc/requirements/, each a single\ntestable \"shall\" traced to its verifying tests/benchmarks, quality goals, and\noriginating issues; replace the README placeholder with a grouped index.\n\nPending: REQ-009 number-to-words integration (#34), REQ-019 cached/continuous\nlatency (#41), REQ-020 dogfooding (#42). The offline-synthesis constraint\n(C6/ADR-16) is intentionally deferred to the neural-worker milestone.",
+          "timestamp": "2026-06-14T01:27:53+02:00",
+          "tree_id": "f36e7f8d7be0847020b6959bff70a24ceeae1d6f",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/8fa26d7c2bad4e2f382a9a25732f732927ea04f3"
+        },
+        "date": 1781394221613,
         "tool": "customSmallerIsBetter",
         "benches": [
           {

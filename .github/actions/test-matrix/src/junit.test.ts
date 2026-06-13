@@ -39,3 +39,8 @@ test('parseJunit treats <error> as failed and disabled as skipped', () => {
   assert.equal(r.failed, 1);
   assert.equal(r.skipped, 1);
 });
+
+test('parseJunit labels a testcase with a non-string/absent name "unknown"', () => {
+  const r = parseJunit('<testsuite><testcase/></testsuite>'); // no name attribute
+  assert.deepEqual(r.tests, { unknown: 'passed' });
+});

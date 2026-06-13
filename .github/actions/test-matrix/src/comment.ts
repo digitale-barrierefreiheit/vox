@@ -130,15 +130,24 @@ export function makeClient(octokit: OctokitLike, owner: string, repo: string): C
   };
 }
 
-/** Wire `upsertWith` to the live GitHub PR-comment API. */
-export async function upsert(opts: {
-  token: string;
-  runId: string;
-  prNumber: number;
-  create: boolean;
-  merge: (state: MatrixState) => void;
-}): Promise<void> {
+/** The live octokit-backed comment client for the workflow's repo. (getOctokit only constructs
+ *  the client — no request is made until a method is called — so this is safe to build in a test.) */
+export function liveClient(token: string): CommentClient {
   const { owner, repo } = github.context.repo;
-  const client = makeClient(github.getOctokit(opts.token) as unknown as OctokitLike, owner, repo);
+  return makeClient(github.getOctokit(token) as unknown as OctokitLike, owner, repo);
+}
+
+/** Wire `upsertWith` to the live GitHub PR-comment API. @p client is injectable so the wiring
+ *  (run metadata + upsertWith) is unit-tested; production omits it for the live octokit. */
+export async function upsert(
+  opts: {
+    token: string;
+    runId: string;
+    prNumber: number;
+    create: boolean;
+    merge: (state: MatrixState) => void;
+  },
+  client: CommentClient = liveClient(opts.token),
+): Promise<void> {
   await upsertWith(client, { runId: opts.runId, prNumber: opts.prNumber, merge: opts.merge, meta: runMeta(), create: opts.create });
 }

@@ -3,7 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyReport, emptyState, mergeJob, mergeUnavailable, parseExpectedJobs, parseState, renderComment } from './render.js';
+import { applyReport, codeCell, emptyState, mergeJob, mergeUnavailable, parseExpectedJobs, parseState, renderComment } from './render.js';
 import type { ParsedJob } from './junit.js';
 
 const meta = { runNumber: '42', runUrl: 'https://x/42', commit: 'abc1234' };
@@ -143,6 +143,18 @@ test('parseState back-fills expectedJobs for a legacy comment, and round-trips a
   const s = emptyState(meta, ['x64', 'tsan']);
   mergeJob(s, 'x64', pass('A.a'));
   assert.deepEqual(parseState(renderComment('r', s))?.expectedJobs, ['x64', 'tsan']); // survives round-trip
+});
+
+test('parseState rejects a truncated comment, a null column, and a non-object jobs map', () => {
+  const encode = (o: unknown): string => `<!-- vox-test-matrix-state: ${Buffer.from(JSON.stringify(o)).toString('base64')} -->`;
+  const base = { runNumber: '1', runUrl: 'x', commit: 'c', expectedJobs: [], jobOrder: ['x64'], testNames: ['A.a'] };
+  assert.equal(parseState('<!-- vox-test-matrix-state: not-terminated'), null); // no closing -->
+  assert.equal(parseState(encode({ ...base, jobs: { x64: null } })), null); // a null job column
+  assert.equal(parseState(encode({ ...base, jobs: null })), null); // jobs is not an object
+});
+
+test('codeCell pads a name that starts or ends with a backtick so the span still renders', () => {
+  assert.equal(codeCell('`b`'), '`` `b` ``'); // fence widened by one, spaces padding the edges
 });
 
 test('parseExpectedJobs trims, drops empties, and de-duplicates the init input', () => {

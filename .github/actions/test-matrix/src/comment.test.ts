@@ -3,7 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeClient, runMeta, upsertWith, type CommentClient, type OctokitLike } from './comment.js';
+import { liveClient, makeClient, runMeta, upsert, upsertWith, type CommentClient, type OctokitLike } from './comment.js';
 import { mergeJob, parseState, type MatrixState } from './render.js';
 import type { ParsedJob } from './junit.js';
 
@@ -106,6 +106,41 @@ test('retries when a concurrent write clobbers ours', async () => {
   await upsertWith(client, { runId: 'r1', prNumber: 1, meta, sleep: noSleep, create: false, merge: fold('x64', 'A.a') });
   assert.ok(list >= 4); // attempt 1 (list+verify) clobbered -> attempt 2 (list+verify) sticks
   assert.ok(parseState(comments[0].body)?.jobOrder.includes('x64'));
+});
+
+test('upsert drives upsertWith with an injected client and the run metadata', async () => {
+  const saved = { ...process.env };
+  const { client, comments } = fakeClient();
+  try {
+    Object.assign(process.env, {
+      GITHUB_SERVER_URL: 'https://gh',
+      GITHUB_REPOSITORY: 'o/r',
+      GITHUB_RUN_ID: '9',
+      GITHUB_RUN_NUMBER: '5',
+      GITHUB_SHA: 'abc1234def',
+    });
+    await upsert({ token: 't', runId: 'r9', prNumber: 3, create: true, merge: fold('x64', 'A.a') }, client);
+    assert.equal(comments.length, 1);
+    assert.match(comments[0].body, /run=r9/);
+    assert.match(comments[0].body, /run \[#5\]/); // runMeta header from the environment
+    assert.deepEqual(parseState(comments[0].body)?.jobOrder, ['x64']);
+  } finally {
+    process.env = saved;
+  }
+});
+
+test('liveClient builds an octokit-backed client for the workflow repo (no request made)', () => {
+  const saved = process.env['GITHUB_REPOSITORY'];
+  try {
+    process.env['GITHUB_REPOSITORY'] = 'owner/repo';
+    const c = liveClient('ghp_faketoken'); // getOctokit only constructs; no network call here
+    assert.equal(typeof c.list, 'function');
+    assert.equal(typeof c.create, 'function');
+    assert.equal(typeof c.update, 'function');
+  } finally {
+    if (saved === undefined) delete process.env['GITHUB_REPOSITORY'];
+    else process.env['GITHUB_REPOSITORY'] = saved;
+  }
 });
 
 test('runMeta builds the header metadata from the Actions environment', () => {

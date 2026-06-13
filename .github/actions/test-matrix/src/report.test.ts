@@ -100,3 +100,15 @@ test('run(report) writes an "unavailable" summary and still upserts when results
   assert.match(calls.summary[0], /Results unavailable/);
   assert.equal(calls.comment[0].res, null);
 });
+
+test('run reports an unexpected adapter failure via io.fail instead of rejecting', async () => {
+  const { io, calls } = fakeIo({
+    writeSummary: async () => {
+      throw new Error('disk full');
+    },
+  });
+  await run(inputs(), 7, io); // must not reject
+  assert.equal(calls.fail.length, 1);
+  assert.match(calls.fail[0], /disk full/);
+  assert.equal(calls.comment.length, 0); // threw before the upsert
+});

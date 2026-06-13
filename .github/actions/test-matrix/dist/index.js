@@ -32504,195 +32504,30 @@ function wrappy (fn, cb) {
 
 /***/ }),
 
-/***/ 2246:
+/***/ 6118:
 /***/ ((__unused_webpack_module, __webpack_exports__, __nccwpck_require__) => {
 
-/* harmony export */ __nccwpck_require__.d(__webpack_exports__, {
-/* harmony export */   el: () => (/* binding */ upsert)
-/* harmony export */ });
-/* unused harmony exports runMeta, upsertWith, makeClient */
-/* harmony import */ var node_crypto__WEBPACK_IMPORTED_MODULE_0__ = __nccwpck_require__(7598);
-/* harmony import */ var node_crypto__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__nccwpck_require__.n(node_crypto__WEBPACK_IMPORTED_MODULE_0__);
-/* harmony import */ var _actions_core__WEBPACK_IMPORTED_MODULE_1__ = __nccwpck_require__(7484);
-/* harmony import */ var _actions_core__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__nccwpck_require__.n(_actions_core__WEBPACK_IMPORTED_MODULE_1__);
-/* harmony import */ var _actions_github__WEBPACK_IMPORTED_MODULE_2__ = __nccwpck_require__(3228);
-/* harmony import */ var _actions_github__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__nccwpck_require__.n(_actions_github__WEBPACK_IMPORTED_MODULE_2__);
-/* harmony import */ var _render_js__WEBPACK_IMPORTED_MODULE_3__ = __nccwpck_require__(7055);
+
+// EXPORTS
+__nccwpck_require__.d(__webpack_exports__, {
+  iW: () => (/* binding */ main)
+});
+
+// UNUSED EXPORTS: liveDeps, makeIo, readInputs
+
+;// CONCATENATED MODULE: external "node:fs"
+const external_node_fs_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:fs");
+// EXTERNAL MODULE: ./node_modules/@actions/core/lib/core.js
+var core = __nccwpck_require__(7484);
+// EXTERNAL MODULE: ./node_modules/@actions/github/lib/github.js
+var github = __nccwpck_require__(3228);
+// EXTERNAL MODULE: ./node_modules/fast-xml-parser/src/fxp.js
+var fxp = __nccwpck_require__(9741);
+;// CONCATENATED MODULE: ./src/junit.ts
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
 
-
-
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-// Escalating backoff with jitter to de-sync parallel jobs retrying on the same comment.
-// randomInt (CSPRNG) rather than Math.random so it isn't flagged as weak crypto — the
-// randomness only needs to scatter retries, not be unpredictable.
-const backoff = (attempt) => 200 + (0,node_crypto__WEBPACK_IMPORTED_MODULE_0__.randomInt)(0, 400 * (attempt + 1));
-/** The run's header metadata from the GitHub Actions environment. */
-function runMeta() {
-    const { GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_RUN_ID, GITHUB_RUN_NUMBER, GITHUB_SHA } = process.env;
-    return {
-        runNumber: GITHUB_RUN_NUMBER ?? '?',
-        runUrl: `${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}`,
-        commit: (GITHUB_SHA ?? '').slice(0, 7),
-    };
-}
-const findByMarker = (comments, marker) => comments.find((c) => c.body.includes(marker));
-/** Recover the run's state from its comment, or a fresh one if absent/unparseable. */
-function stateFrom(existing, meta) {
-    return (existing?.body && (0,_render_js__WEBPACK_IMPORTED_MODULE_3__/* .parseState */ .Bu)(existing.body)) || (0,_render_js__WEBPACK_IMPORTED_MODULE_3__/* .emptyState */ .p$)(meta);
-}
-/**
- * Find-or-create the run's comment and apply `merge` to its state, then write it back.
- * Parallel jobs race on one comment, so retry: re-read, re-merge, re-write until our
- * write sticks (last writer with the freshest state wins). Takes an injected client (no
- * live octokit) so the logic is unit-tested with a fake; only `core.warning` logging uses
- * the Actions toolkit.
- */
-async function upsertWith(client, opts) {
-    const wait = opts.sleep ?? sleep;
-    const marker = (0,_render_js__WEBPACK_IMPORTED_MODULE_3__/* .runMarker */ .qW)(opts.runId);
-    for (let attempt = 0; attempt < 8; attempt++) {
-        const existing = findByMarker(await client.list(opts.prNumber), marker);
-        // Only the init step may create — if reports could create too, two parallel reports both
-        // seeing no comment would each create one and break "one comment per run". But init and
-        // report jobs start in parallel, so a fast report can arrive before init has created the
-        // comment; wait and retry rather than skipping permanently (which would drop its column).
-        if (!existing && !opts.create) {
-            await wait(backoff(attempt));
-            continue;
-        }
-        const state = stateFrom(existing, opts.meta);
-        opts.merge(state);
-        const body = (0,_render_js__WEBPACK_IMPORTED_MODULE_3__/* .renderComment */ .wQ)(opts.runId, state);
-        if (!existing) {
-            await client.create(opts.prNumber, body);
-            return;
-        }
-        await client.update(existing.id, body);
-        if (findByMarker(await client.list(opts.prNumber), marker)?.body === body)
-            return; // our write stuck
-        await wait(backoff(attempt)); // a concurrent job clobbered us
-    }
-    _actions_core__WEBPACK_IMPORTED_MODULE_1__.warning('test-matrix: comment not available / update did not converge after retries.');
-}
-/** Adapt octokit's issue-comment API (PR comments are issue comments) to CommentClient. */
-function makeClient(octokit, owner, repo) {
-    return {
-        list: async (prNumber) => {
-            const out = [];
-            const it = octokit.paginate.iterator(octokit.rest.issues.listComments, { owner, repo, issue_number: prNumber, per_page: 100 });
-            for await (const { data } of it)
-                out.push(...data.map((c) => ({ id: c.id, body: c.body ?? '' })));
-            return out;
-        },
-        create: async (prNumber, body) => {
-            await octokit.rest.issues.createComment({ owner, repo, issue_number: prNumber, body });
-        },
-        update: async (commentId, body) => {
-            await octokit.rest.issues.updateComment({ owner, repo, comment_id: commentId, body });
-        },
-    };
-}
-/** Wire `upsertWith` to the live GitHub PR-comment API. */
-async function upsert(opts) {
-    const { owner, repo } = _actions_github__WEBPACK_IMPORTED_MODULE_2__.context.repo;
-    const client = makeClient(_actions_github__WEBPACK_IMPORTED_MODULE_2__.getOctokit(opts.token), owner, repo);
-    await upsertWith(client, { runId: opts.runId, prNumber: opts.prNumber, merge: opts.merge, meta: runMeta(), create: opts.create });
-}
-
-
-/***/ }),
-
-/***/ 9407:
-/***/ ((module, __unused_webpack___webpack_exports__, __nccwpck_require__) => {
-
-__nccwpck_require__.a(module, async (__webpack_handle_async_dependencies__, __webpack_async_result__) => { try {
-/* harmony import */ var node_fs__WEBPACK_IMPORTED_MODULE_0__ = __nccwpck_require__(3024);
-/* harmony import */ var node_fs__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__nccwpck_require__.n(node_fs__WEBPACK_IMPORTED_MODULE_0__);
-/* harmony import */ var _actions_core__WEBPACK_IMPORTED_MODULE_1__ = __nccwpck_require__(7484);
-/* harmony import */ var _actions_core__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__nccwpck_require__.n(_actions_core__WEBPACK_IMPORTED_MODULE_1__);
-/* harmony import */ var _actions_github__WEBPACK_IMPORTED_MODULE_2__ = __nccwpck_require__(3228);
-/* harmony import */ var _actions_github__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__nccwpck_require__.n(_actions_github__WEBPACK_IMPORTED_MODULE_2__);
-/* harmony import */ var _junit_js__WEBPACK_IMPORTED_MODULE_3__ = __nccwpck_require__(4831);
-/* harmony import */ var _render_js__WEBPACK_IMPORTED_MODULE_4__ = __nccwpck_require__(7055);
-/* harmony import */ var _comment_js__WEBPACK_IMPORTED_MODULE_5__ = __nccwpck_require__(2246);
-/* harmony import */ var _report_js__WEBPACK_IMPORTED_MODULE_6__ = __nccwpck_require__(665);
-// SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
-// Tiny entry point: wire the real GitHub Actions IO to `run` (the tested logic in
-// report.ts) and surface any uncaught error as a failed step.
-
-
-
-
-
-
-
-const io = {
-    readResults: (path) => {
-        try {
-            return (0,_junit_js__WEBPACK_IMPORTED_MODULE_3__/* .parseJunit */ .k)((0,node_fs__WEBPACK_IMPORTED_MODULE_0__.readFileSync)(path, 'utf8'));
-        }
-        catch (err) {
-            _actions_core__WEBPACK_IMPORTED_MODULE_1__.warning(`test-matrix: could not read ${path} (${err instanceof Error ? err.message : err}); skipping report.`);
-            return null;
-        }
-    },
-    writeSummary: async (markdown) => {
-        await _actions_core__WEBPACK_IMPORTED_MODULE_1__.summary.addRaw(markdown, true).write();
-    },
-    upsertComment: async (create, job, prNumber, result) => {
-        // init seeds the expected-job set so the verdict knows when the run is complete; report
-        // steps pass nothing here and inherit it from the comment's embedded state.
-        const expectedJobs = (0,_render_js__WEBPACK_IMPORTED_MODULE_4__/* .parseExpectedJobs */ .E5)(_actions_core__WEBPACK_IMPORTED_MODULE_1__.getInput('jobs'));
-        try {
-            await (0,_comment_js__WEBPACK_IMPORTED_MODULE_5__/* .upsert */ .el)({
-                token: _actions_core__WEBPACK_IMPORTED_MODULE_1__.getInput('token') || process.env.GITHUB_TOKEN || '',
-                runId: process.env.GITHUB_RUN_ID ?? '',
-                prNumber,
-                create,
-                merge: (state) => (0,_render_js__WEBPACK_IMPORTED_MODULE_4__/* .applyReport */ .h8)(state, { create, job, result, expectedJobs }),
-            });
-        }
-        catch (err) {
-            _actions_core__WEBPACK_IMPORTED_MODULE_1__.warning(`test-matrix: could not update the PR comment (${err instanceof Error ? err.message : err}).`);
-        }
-    },
-    warn: (message) => _actions_core__WEBPACK_IMPORTED_MODULE_1__.warning(message),
-    info: (message) => _actions_core__WEBPACK_IMPORTED_MODULE_1__.info(message),
-    fail: (message) => _actions_core__WEBPACK_IMPORTED_MODULE_1__.setFailed(message),
-};
-const inputs = {
-    mode: _actions_core__WEBPACK_IMPORTED_MODULE_1__.getInput('mode', { required: true }),
-    job: _actions_core__WEBPACK_IMPORTED_MODULE_1__.getInput('job'),
-    reportPath: _actions_core__WEBPACK_IMPORTED_MODULE_1__.getInput('report-path') || 'test-results.xml',
-};
-try {
-    await (0,_report_js__WEBPACK_IMPORTED_MODULE_6__/* .run */ .eF)(inputs, _actions_github__WEBPACK_IMPORTED_MODULE_2__.context.payload.pull_request?.number, io);
-}
-catch (err) {
-    _actions_core__WEBPACK_IMPORTED_MODULE_1__.setFailed(err instanceof Error ? err.message : String(err));
-}
-
-__webpack_async_result__();
-} catch(e) { __webpack_async_result__(e); } }, 1);
-
-/***/ }),
-
-/***/ 4831:
-/***/ ((__unused_webpack_module, __webpack_exports__, __nccwpck_require__) => {
-
-/* harmony export */ __nccwpck_require__.d(__webpack_exports__, {
-/* harmony export */   k: () => (/* binding */ parseJunit)
-/* harmony export */ });
-/* harmony import */ var fast_xml_parser__WEBPACK_IMPORTED_MODULE_0__ = __nccwpck_require__(9741);
-/* harmony import */ var fast_xml_parser__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__nccwpck_require__.n(fast_xml_parser__WEBPACK_IMPORTED_MODULE_0__);
-// SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
-
-const parser = new fast_xml_parser__WEBPACK_IMPORTED_MODULE_0__.XMLParser({
+const parser = new fxp.XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: '@_',
     // CTest emits a single <testsuite>; some tools wrap in <testsuites>. Force arrays so a
@@ -32734,22 +32569,7 @@ function parseJunit(xml) {
     return { ...counts, total: counts.passed + counts.failed + counts.skipped, tests };
 }
 
-
-/***/ }),
-
-/***/ 7055:
-/***/ ((__unused_webpack_module, __webpack_exports__, __nccwpck_require__) => {
-
-/* harmony export */ __nccwpck_require__.d(__webpack_exports__, {
-/* harmony export */   Bu: () => (/* binding */ parseState),
-/* harmony export */   E5: () => (/* binding */ parseExpectedJobs),
-/* harmony export */   MZ: () => (/* binding */ codeCell),
-/* harmony export */   h8: () => (/* binding */ applyReport),
-/* harmony export */   p$: () => (/* binding */ emptyState),
-/* harmony export */   qW: () => (/* binding */ runMarker),
-/* harmony export */   wQ: () => (/* binding */ renderComment)
-/* harmony export */ });
-/* unused harmony exports mergeJob, mergeUnavailable */
+;// CONCATENATED MODULE: ./src/render.ts
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
 const CODE = { passed: 'P', failed: 'F', skipped: 'S' };
@@ -32961,19 +32781,109 @@ function renderComment(runId, state) {
     ].join('\n');
 }
 
-
-/***/ }),
-
-/***/ 665:
-/***/ ((__unused_webpack_module, __webpack_exports__, __nccwpck_require__) => {
-
-/* harmony export */ __nccwpck_require__.d(__webpack_exports__, {
-/* harmony export */   eF: () => (/* binding */ run)
-/* harmony export */ });
-/* unused harmony exports summaryMarkdown, unavailableMarkdown */
-/* harmony import */ var _render_js__WEBPACK_IMPORTED_MODULE_0__ = __nccwpck_require__(7055);
+// EXTERNAL MODULE: external "node:crypto"
+var external_node_crypto_ = __nccwpck_require__(7598);
+;// CONCATENATED MODULE: ./src/comment.ts
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
+
+
+
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Escalating backoff with jitter to de-sync parallel jobs retrying on the same comment.
+// randomInt (CSPRNG) rather than Math.random so it isn't flagged as weak crypto — the
+// randomness only needs to scatter retries, not be unpredictable.
+const backoff = (attempt) => 200 + (0,external_node_crypto_.randomInt)(0, 400 * (attempt + 1));
+/** The run's header metadata from the GitHub Actions environment. */
+function runMeta() {
+    const { GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_RUN_ID, GITHUB_RUN_NUMBER, GITHUB_SHA } = process.env;
+    return {
+        runNumber: GITHUB_RUN_NUMBER ?? '?',
+        runUrl: `${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}`,
+        commit: (GITHUB_SHA ?? '').slice(0, 7),
+    };
+}
+const findByMarker = (comments, marker) => comments.find((c) => c.body.includes(marker));
+/** Recover the run's state from its comment, or a fresh one if absent/unparseable. */
+function stateFrom(existing, meta) {
+    return (existing?.body && parseState(existing.body)) || emptyState(meta);
+}
+/**
+ * Find-or-create the run's comment and apply `merge` to its state, then write it back.
+ * Parallel jobs race on one comment, so retry: re-read, re-merge, re-write until our
+ * write sticks (last writer with the freshest state wins). Takes an injected client (no
+ * live octokit) so the logic is unit-tested with a fake; only `core.warning` logging uses
+ * the Actions toolkit.
+ */
+async function upsertWith(client, opts) {
+    const wait = opts.sleep ?? sleep;
+    const marker = runMarker(opts.runId);
+    for (let attempt = 0; attempt < 8; attempt++) {
+        const existing = findByMarker(await client.list(opts.prNumber), marker);
+        // Only the init step may create — if reports could create too, two parallel reports both
+        // seeing no comment would each create one and break "one comment per run". But init and
+        // report jobs start in parallel, so a fast report can arrive before init has created the
+        // comment; wait and retry rather than skipping permanently (which would drop its column).
+        if (!existing && !opts.create) {
+            await wait(backoff(attempt));
+            continue;
+        }
+        const state = stateFrom(existing, opts.meta);
+        opts.merge(state);
+        const body = renderComment(opts.runId, state);
+        if (!existing) {
+            await client.create(opts.prNumber, body);
+            return;
+        }
+        await client.update(existing.id, body);
+        if (findByMarker(await client.list(opts.prNumber), marker)?.body === body)
+            return; // our write stuck
+        await wait(backoff(attempt)); // a concurrent job clobbered us
+    }
+    core.warning('test-matrix: comment not available / update did not converge after retries.');
+}
+/** Adapt octokit's issue-comment API (PR comments are issue comments) to CommentClient. */
+function makeClient(octokit, owner, repo) {
+    return {
+        list: async (prNumber) => {
+            const out = [];
+            const it = octokit.paginate.iterator(octokit.rest.issues.listComments, { owner, repo, issue_number: prNumber, per_page: 100 });
+            for await (const { data } of it)
+                out.push(...data.map((c) => ({ id: c.id, body: c.body ?? '' })));
+            return out;
+        },
+        create: async (prNumber, body) => {
+            await octokit.rest.issues.createComment({ owner, repo, issue_number: prNumber, body });
+        },
+        update: async (commentId, body) => {
+            await octokit.rest.issues.updateComment({ owner, repo, comment_id: commentId, body });
+        },
+    };
+}
+/** The live octokit-backed comment client for the workflow's repo. (getOctokit only constructs
+ *  the client — no request is made until a method is called — so this is safe to build in a test.) */
+function liveClient(token) {
+    const { owner, repo } = github.context.repo;
+    return makeClient(github.getOctokit(token), owner, repo);
+}
+/** Wire `upsertWith` to the live GitHub PR-comment API. @p client is injectable so the wiring
+ *  (run metadata + upsertWith) is unit-tested; production omits it for the live octokit. */
+async function upsert(opts, client = liveClient(opts.token)) {
+    await upsertWith(client, { runId: opts.runId, prNumber: opts.prNumber, merge: opts.merge, meta: runMeta(), create: opts.create });
+}
+
+;// CONCATENATED MODULE: ./src/util.ts
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
+/** A safe message string for any thrown value — an Error's `message`, otherwise its string
+ *  form. Centralised so the catch sites don't each carry an `instanceof Error` branch. */
+const errorMessage = (err) => (err instanceof Error ? err.message : String(err));
+
+;// CONCATENATED MODULE: ./src/report.ts
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
+
 
 /** Pure: a job's run-Summary markdown (counts plus any failing test names). */
 function summaryMarkdown(job, r) {
@@ -32983,7 +32893,7 @@ function summaryMarkdown(job, r) {
     const head = `### 🧪 Tests — ${job}\n\n✅ ${r.passed} passed · ❌ ${r.failed} failed · ⏭️ ${r.skipped} skipped · ${r.total} total\n`;
     if (failed.length === 0)
         return head;
-    const list = failed.map((name) => `- ${(0,_render_js__WEBPACK_IMPORTED_MODULE_0__/* .codeCell */ .MZ)(name)}`).join('\n');
+    const list = failed.map((name) => `- ${codeCell(name)}`).join('\n');
     return `${head}\n#### Failed\n${list}\n`;
 }
 /** Pure: the Summary shown when a job produced no JUnit (e.g. the build failed first). */
@@ -33004,21 +32914,126 @@ function validInputs(inputs, io) {
 }
 /** Validate inputs, write the per-job Summary, and (on PRs) fold this job into the comment. */
 async function run(inputs, prNumber, io) {
-    if (!validInputs(inputs, io))
-        return;
-    const result = inputs.mode === 'report' ? io.readResults(inputs.reportPath) : null;
-    // Always write a per-job Summary in report mode — a "results unavailable" note when the
-    // JUnit is missing is clearer than an empty Summary.
-    if (inputs.mode === 'report') {
-        await io.writeSummary(result ? summaryMarkdown(inputs.job, result) : unavailableMarkdown(inputs.job));
+    try {
+        if (!validInputs(inputs, io))
+            return;
+        const result = inputs.mode === 'report' ? io.readResults(inputs.reportPath) : null;
+        // Always write a per-job Summary in report mode — a "results unavailable" note when the
+        // JUnit is missing is clearer than an empty Summary.
+        if (inputs.mode === 'report') {
+            await io.writeSummary(result ? summaryMarkdown(inputs.job, result) : unavailableMarkdown(inputs.job));
+        }
+        if (prNumber === undefined) {
+            io.info('Not a pull_request event — skipping the PR comment.');
+            return;
+        }
+        await io.upsertComment(inputs.mode === 'init', inputs.job, prNumber, result);
     }
-    if (prNumber === undefined) {
-        io.info('Not a pull_request event — skipping the PR comment.');
-        return;
+    catch (err) {
+        // Last-resort guard so an unexpected adapter failure fails the step cleanly instead of an
+        // unhandled rejection. validInputs/upsertComment already handle their own expected paths.
+        io.fail(errorMessage(err));
     }
-    await io.upsertComment(inputs.mode === 'init', inputs.job, prNumber, result);
 }
 
+;// CONCATENATED MODULE: ./src/actions-io.ts
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
+// The IO `run` consumes, assembled from an injectable dependency bundle. makeIo holds the
+// adapter logic (JUnit read + warn-on-error, expected-jobs parse + comment upsert + warn-on-
+// failure, the summary/log delegations) and is unit-tested with fakes; liveDeps/readInputs are
+// the thin bindings to the real fs / @actions/core that index.ts wires in.
+
+
+
+
+
+
+
+
+/** Assemble the Io `run` consumes from a dependency bundle (live or faked). */
+function makeIo(deps) {
+    return {
+        readResults: (path) => {
+            try {
+                return parseJunit(deps.readFile(path));
+            }
+            catch (err) {
+                deps.warn(`test-matrix: could not read ${path} (${errorMessage(err)}); skipping report.`);
+                return null;
+            }
+        },
+        writeSummary: (markdown) => deps.writeSummary(markdown),
+        upsertComment: async (create, job, prNumber, result) => {
+            // init seeds the expected-job set so the verdict knows when the run is complete; report
+            // steps pass nothing here and inherit it from the comment's embedded state.
+            const expectedJobs = parseExpectedJobs(deps.getInput('jobs'));
+            try {
+                await deps.upsert({
+                    token: deps.token,
+                    runId: deps.runId,
+                    prNumber,
+                    create,
+                    merge: (state) => applyReport(state, { create, job, result, expectedJobs }),
+                });
+            }
+            catch (err) {
+                deps.warn(`test-matrix: could not update the PR comment (${errorMessage(err)}).`);
+            }
+        },
+        warn: deps.warn,
+        info: deps.info,
+        fail: deps.fail,
+    };
+}
+/** The live dependencies: real fs and the @actions/core toolkit. */
+function liveDeps() {
+    return {
+        readFile: (path) => (0,external_node_fs_namespaceObject.readFileSync)(path, 'utf8'),
+        writeSummary: async (markdown) => {
+            await core.summary.addRaw(markdown, true).write();
+        },
+        upsert: upsert,
+        getInput: (name) => core.getInput(name),
+        token: core.getInput('token') || process.env.GITHUB_TOKEN || '',
+        runId: process.env.GITHUB_RUN_ID ?? '',
+        warn: (message) => core.warning(message),
+        info: (message) => core.info(message),
+        fail: (message) => core.setFailed(message),
+    };
+}
+/** Read the action's inputs from the environment (`mode` is required). */
+function readInputs() {
+    return {
+        mode: core.getInput('mode', { required: true }),
+        job: core.getInput('job'),
+        reportPath: core.getInput('report-path') || 'test-results.xml',
+    };
+}
+/** The action entry: read inputs, build the live IO, and run. @p prNumber defaults to the PR
+ *  the workflow runs against (undefined off a PR). run() routes its own failures to io.fail,
+ *  so index.ts just awaits this. */
+async function main(prNumber = github.context.payload.pull_request?.number) {
+    await run(readInputs(), prNumber, makeIo(liveDeps()));
+}
+
+
+/***/ }),
+
+/***/ 9407:
+/***/ ((module, __unused_webpack___webpack_exports__, __nccwpck_require__) => {
+
+__nccwpck_require__.a(module, async (__webpack_handle_async_dependencies__, __webpack_async_result__) => { try {
+/* harmony import */ var _actions_io_js__WEBPACK_IMPORTED_MODULE_0__ = __nccwpck_require__(6118);
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
+// Tiny entry point. All logic lives in (unit-tested) main() — read inputs, build the live IO,
+// and run, routing failures to setFailed. This file is the irreducible ESM shim ncc bundles.
+
+await (0,_actions_io_js__WEBPACK_IMPORTED_MODULE_0__/* .main */ .iW)();
+
+__webpack_async_result__();
+} catch(e) { __webpack_async_result__(e); } }, 1);
 
 /***/ }),
 
@@ -33124,13 +33139,6 @@ module.exports = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:crypto"
 /***/ ((module) => {
 
 module.exports = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:events");
-
-/***/ }),
-
-/***/ 3024:
-/***/ ((module) => {
-
-module.exports = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:fs");
 
 /***/ }),
 
@@ -34958,18 +34966,6 @@ module.exports = parseParams
 /******/ 			return fn.r ? promise : getResult();
 /******/ 		}, (err) => ((err ? reject(promise[webpackError] = err) : outerResolve(exports)), resolveQueue(queue)));
 /******/ 		queue && queue.d < 0 && (queue.d = 0);
-/******/ 	};
-/******/ })();
-/******/ 
-/******/ /* webpack/runtime/compat get default export */
-/******/ (() => {
-/******/ 	// getDefaultExport function for compatibility with non-harmony modules
-/******/ 	__nccwpck_require__.n = (module) => {
-/******/ 		var getter = module && module.__esModule ?
-/******/ 			() => (module['default']) :
-/******/ 			() => (module);
-/******/ 		__nccwpck_require__.d(getter, { a: getter });
-/******/ 		return getter;
 /******/ 	};
 /******/ })();
 /******/ 

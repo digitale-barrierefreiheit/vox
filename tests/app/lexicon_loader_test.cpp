@@ -247,7 +247,7 @@ TEST_F(LexiconLoaderTest, AnInvalidRequestedTagIsReportedAndIgnored) {
 
   expectLoadedFile(loaded, "Knopf-aus-Datei");
   ASSERT_EQ(loaded.diagnostics.size(), 1U);
-  EXPECT_THAT(loaded.diagnostics.front(), HasSubstr("not a language tag"));
+  EXPECT_THAT(loaded.diagnostics.front(), HasSubstr("not a valid language tag"));
 }
 
 TEST(IsLanguageTag, AcceptsBcp47ShapedTags) {
@@ -258,6 +258,14 @@ TEST(IsLanguageTag, AcceptsBcp47ShapedTags) {
 
 TEST(IsLanguageTag, RejectsEverythingThatCouldEscapeAFileName) {
   for (const std::string_view tag : {"", "..", "de/at", "de\\at", "de.at", "de at", "dé"}) {
+    EXPECT_FALSE(isLanguageTag(tag)) << tag;
+  }
+}
+
+TEST(IsLanguageTag, RejectsMalformedTagStructure) {
+  // Right character set, wrong shape: empty subtags (leading/trailing/doubled
+  // hyphens), a too-short or non-alphabetic primary, or an over-long subtag.
+  for (const std::string_view tag : {"-", "de-", "-de", "de--AT", "d", "123", "abcdefghi"}) {
     EXPECT_FALSE(isLanguageTag(tag)) << tag;
   }
 }

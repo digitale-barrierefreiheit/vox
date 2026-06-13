@@ -106,8 +106,8 @@ std::string requestedLanguage() {
   }
   if (!isLanguageTag(tag)) {
     std::cerr << "vox: requested language \"" << tag
-              << R"(" (VOX_LANGUAGE) is not a language tag (ASCII letters, digits, "-"); using ")"
-              << DefaultLanguageTag << "\"\n";
+              << R"(" (VOX_LANGUAGE) is not a valid language tag; using ")" << DefaultLanguageTag
+              << "\"\n";
     return std::string(DefaultLanguageTag);
   }
   return tag;

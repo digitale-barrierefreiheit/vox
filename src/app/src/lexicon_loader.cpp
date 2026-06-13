@@ -119,6 +119,19 @@ bool loadFromFile(const std::filesystem::path& file, std::string_view expectedTa
   return true;
 }
 
+/// True if @p subtag is well formed for its position in a BCP-47 tag: the
+/// primary subtag is 2–8 letters, any later subtag is 1–8 alphanumerics. The
+/// non-empty length requirement also rejects leading/trailing/doubled hyphens.
+bool isValidSubtag(std::string_view subtag, bool primary) {
+  if (subtag.size() < (primary ? 2U : 1U) || subtag.size() > 8U) {
+    return false;
+  }
+  return std::ranges::all_of(subtag, [primary](char letter) {
+    const bool alpha = (letter >= 'a' && letter <= 'z') || (letter >= 'A' && letter <= 'Z');
+    return alpha || (!primary && letter >= '0' && letter <= '9');
+  });
+}
+
 /// @p requestedTag if it is a usable language tag, empty otherwise (none was
 /// requested, or an invalid one — reported to @p diagnostics — is ignored).
 std::string_view sanitizedTag(std::string_view requestedTag,
@@ -126,19 +139,31 @@ std::string_view sanitizedTag(std::string_view requestedTag,
   if (requestedTag.empty() || isLanguageTag(requestedTag)) {
     return requestedTag;
   }
-  diagnostics.push_back(
-      R"(requested language ")" + std::string(requestedTag) +
-      R"(" (VOX_LANGUAGE) is not a language tag (ASCII letters, digits, "-"); ignoring it)");
+  diagnostics.push_back(R"(requested language ")" + std::string(requestedTag) +
+                        R"(" (VOX_LANGUAGE) is not a valid language tag; ignoring it)");
   return {};
 }
 
 } // namespace
 
 bool isLanguageTag(std::string_view tag) {
-  return !tag.empty() && std::ranges::all_of(tag, [](char letter) {
-    return (letter >= 'a' && letter <= 'z') || (letter >= 'A' && letter <= 'Z') ||
-           (letter >= '0' && letter <= '9') || letter == '-';
-  });
+  // A pragmatic BCP-47 langtag shape (not the full grammar): hyphen-separated,
+  // non-empty subtags — a 2–8 letter primary, then 1–8 alphanumeric ones. The
+  // non-empty rule rejects leading/trailing/doubled hyphens; the letter/digit
+  // sets keep the tag a safe `<tag>.lex` file-name stem (no separators or dots).
+  bool primary = true;
+  std::size_t start = 0;
+  while (true) {
+    const std::size_t hyphen = tag.find('-', start);
+    if (!isValidSubtag(tag.substr(start, hyphen - start), primary)) {
+      return false;
+    }
+    if (hyphen == std::string_view::npos) {
+      return true;
+    }
+    start = hyphen + 1;
+    primary = false;
+  }
 }
 
 LoadedLexicon loadLexicon(const LexiconRequest& request) {

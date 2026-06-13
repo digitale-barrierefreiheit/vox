@@ -50,9 +50,12 @@ struct LexiconRequest {
   std::string requestedTag;           ///< The requested language (`VOX_LANGUAGE`), or empty.
 };
 
-/// @brief True if @p tag looks like a BCP-47 language tag: non-empty ASCII
-///        letters, digits, and `-`. Deliberately strict — a tag becomes a file
-///        name (`<tag>.lex`), so no separators or dots can pass.
+/// @brief True if @p tag has a pragmatic BCP-47 language-tag shape: hyphen-
+///        separated, non-empty subtags — a 2–8 letter primary subtag followed
+///        by 1–8 alphanumeric ones (so `de`, `en-US`, `de-AT-1996` pass, but
+///        ``, `-`, `de-`, `de--AT`, `d` and `123` do not). Deliberately strict
+///        — a tag becomes a file name (`<tag>.lex`), so no separators or dots
+///        can pass either.
 [[nodiscard]] bool isLanguageTag(std::string_view tag);
 
 /// @brief Loads the announcement lexicon per the #61 resolution rule.

@@ -8,7 +8,6 @@
 
 import { readFileSync } from 'node:fs';
 import * as core from '@actions/core';
-import * as github from '@actions/github';
 import { parseJunit } from './junit.js';
 import { applyReport, parseExpectedJobs, type MatrixState } from './render.js';
 import { upsert } from './comment.js';
@@ -94,9 +93,10 @@ export function readInputs(): Inputs {
   };
 }
 
-/** The action entry: read inputs, build the live IO, and run. @p prNumber defaults to the PR
- *  the workflow runs against (undefined off a PR). run() routes its own failures to io.fail,
- *  so index.ts just awaits this. */
-export async function main(prNumber = github.context.payload.pull_request?.number): Promise<void> {
+/** The action entry: read inputs, build the live IO, and run. @p prNumber is the PR the
+ *  workflow runs against (undefined off a PR) — passed in by index.ts, not defaulted here, so a
+ *  test can drive the no-PR path with an explicit `undefined` and never reach the live context.
+ *  run() routes its own failures to io.fail. */
+export async function main(prNumber: number | undefined): Promise<void> {
   await run(readInputs(), prNumber, makeIo(liveDeps()));
 }

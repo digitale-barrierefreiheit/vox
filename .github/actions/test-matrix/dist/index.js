@@ -32519,8 +32519,6 @@ __nccwpck_require__.d(__webpack_exports__, {
 const external_node_fs_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:fs");
 // EXTERNAL MODULE: ./node_modules/@actions/core/lib/core.js
 var core = __nccwpck_require__(7484);
-// EXTERNAL MODULE: ./node_modules/@actions/github/lib/github.js
-var github = __nccwpck_require__(3228);
 // EXTERNAL MODULE: ./node_modules/fast-xml-parser/src/fxp.js
 var fxp = __nccwpck_require__(9741);
 ;// CONCATENATED MODULE: ./src/junit.ts
@@ -32783,6 +32781,8 @@ function renderComment(runId, state) {
 
 // EXTERNAL MODULE: external "node:crypto"
 var external_node_crypto_ = __nccwpck_require__(7598);
+// EXTERNAL MODULE: ./node_modules/@actions/github/lib/github.js
+var github = __nccwpck_require__(3228);
 ;// CONCATENATED MODULE: ./src/comment.ts
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
@@ -32950,7 +32950,6 @@ async function run(inputs, prNumber, io) {
 
 
 
-
 /** Assemble the Io `run` consumes from a dependency bundle (live or faked). */
 function makeIo(deps) {
     return {
@@ -33010,10 +33009,11 @@ function readInputs() {
         reportPath: core.getInput('report-path') || 'test-results.xml',
     };
 }
-/** The action entry: read inputs, build the live IO, and run. @p prNumber defaults to the PR
- *  the workflow runs against (undefined off a PR). run() routes its own failures to io.fail,
- *  so index.ts just awaits this. */
-async function main(prNumber = github.context.payload.pull_request?.number) {
+/** The action entry: read inputs, build the live IO, and run. @p prNumber is the PR the
+ *  workflow runs against (undefined off a PR) — passed in by index.ts, not defaulted here, so a
+ *  test can drive the no-PR path with an explicit `undefined` and never reach the live context.
+ *  run() routes its own failures to io.fail. */
+async function main(prNumber) {
     await run(readInputs(), prNumber, makeIo(liveDeps()));
 }
 
@@ -33024,13 +33024,17 @@ async function main(prNumber = github.context.payload.pull_request?.number) {
 /***/ ((module, __unused_webpack___webpack_exports__, __nccwpck_require__) => {
 
 __nccwpck_require__.a(module, async (__webpack_handle_async_dependencies__, __webpack_async_result__) => { try {
-/* harmony import */ var _actions_io_js__WEBPACK_IMPORTED_MODULE_0__ = __nccwpck_require__(6118);
+/* harmony import */ var _actions_github__WEBPACK_IMPORTED_MODULE_0__ = __nccwpck_require__(3228);
+/* harmony import */ var _actions_github__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__nccwpck_require__.n(_actions_github__WEBPACK_IMPORTED_MODULE_0__);
+/* harmony import */ var _actions_io_js__WEBPACK_IMPORTED_MODULE_1__ = __nccwpck_require__(6118);
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
 // Tiny entry point. All logic lives in (unit-tested) main() — read inputs, build the live IO,
-// and run, routing failures to setFailed. This file is the irreducible ESM shim ncc bundles.
+// and run, routing failures to setFailed. This file is the irreducible ESM shim ncc bundles:
+// it reads the live PR number from the event context and hands it to main().
 
-await (0,_actions_io_js__WEBPACK_IMPORTED_MODULE_0__/* .main */ .iW)();
+
+await (0,_actions_io_js__WEBPACK_IMPORTED_MODULE_1__/* .main */ .iW)(_actions_github__WEBPACK_IMPORTED_MODULE_0__.context.payload.pull_request?.number);
 
 __webpack_async_result__();
 } catch(e) { __webpack_async_result__(e); } }, 1);
@@ -34966,6 +34970,18 @@ module.exports = parseParams
 /******/ 			return fn.r ? promise : getResult();
 /******/ 		}, (err) => ((err ? reject(promise[webpackError] = err) : outerResolve(exports)), resolveQueue(queue)));
 /******/ 		queue && queue.d < 0 && (queue.d = 0);
+/******/ 	};
+/******/ })();
+/******/ 
+/******/ /* webpack/runtime/compat get default export */
+/******/ (() => {
+/******/ 	// getDefaultExport function for compatibility with non-harmony modules
+/******/ 	__nccwpck_require__.n = (module) => {
+/******/ 		var getter = module && module.__esModule ?
+/******/ 			() => (module['default']) :
+/******/ 			() => (module);
+/******/ 		__nccwpck_require__.d(getter, { a: getter });
+/******/ 		return getter;
 /******/ 	};
 /******/ })();
 /******/ 

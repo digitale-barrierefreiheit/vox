@@ -33,24 +33,42 @@ inline void backOffOneTick() {
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
 }
 
+/// @brief The producer's poll/back-off hooks, bundled so pushFramesToRing keeps to
+///        a small argument count. Distinct callable member types keep binding them
+///        clear of bugprone-easily-swappable-parameters; build one with
+///        makePushHooks() so call sites need no CTAD.
+/// @tparam IsAbandoned    () -> bool: true => stopped/barged-in, give up.
+/// @tparam IsFlushPending () -> bool: true => a flush awaits the render thread.
+/// @tparam Wait           () -> void: back off one tick (production: backOffOneTick;
+///         tests: a callable that advances the polled state so the loop progresses).
+template<typename IsAbandoned, typename IsFlushPending, typename Wait>
+struct PushHooks {
+  IsAbandoned isAbandoned;
+  IsFlushPending isFlushPending;
+  Wait wait;
+};
+
+/// @brief Builds a PushHooks, deducing the callable types via ordinary function-
+///        template deduction (so call sites stay simple and portable).
+template<typename IsAbandoned, typename IsFlushPending, typename Wait>
+PushHooks<IsAbandoned, IsFlushPending, Wait>
+makePushHooks(IsAbandoned isAbandoned, IsFlushPending isFlushPending, Wait wait) {
+  return {.isAbandoned = isAbandoned, .isFlushPending = isFlushPending, .wait = wait};
+}
+
 /// @brief Pushes @p frames into @p ring with back-pressure; returns the bytes left
 ///        unqueued (empty == fully queued, non-empty == abandoned mid-push).
-/// @param isAbandoned    polled each iteration; true => stopped/barged-in, give up.
-/// @param isFlushPending polled each iteration; true => a flush awaits the render
-///        thread, so wait rather than enqueue audio it is about to drop.
-/// @param wait           backs off one tick (production: backOffOneTick; tests: a
-///        callable that advances the polled state so the loop makes progress).
 template<typename IsAbandoned, typename IsFlushPending, typename Wait>
-std::span<const std::byte> pushFramesToRing(PcmRing& ring, std::span<const std::byte> frames,
-                                            IsAbandoned isAbandoned, IsFlushPending isFlushPending,
-                                            Wait wait) {
+std::span<const std::byte>
+pushFramesToRing(PcmRing& ring, std::span<const std::byte> frames,
+                 const PushHooks<IsAbandoned, IsFlushPending, Wait>& hooks) {
   std::span<const std::byte> remaining = frames;
   while (!remaining.empty()) {
-    if (isAbandoned()) {
+    if (hooks.isAbandoned()) {
       return remaining; // stopped or barged-in: drop the now-stale audio
     }
-    if (isFlushPending()) {
-      wait(); // a flush is being serviced; let the render thread clear the ring
+    if (hooks.isFlushPending()) {
+      hooks.wait(); // a flush is being serviced; let the render thread clear the ring
       continue;
     }
     // `remaining` (whole frames) and the ring's free space (frame-aligned) are both
@@ -58,7 +76,7 @@ std::span<const std::byte> pushFramesToRing(PcmRing& ring, std::span<const std::
     const std::size_t written = ring.write(remaining);
     remaining = remaining.subspan(written);
     if (written == 0U) {
-      wait(); // the ring is momentarily full: back off, then retry
+      hooks.wait(); // the ring is momentarily full: back off, then retry
     }
   }
   return remaining;

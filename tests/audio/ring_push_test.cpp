@@ -19,6 +19,7 @@ namespace {
 
 using vox::audio::PcmRing;
 using vox::audio::detail::backOffOneTick;
+using vox::audio::detail::makePushHooks;
 using vox::audio::detail::pushFramesToRing;
 
 std::vector<std::byte> bytes(std::size_t count) {
@@ -30,7 +31,7 @@ TEST(RingPush, QueuesEverythingWhenTheRingHasRoomAndNeverWaits) {
   const std::vector<std::byte> src = bytes(16);
   int waits = 0;
   const auto left = pushFramesToRing(
-      ring, src, [] { return false; }, [] { return false; }, [&waits] { ++waits; });
+      ring, src, makePushHooks([] { return false; }, [] { return false; }, [&waits] { ++waits; }));
 
   EXPECT_TRUE(left.empty()); // fully queued
   EXPECT_EQ(waits, 0);       // room available -> no back-off
@@ -41,8 +42,8 @@ TEST(RingPush, AbandonsImmediatelyWhenStoppedOrBargedIn) {
   PcmRing ring(64);
   const std::vector<std::byte> src = bytes(16);
   int waits = 0;
-  const auto left =
-      pushFramesToRing(ring, src, [] { return true; }, [] { return false; }, [&waits] { ++waits; });
+  const auto left = pushFramesToRing(
+      ring, src, makePushHooks([] { return true; }, [] { return false; }, [&waits] { ++waits; }));
 
   EXPECT_EQ(left.size(), src.size()); // nothing queued; the rest is dropped
   EXPECT_EQ(waits, 0);
@@ -54,12 +55,13 @@ TEST(RingPush, WaitsWhileAFlushIsPendingThenProceeds) {
   const std::vector<std::byte> src = bytes(16);
   bool flushPending = true;
   int waits = 0;
-  const auto left = pushFramesToRing(
-      ring, src, [] { return false; }, [&flushPending] { return flushPending; },
-      [&waits, &flushPending] {
-        ++waits;
-        flushPending = false; // the render thread "services" the pending flush
-      });
+  const auto left =
+      pushFramesToRing(ring, src,
+                       makePushHooks([] { return false; }, [&flushPending] { return flushPending; },
+                                     [&waits, &flushPending] {
+                                       ++waits;
+                                       flushPending = false; // render thread services the flush
+                                     }));
 
   EXPECT_TRUE(left.empty());
   EXPECT_EQ(waits, 1); // waited once for the flush, then queued everything
@@ -71,12 +73,13 @@ TEST(RingPush, BacksOffWhenTheRingIsFullThenProceedsAsTheConsumerDrains) {
   const std::vector<std::byte> src = bytes(48); // more than the ring holds at once
   std::array<std::byte, 16> sink{};
   int waits = 0;
-  const auto left = pushFramesToRing(
-      ring, src, [] { return false; }, [] { return false; },
-      [&waits, &ring, &sink] {
-        ++waits;
-        (void)ring.read(sink); // the consumer makes room on each back-off
-      });
+  const auto left =
+      pushFramesToRing(ring, src,
+                       makePushHooks([] { return false; }, [] { return false; },
+                                     [&waits, &ring, &sink] {
+                                       ++waits;
+                                       (void)ring.read(sink); // consumer makes room each back-off
+                                     }));
 
   EXPECT_TRUE(left.empty()); // all 48 bytes eventually queued
   EXPECT_GE(waits, 1);       // backed off at least once on the full ring

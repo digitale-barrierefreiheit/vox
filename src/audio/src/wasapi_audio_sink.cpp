@@ -289,10 +289,7 @@ public:
     // Bump the generation first so a blocked producer abandons stale audio, then
     // ask the render thread to drop what is buffered and reset the device.
     flushGeneration_.fetch_add(1, std::memory_order_acq_rel);
-    flushRequested_.store(true, std::memory_order_release);
-    if (audioEvent_ != nullptr) {
-      ::SetEvent(audioEvent_); // wake the render thread now, even if the stream is silent
-    }
+    requestRenderFlush();
   }
 
   // Idempotent: also releases a partially-acquired device (e.g. after a failed
@@ -500,19 +497,38 @@ private:
     }
   }
 
+  /// Signals the render thread to service a flush: drop what is buffered and reset
+  /// the device. flush() bumps the generation first (so producers abandon stale
+  /// audio); pushAll's post-push re-arm reuses just the signal, so the producer/
+  /// consumer wakeup lives in one place.
+  void requestRenderFlush() {
+    flushRequested_.store(true, std::memory_order_release);
+    if (audioEvent_ != nullptr) {
+      ::SetEvent(audioEvent_); // wake the render thread now, even if the stream is silent
+    }
+  }
+
   /// Pushes whole frames into the ring with back-pressure — the one loop shared by
   /// write() and drain(). Abandons (dropping the rest) when the sink stopped or a
   /// barge-in bumped @p generation; backs off while a flush is being serviced or
   /// the ring is momentarily full. The branch logic is unit-tested thread-free in
   /// detail::pushFramesToRing; here we only bind it to the live atomics.
   void pushAll(std::span<const std::byte> frames, std::uint64_t generation) {
-    detail::pushFramesToRing(
-        *ring_, frames,
-        [this, generation] {
-          return stopRequested_.load(std::memory_order_acquire) ||
-                 flushGeneration_.load(std::memory_order_acquire) != generation;
-        },
-        [this] { return flushRequested_.load(std::memory_order_acquire); }, detail::backOffOneTick);
+    detail::pushFramesToRing(*ring_, frames,
+                             detail::makePushHooks(
+                                 [this, generation] {
+                                   return stopRequested_.load(std::memory_order_acquire) ||
+                                          flushGeneration_.load(std::memory_order_acquire) !=
+                                              generation;
+                                 },
+                                 [this] { return flushRequested_.load(std::memory_order_acquire); },
+                                 detail::backOffOneTick));
+    // If a barge-in raced this push (the generation moved while we were pushing), a
+    // frame may have slipped into the ring after the render cleared it; re-arm the
+    // flush so the render drops it too, keeping barge-in frame-exact.
+    if (flushGeneration_.load(std::memory_order_acquire) != generation) {
+      requestRenderFlush();
+    }
   }
 
   AudioFormat sourceFormat_;

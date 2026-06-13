@@ -16,6 +16,7 @@
 #  include <future>
 #  include <memory>
 #  include <span>
+#  include <thread>
 #  include <vector>
 
 #  include <gmock/gmock.h>
@@ -346,6 +347,30 @@ TEST_F(WasapiAcquisitionTest, AWriteAfterAFlushResetsTheConverter) {
   sink.flush();
   ASSERT_EQ(reset.wait_for(WaitTimeout), std::future_status::ready);
   EXPECT_NO_THROW(sink.write(pcm)); // new generation: converter is reset, then pushes
+  EXPECT_NO_THROW(sink.stop());
+}
+
+// A barge-in that lands while a write is back-pressuring must leave nothing behind:
+// pushAll re-arms the flush so a frame that slipped into the ring after the render
+// cleared it is dropped too. Drives the post-push re-arm under real threads — the
+// mock render only services audio on a flush, so this oversized write fills the ring
+// and blocks until a flush bumps the generation and the producer abandons.
+TEST_F(WasapiAcquisitionTest, AWriteRacingABargeInReArmsTheFlush) {
+  WasapiAudioSink sink(AudioFormat{22050, 16, 1});
+  ASSERT_NO_THROW(sink.start());
+  const std::vector<std::byte> big(256U * 1024U, std::byte{0}); // far larger than the ring
+  std::atomic<bool> done{false};
+  std::thread producer([&sink, &big, &done] {
+    sink.write(big);
+    done.store(true, std::memory_order_release);
+  });
+  // Flush until the back-pressured producer observes the generation bump and
+  // abandons; on the way out pushAll re-arms the flush (the branch under test).
+  while (!done.load(std::memory_order_acquire)) {
+    sink.flush();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  producer.join();
   EXPECT_NO_THROW(sink.stop());
 }
 

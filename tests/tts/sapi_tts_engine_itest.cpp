@@ -31,7 +31,7 @@ namespace {
 using vox::audio::AudioFormat;
 using vox::audio::PcmBuffer;
 using vox::tts::SapiTtsEngine;
-using vox::tts::VoiceSelectionPolicy;
+using vox::tts::VoiceSelectionRequest;
 
 PcmBuffer synthesizeToBuffer(SapiTtsEngine& engine, std::string_view text) {
   PcmBuffer buffer;
@@ -55,18 +55,18 @@ protected:
     return required;
   }
 
-  /// Builds an engine under @p policy, or returns nullptr if SAPI/voices are
+  /// Builds an engine under @p request, or returns nullptr if SAPI/voices are
   /// unavailable for it.
-  static std::unique_ptr<SapiTtsEngine> makeEngine(VoiceSelectionPolicy policy) {
+  static std::unique_ptr<SapiTtsEngine> makeEngine(const VoiceSelectionRequest& request) {
     try {
-      return std::make_unique<SapiTtsEngine>(policy);
+      return std::make_unique<SapiTtsEngine>(request);
     } catch (const std::runtime_error&) {
       return nullptr;
     }
   }
 
   void SetUp() override {
-    engine_ = makeEngine(VoiceSelectionPolicy::PreferGerman);
+    engine_ = makeEngine(VoiceSelectionRequest{}); // prefer German, fall back (#88)
     if (!engine_) {
       if (germanRequired()) {
         FAIL() << "VOX_REQUIRE_GERMAN_VOICE is set but no usable SAPI voice was found.";
@@ -116,15 +116,18 @@ TEST_F(SapiTtsEngineTest, SetRateDoesNotThrow) {
 // the de-DE runner (gated by the environment flag), runs where a German voice
 // happens to be installed (dev box), and skips on machines without one.
 TEST_F(SapiTtsEngineTest, RequireGermanSelectsAGermanVoiceWhereAvailable) {
-  const std::unique_ptr<SapiTtsEngine> german = makeEngine(VoiceSelectionPolicy::RequireGerman);
+  VoiceSelectionRequest requireGerman;
+  requireGerman.required = true; // language defaults to "de" (ADR-07)
+  const std::unique_ptr<SapiTtsEngine> german = makeEngine(requireGerman);
   if (!german) {
     if (germanRequired()) {
-      FAIL() << "VOX_REQUIRE_GERMAN_VOICE is set but RequireGerman found no German voice "
+      FAIL() << "VOX_REQUIRE_GERMAN_VOICE is set but no German voice was found "
                 "(language provisioning failed, or OneCore voice discovery (#52) is broken).";
     }
     GTEST_SKIP() << "No German SAPI voice installed on this machine.";
   }
-  EXPECT_TRUE(german->selectedVoice().isGerman);
+  EXPECT_EQ(german->selectedVoice().language, "de");
+  EXPECT_EQ(german->selectedVoice().choice, vox::tts::VoiceChoice::RequestedLanguage);
   const PcmBuffer pcm = synthesizeToBuffer(*german, "Guten Tag, dies ist ein Test.");
   EXPECT_FALSE(isEmpty(pcm));
 }

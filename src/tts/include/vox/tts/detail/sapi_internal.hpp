@@ -77,18 +77,19 @@ inline std::string toUtf8(const wchar_t* text) {
   return out;
 }
 
-/// True if any LCID in a SAPI "Language" attribute is a German primary language.
-/// The attribute is a ';'-separated list of hex LCIDs (e.g. "407;c07").
-inline bool languageIsGerman(std::wstring_view languageAttribute) {
+/// The first parseable LCID in a SAPI "Language" attribute, or 0 when none.
+/// The attribute is a ';'-separated list of hex LCIDs (e.g. "407;c07"); SAPI
+/// lists the voice's principal language first, so that one identifies the
+/// voice for the language coupling (#88).
+inline unsigned long firstLcid(std::wstring_view languageAttribute) {
   std::size_t start = 0;
   while (start <= languageAttribute.size()) {
     const std::size_t end = languageAttribute.find(L';', start);
     const std::size_t count =
         end == std::wstring_view::npos ? std::wstring_view::npos : end - start;
     if (const std::wstring token{languageAttribute.substr(start, count)}; !token.empty()) {
-      const auto lcid = ::wcstoul(token.c_str(), nullptr, 16);
-      if (PRIMARYLANGID(static_cast<LANGID>(lcid)) == LANG_GERMAN) {
-        return true;
+      if (const unsigned long lcid = ::wcstoul(token.c_str(), nullptr, 16); lcid != 0UL) {
+        return lcid;
       }
     }
     if (end == std::wstring_view::npos) {
@@ -96,7 +97,7 @@ inline bool languageIsGerman(std::wstring_view languageAttribute) {
     }
     start = end + 1;
   }
-  return false;
+  return 0UL;
 }
 
 /// Reads one string value under a token's "Attributes" key (empty if absent).

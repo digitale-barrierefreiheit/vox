@@ -141,7 +141,16 @@ LoadedLexicon loadLexicon(const LexiconRequest& request) {
   if (!request.explicitFile.empty()) {
     // An explicit file is authoritative: a broken VOX_LEXICON falls back to the
     // embedded default, never silently to a directory lookup the user replaced.
-    loadFromFile(request.explicitFile, tag, "(VOX_LEXICON)", result);
+    // Its declared language stands even against a set VOX_LANGUAGE — the
+    // per-part override has the higher precedence (#88), so a divergence is
+    // reported, not rejected.
+    if (loadFromFile(request.explicitFile, /*expectedTag=*/{}, "(VOX_LEXICON)", result) &&
+        !tag.empty() && !equalsIgnoreCaseAscii(result.lexicon.language(), tag)) {
+      result.diagnostics.push_back("lexicon file (VOX_LEXICON) declares language \"" +
+                                   std::string(result.lexicon.language()) +
+                                   "\" while the requested language (VOX_LANGUAGE) is \"" +
+                                   std::string(tag) + "\"; the explicit file wins");
+    }
     return result;
   }
   if (request.lexiconDir.empty()) {

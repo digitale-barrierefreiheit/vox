@@ -2,7 +2,9 @@
 // SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
 
 /// @file
-/// @brief Tests for vox::tts::selectVoice — the require/prefer German policies.
+/// @brief Tests for vox::tts voice selection: the request-driven choice (#88) —
+///        requested language, explicit VOX_VOICE name, fallback provenance —
+///        plus the LANGID→tag mapping and the OneCore merge (#52).
 #include <optional>
 #include <string>
 #include <utility>
@@ -14,81 +16,166 @@
 
 namespace {
 
+using vox::tts::languageTagFromLangId;
 using vox::tts::mergeVoices;
+using vox::tts::primarySubtag;
 using vox::tts::SelectedVoice;
 using vox::tts::selectVoice;
+using vox::tts::VoiceChoice;
 using vox::tts::VoiceDescriptor;
-using vox::tts::VoiceSelectionPolicy;
+using vox::tts::VoiceSelectionRequest;
 
-VoiceDescriptor voice(std::string id, bool isGerman, bool isDefault) {
+VoiceDescriptor voice(std::string id, std::string language, bool isDefault = false) {
   VoiceDescriptor descriptor;
   descriptor.id = std::move(id);
-  descriptor.isGerman = isGerman;
+  descriptor.name = "Voice " + descriptor.id;
+  descriptor.language = std::move(language);
   descriptor.isDefault = isDefault;
   return descriptor;
+}
+
+SelectedVoice chosen(const VoiceDescriptor& descriptor, VoiceChoice choice) {
+  return SelectedVoice{descriptor.id, descriptor.name, descriptor.language, choice};
+}
+
+VoiceSelectionRequest prefer(std::string language) {
+  VoiceSelectionRequest request;
+  request.language = std::move(language);
+  return request;
+}
+
+VoiceSelectionRequest require(std::string language) {
+  VoiceSelectionRequest request;
+  request.language = std::move(language);
+  request.required = true;
+  return request;
+}
+
+VoiceSelectionRequest byName(std::string name) {
+  VoiceSelectionRequest request; // language stays the "de" default
+  request.explicitVoice = std::move(name);
+  return request;
 }
 
 // Comparing the whole optional (rather than dereferencing after has_value())
 // keeps the analyzer happy about optional access and reads as one assertion.
 
-TEST(SelectVoice, PicksTheGermanVoiceWhenPresent) {
+TEST(SelectVoice, PicksTheVoiceMatchingTheRequestedLanguage) {
   const std::vector<VoiceDescriptor> available{
-      voice("en-US", false, true),
-      voice("de-DE", true, false),
+      voice("en-1", "en", true),
+      voice("de-1", "de"),
   };
-  EXPECT_EQ(selectVoice(available, VoiceSelectionPolicy::PreferGerman),
-            std::optional(SelectedVoice{"de-DE", true}));
+  EXPECT_EQ(selectVoice(available, prefer("de")),
+            std::optional(chosen(available[1], VoiceChoice::RequestedLanguage)));
 }
 
-TEST(SelectVoice, RequireGermanPicksGermanOverTheDefault) {
-  const std::vector<VoiceDescriptor> available{
-      voice("en-US", false, true),
-      voice("de-DE", true, false),
-  };
-  // Even under RequireGerman the German voice is chosen regardless of default.
-  EXPECT_EQ(selectVoice(available, VoiceSelectionPolicy::RequireGerman),
-            std::optional(SelectedVoice{"de-DE", true}));
+TEST(SelectVoice, MatchesByPrimarySubtagCaseInsensitively) {
+  const std::vector<VoiceDescriptor> available{voice("de-1", "de")};
+  // "de-AT" and "DE" both mean the primary language de.
+  EXPECT_EQ(selectVoice(available, prefer("de-AT")),
+            std::optional(chosen(available[0], VoiceChoice::RequestedLanguage)));
+  EXPECT_EQ(selectVoice(available, prefer("DE")),
+            std::optional(chosen(available[0], VoiceChoice::RequestedLanguage)));
 }
 
-TEST(SelectVoice, PicksTheFirstGermanVoiceAmongSeveral) {
+TEST(SelectVoice, PicksTheFirstMatchAmongSeveral) {
   const std::vector<VoiceDescriptor> available{
-      voice("de-AT", true, false),
-      voice("de-DE", true, true),
+      voice("de-1", "de"),
+      voice("de-2", "de", true),
   };
-  EXPECT_EQ(selectVoice(available, VoiceSelectionPolicy::PreferGerman),
-            std::optional(SelectedVoice{"de-AT", true}));
+  EXPECT_EQ(selectVoice(available, require("de")),
+            std::optional(chosen(available[0], VoiceChoice::RequestedLanguage)));
 }
 
-TEST(SelectVoice, RequireGermanYieldsNothingWithoutAGermanVoice) {
+TEST(SelectVoice, RequiredYieldsNothingWithoutAMatch) {
   const std::vector<VoiceDescriptor> available{
-      voice("en-US", false, true),
-      voice("fr-FR", false, false),
+      voice("en-1", "en", true),
+      voice("fr-1", "fr"),
   };
-  EXPECT_EQ(selectVoice(available, VoiceSelectionPolicy::RequireGerman), std::nullopt);
+  EXPECT_EQ(selectVoice(available, require("de")), std::nullopt);
 }
 
-TEST(SelectVoice, PreferGermanFallsBackToTheDefaultVoice) {
-  const std::vector<VoiceDescriptor> available{
-      voice("fr-FR", false, false),
-      voice("en-US", false, true),
-  };
-  EXPECT_EQ(selectVoice(available, VoiceSelectionPolicy::PreferGerman),
-            std::optional(SelectedVoice{"en-US", false})); // the default
+TEST(SelectVoice, AVoiceWithoutAKnownLanguageNeverMatches) {
+  const std::vector<VoiceDescriptor> available{voice("odd-1", "", true)};
+  EXPECT_EQ(selectVoice(available, prefer("de")),
+            std::optional(chosen(available[0], VoiceChoice::Fallback)));
 }
 
-TEST(SelectVoice, PreferGermanFallsBackToTheFirstVoiceWhenNoneIsDefault) {
+TEST(SelectVoice, FallsBackToTheDefaultVoice) {
   const std::vector<VoiceDescriptor> available{
-      voice("fr-FR", false, false),
-      voice("en-US", false, false),
+      voice("fr-1", "fr"),
+      voice("en-1", "en", true),
   };
-  EXPECT_EQ(selectVoice(available, VoiceSelectionPolicy::PreferGerman),
-            std::optional(SelectedVoice{"fr-FR", false}));
+  EXPECT_EQ(selectVoice(available, prefer("de")),
+            std::optional(chosen(available[1], VoiceChoice::Fallback)));
 }
 
-TEST(SelectVoice, EmptySetYieldsNothingUnderEitherPolicy) {
+TEST(SelectVoice, FallsBackToTheFirstVoiceWhenNoneIsDefault) {
+  const std::vector<VoiceDescriptor> available{
+      voice("fr-1", "fr"),
+      voice("en-1", "en"),
+  };
+  EXPECT_EQ(selectVoice(available, prefer("de")),
+            std::optional(chosen(available[0], VoiceChoice::Fallback)));
+}
+
+TEST(SelectVoice, EmptySetYieldsNothingUnderAnyRequest) {
   const std::vector<VoiceDescriptor> none;
-  EXPECT_EQ(selectVoice(none, VoiceSelectionPolicy::PreferGerman), std::nullopt);
-  EXPECT_EQ(selectVoice(none, VoiceSelectionPolicy::RequireGerman), std::nullopt);
+  EXPECT_EQ(selectVoice(none, prefer("de")), std::nullopt);
+  EXPECT_EQ(selectVoice(none, require("de")), std::nullopt);
+  EXPECT_EQ(selectVoice(none, byName("Voice x")), std::nullopt);
+}
+
+TEST(SelectVoice, AnExplicitVoiceNameWinsOverTheLanguagePreference) {
+  const std::vector<VoiceDescriptor> available{
+      voice("de-1", "de"),
+      voice("en-1", "en"),
+  };
+  // The request still asks for "de" (the default), but VOX_VOICE wins.
+  EXPECT_EQ(selectVoice(available, byName("Voice en-1")),
+            std::optional(chosen(available[1], VoiceChoice::ExplicitName)));
+}
+
+TEST(SelectVoice, TheExplicitNameIsCaseInsensitive) {
+  const std::vector<VoiceDescriptor> available{voice("de-1", "de")};
+  EXPECT_EQ(selectVoice(available, byName("VOICE DE-1")),
+            std::optional(chosen(available[0], VoiceChoice::ExplicitName)));
+}
+
+TEST(SelectVoice, AMissingExplicitVoiceSkipsTheLanguagePreference) {
+  // A broken override must not silently re-enable what it replaced (mirrors
+  // VOX_LEXICON): the fallback applies even though a "de" voice exists.
+  const std::vector<VoiceDescriptor> available{
+      voice("de-1", "de"),
+      voice("en-1", "en", true),
+  };
+  EXPECT_EQ(selectVoice(available, byName("Voice nope")),
+            std::optional(chosen(available[1], VoiceChoice::Fallback)));
+}
+
+TEST(SelectVoice, AMissingExplicitVoiceUnderRequiredYieldsNothing) {
+  const std::vector<VoiceDescriptor> available{voice("de-1", "de")};
+  VoiceSelectionRequest request = require("de");
+  request.explicitVoice = "Voice nope";
+  EXPECT_EQ(selectVoice(available, request), std::nullopt);
+}
+
+TEST(PrimarySubtag, CutsAtTheFirstHyphen) {
+  EXPECT_EQ(primarySubtag("de-AT"), "de");
+  EXPECT_EQ(primarySubtag("en"), "en");
+  EXPECT_EQ(primarySubtag(""), "");
+}
+
+TEST(LanguageTagFromLangId, MapsPrimaryLanguagesAcrossRegions) {
+  EXPECT_EQ(languageTagFromLangId(0x407UL), "de"); // de-DE
+  EXPECT_EQ(languageTagFromLangId(0xC07UL), "de"); // de-AT — same primary
+  EXPECT_EQ(languageTagFromLangId(0x409UL), "en"); // en-US
+  EXPECT_EQ(languageTagFromLangId(0x40CUL), "fr"); // fr-FR
+}
+
+TEST(LanguageTagFromLangId, UnmappedLanguagesYieldAnEmptyTag) {
+  EXPECT_EQ(languageTagFromLangId(0UL), "");
+  EXPECT_EQ(languageTagFromLangId(0x3FUL), ""); // a primary id outside the table
 }
 
 // The tests below cover mergeVoices, which folds the OneCore discovery pass

@@ -58,14 +58,16 @@ struct LexiconRequest {
 /// @brief Loads the announcement lexicon per the #61 resolution rule.
 ///
 /// `request.explicitFile` (empty = unset) is tried first and is authoritative:
-/// when set, no directory lookup happens after it. It must declare a language;
-/// if `request.requestedTag` is also set, the two must match (ASCII
-/// case-insensitive). Otherwise `request.lexiconDir / <tag>.lex` is tried,
-/// where `<tag>` is `request.requestedTag` or @ref DefaultLanguageTag; the
-/// file's declared language must match the tag it was loaded as. An invalid
-/// tag is reported and ignored; an empty `request.lexiconDir` skips the lookup
-/// (never CWD-relative). Any unreadable or rejected file falls back to the
-/// embedded German default with a diagnostic — the reader always speaks.
+/// when set, no directory lookup happens after it, and its declared language
+/// stands even against a set `request.requestedTag` — the per-part override
+/// has the higher precedence (#88); a divergence is reported as a diagnostic,
+/// not rejected. The file must still declare *a* language and be complete.
+/// Otherwise `request.lexiconDir / <tag>.lex` is tried, where `<tag>` is
+/// `request.requestedTag` or @ref DefaultLanguageTag; the file's declared
+/// language must match the tag it was loaded as. An invalid tag is reported
+/// and ignored; an empty `request.lexiconDir` skips the lookup (never
+/// CWD-relative). Any unreadable or rejected file falls back to the embedded
+/// German default with a diagnostic — the reader always speaks.
 [[nodiscard]] LoadedLexicon loadLexicon(const LexiconRequest& request);
 
 } // namespace vox::app

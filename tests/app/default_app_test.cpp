@@ -28,6 +28,8 @@
 #  include <vox/model/role.hpp>
 #  include <vox/provider/uia_test_seam.hpp>
 #  include <vox/tts/sapi_test_seam.hpp>
+#  include <vox/tts/sapi_tts_engine.hpp>
+#  include <vox/tts/voice_selection.hpp>
 
 // After the vox headers (repo convention): windows.h drags in a global
 // enumerator `Unknown` (winioctl.h, _MEDIA_TYPE) that would otherwise read as
@@ -279,6 +281,76 @@ TEST_F(DefaultAppTest, VoxLanguageSelectsALanguageFileNextToTheExecutable) {
   std::filesystem::remove(file);
   std::error_code ignored;
   std::filesystem::remove(lexiconDir, ignored);
+}
+
+// ---- the voice side of the language coupling (#88) --------------------------
+// The mock chain serves one German voice named "Hedda" (Language 407), which is
+// also the category default — so it is the fallback whatever the request.
+
+/// The engine's selection outcome, reached through the composition root.
+const vox::tts::SelectedVoice& selectedVoiceOf(const AppDependencies& deps) {
+  return dynamic_cast<vox::tts::SapiTtsEngine&>(*deps.tts).selectedVoice();
+}
+
+TEST_F(DefaultAppTest, VoxVoiceSelectsTheNamedVoice) {
+  const ScopedEnvironment env(L"VOX_VOICE", L"Hedda");
+
+  const AppDependencies deps = makeDefaultDependencies();
+
+  EXPECT_EQ(selectedVoiceOf(deps).choice, vox::tts::VoiceChoice::ExplicitName);
+  EXPECT_EQ(selectedVoiceOf(deps).name, "Hedda");
+}
+
+TEST_F(DefaultAppTest, AnUnknownVoxVoiceFallsBackWithAWarning) {
+  const ScopedEnvironment env(L"VOX_VOICE", L"No Such Voice");
+
+  // std::cerr is synced to the C stderr GoogleTest redirects, so the app-layer
+  // warnings land in the capture.
+  testing::internal::CaptureStderr();
+  const AppDependencies deps = makeDefaultDependencies();
+  const std::string warnings = testing::internal::GetCapturedStderr();
+
+  EXPECT_EQ(selectedVoiceOf(deps).choice, vox::tts::VoiceChoice::Fallback);
+  EXPECT_THAT(warnings, HasSubstr("VOX_VOICE"));
+}
+
+TEST_F(DefaultAppTest, AnUnmatchedVoxLanguageFallsBackToTheDefaultVoiceWithAWarning) {
+  // Only the German "Hedda" exists, so requesting English keeps the reader
+  // speaking — with the fallback voice and a warning (#88: fallbacks stay,
+  // the app reports them).
+  const ScopedEnvironment env(L"VOX_LANGUAGE", L"en");
+
+  testing::internal::CaptureStderr();
+  const AppDependencies deps = makeDefaultDependencies();
+  const std::string warnings = testing::internal::GetCapturedStderr();
+
+  EXPECT_EQ(selectedVoiceOf(deps).choice, vox::tts::VoiceChoice::Fallback);
+  EXPECT_EQ(selectedVoiceOf(deps).language, "de");
+  EXPECT_THAT(warnings, HasSubstr("no \"en\" voice"));
+}
+
+TEST_F(DefaultAppTest, AVoxVoiceDivergingFromVoxLanguageWinsWithAWarning) {
+  const ScopedEnvironment language(L"VOX_LANGUAGE", L"en");
+  const ScopedEnvironment voice(L"VOX_VOICE", L"Hedda");
+
+  testing::internal::CaptureStderr();
+  const AppDependencies deps = makeDefaultDependencies();
+  const std::string warnings = testing::internal::GetCapturedStderr();
+
+  EXPECT_EQ(selectedVoiceOf(deps).choice, vox::tts::VoiceChoice::ExplicitName);
+  EXPECT_THAT(warnings, HasSubstr("the explicit voice wins"));
+}
+
+TEST_F(DefaultAppTest, AnInvalidVoxLanguageFallsBackToGermanWithAWarning) {
+  const ScopedEnvironment env(L"VOX_LANGUAGE", L"not a tag!");
+
+  testing::internal::CaptureStderr();
+  const AppDependencies deps = makeDefaultDependencies();
+  const std::string warnings = testing::internal::GetCapturedStderr();
+
+  EXPECT_EQ(selectedVoiceOf(deps).choice, vox::tts::VoiceChoice::RequestedLanguage);
+  EXPECT_THAT(deps.output.announce(saveButton()).text, HasSubstr("Schaltfläche"));
+  EXPECT_THAT(warnings, HasSubstr("VOX_LANGUAGE"));
 }
 
 } // namespace

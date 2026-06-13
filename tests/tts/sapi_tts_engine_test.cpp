@@ -32,7 +32,7 @@ namespace {
 
 using vox::tts::EngineError;
 using vox::tts::SapiTtsEngine;
-using vox::tts::VoiceSelectionPolicy;
+using vox::tts::VoiceSelectionRequest;
 using vox::tts::testing::coTaskString;
 using vox::tts::testing::MockEnumSpObjectTokens;
 using vox::tts::testing::MockSpDataKey;
@@ -78,7 +78,7 @@ TEST(SapiTtsEngineErrors, ThrowsEngineErrorWhenVoiceCreationFails) {
     return ErrorFail;
   });
 
-  EXPECT_THROW(SapiTtsEngine{VoiceSelectionPolicy::PreferGerman}, EngineError);
+  EXPECT_THROW(SapiTtsEngine{}, EngineError);
 }
 
 /// Fixture wiring the full mock SAPI chain: the seams hand back `voice_` and
@@ -200,7 +200,7 @@ protected:
       stream->Release();
       return S_OK;
     });
-    SapiTtsEngine engine{VoiceSelectionPolicy::PreferGerman};
+    SapiTtsEngine engine{};
     engine.synthesize("hallo", sink);
   }
 
@@ -226,9 +226,10 @@ protected:
 };
 
 TEST_F(SapiEngineTest, ConstructsAndSelectsTheGermanVoice) {
-  const SapiTtsEngine engine{VoiceSelectionPolicy::PreferGerman};
+  const SapiTtsEngine engine{};
   EXPECT_EQ(engine.selectedVoice().id, "VOX-TEST-VOICE-DE");
-  EXPECT_TRUE(engine.selectedVoice().isGerman);
+  EXPECT_EQ(engine.selectedVoice().language, "de");
+  EXPECT_EQ(engine.selectedVoice().choice, vox::tts::VoiceChoice::RequestedLanguage);
 }
 
 TEST_F(SapiEngineTest, ThrowsWhenNoVoiceIsAvailable) {
@@ -242,39 +243,42 @@ TEST_F(SapiEngineTest, ThrowsWhenNoVoiceIsAvailable) {
         }
         return S_FALSE;
       });
-  EXPECT_THROW(SapiTtsEngine{VoiceSelectionPolicy::PreferGerman}, EngineError);
+  EXPECT_THROW(SapiTtsEngine{}, EngineError);
 }
 
 TEST_F(SapiEngineTest, ThrowsWhenTokenEnumerationFails) {
   // Both discovery passes (classic + OneCore, #52) fail to enumerate.
   EXPECT_CALL(category_, EnumTokens(_, _, _)).WillRepeatedly(Return(ErrorFail));
-  EXPECT_THROW(SapiTtsEngine{VoiceSelectionPolicy::PreferGerman}, EngineError);
+  EXPECT_THROW(SapiTtsEngine{}, EngineError);
 }
 
 TEST_F(SapiEngineTest, ThrowsWhenActivatingTheVoiceFails) {
   EXPECT_CALL(voice_, SetVoice(_)).WillOnce(Return(ErrorFail));
-  EXPECT_THROW(SapiTtsEngine{VoiceSelectionPolicy::PreferGerman}, EngineError);
+  EXPECT_THROW(SapiTtsEngine{}, EngineError);
 }
 
-TEST_F(SapiEngineTest, ThrowsWhenRequireGermanButVoiceIsEnglish) {
+TEST_F(SapiEngineTest, ThrowsWhenGermanIsRequiredButTheVoiceIsEnglish) {
   makeVoiceEnglish();
-  EXPECT_THROW(SapiTtsEngine{VoiceSelectionPolicy::RequireGerman}, EngineError);
+  VoiceSelectionRequest requireGerman; // language defaults to "de"
+  requireGerman.required = true;
+  EXPECT_THROW(SapiTtsEngine{requireGerman}, EngineError);
 }
 
-TEST_F(SapiEngineTest, FallsBackToNonGermanUnderPreferGerman) {
+TEST_F(SapiEngineTest, FallsBackToTheEnglishVoiceWhenNoGermanOneExists) {
   makeVoiceEnglish();
-  const SapiTtsEngine engine{VoiceSelectionPolicy::PreferGerman};
-  EXPECT_FALSE(engine.selectedVoice().isGerman);
+  const SapiTtsEngine engine{};
+  EXPECT_EQ(engine.selectedVoice().language, "en");
+  EXPECT_EQ(engine.selectedVoice().choice, vox::tts::VoiceChoice::Fallback);
 }
 
 TEST_F(SapiEngineTest, SynthesizeEmptyTextIsANoOp) {
-  SapiTtsEngine engine{VoiceSelectionPolicy::PreferGerman};
+  SapiTtsEngine engine{};
   EXPECT_CALL(voice_, Speak(_, _, _)).Times(0);
   engine.synthesize("", [](std::span<const std::byte>) { /* never called: empty input */ });
 }
 
 TEST_F(SapiEngineTest, SynthesizeThrowsOnInvalidUtf8) {
-  SapiTtsEngine engine{VoiceSelectionPolicy::PreferGerman};
+  SapiTtsEngine engine{};
   // 0xFF is never a valid UTF-8 lead byte, so the conversion fails.
   const char invalid[] = {static_cast<char>(0xFF), static_cast<char>(0xFE)};
   EXPECT_THROW(engine.synthesize(std::string_view(invalid, sizeof invalid),
@@ -288,7 +292,7 @@ TEST_F(SapiEngineTest, SynthesizeForwardsPcmToTheSink) {
     return emitTo(pcm);
   });
 
-  SapiTtsEngine engine{VoiceSelectionPolicy::PreferGerman};
+  SapiTtsEngine engine{};
   std::vector<std::byte> received;
   engine.synthesize("hallo", [&received](std::span<const std::byte> chunk) {
     received.insert(received.end(), chunk.begin(), chunk.end());
@@ -298,12 +302,12 @@ TEST_F(SapiEngineTest, SynthesizeForwardsPcmToTheSink) {
 
 TEST_F(SapiEngineTest, SynthesizeThrowsWhenSpeakFails) {
   EXPECT_CALL(voice_, Speak(_, _, _)).WillOnce(Return(ErrorFail));
-  SapiTtsEngine engine{VoiceSelectionPolicy::PreferGerman};
+  SapiTtsEngine engine{};
   EXPECT_THROW(engine.synthesize("hallo", [](std::span<const std::byte>) {}), EngineError);
 }
 
 TEST_F(SapiEngineTest, SynthesizeThrowsWhenSettingOutputFails) {
-  SapiTtsEngine engine{VoiceSelectionPolicy::PreferGerman};
+  SapiTtsEngine engine{};
   EXPECT_CALL(voice_, SetOutput(_, _)).WillOnce(Return(ErrorFail));
   EXPECT_THROW(engine.synthesize("hallo", [](std::span<const std::byte>) {}), EngineError);
 }
@@ -319,25 +323,25 @@ TEST_F(SapiEngineTest, CancelDuringSynthesisAbortsWithoutThrowing) {
     return ErrorFail;
   });
 
-  SapiTtsEngine engine{VoiceSelectionPolicy::PreferGerman};
+  SapiTtsEngine engine{};
   EXPECT_NO_THROW(
       engine.synthesize("hallo", [&engine](std::span<const std::byte>) { engine.cancel(); }));
 }
 
 TEST_F(SapiEngineTest, SetRateForwardsClampedValueToSapi) {
-  SapiTtsEngine engine{VoiceSelectionPolicy::PreferGerman};
+  SapiTtsEngine engine{};
   EXPECT_CALL(voice_, SetRate(5)).WillOnce(Return(S_OK));
   engine.setRate(5);
 }
 
 TEST_F(SapiEngineTest, SetRateClampsOutOfRangeValues) {
-  SapiTtsEngine engine{VoiceSelectionPolicy::PreferGerman};
+  SapiTtsEngine engine{};
   EXPECT_CALL(voice_, SetRate(10)).WillOnce(Return(S_OK)); // clamped from 99
   engine.setRate(99);
 }
 
 TEST_F(SapiEngineTest, FormatReportsTheFixedOutputShape) {
-  const SapiTtsEngine engine{VoiceSelectionPolicy::PreferGerman};
+  const SapiTtsEngine engine{};
   const vox::audio::AudioFormat format = engine.format();
   EXPECT_EQ(format.sampleRate, 22050U);
   EXPECT_EQ(format.bitsPerSample, 16U);
@@ -348,7 +352,7 @@ TEST_F(SapiEngineTest, EnumerationStopsWhenSettingTheCategoryIdFails) {
   // Neither category id can be set (classic + OneCore, #52): no voices
   // enumerate, so selection finds nothing and construction fails.
   EXPECT_CALL(category_, SetId(_, _)).WillRepeatedly(Return(ErrorFail));
-  EXPECT_THROW(SapiTtsEngine{VoiceSelectionPolicy::PreferGerman}, EngineError);
+  EXPECT_THROW(SapiTtsEngine{}, EngineError);
 }
 
 TEST_F(SapiEngineTest, EnumeratesTheClassicAndThenTheOneCoreCategory) {
@@ -364,7 +368,7 @@ TEST_F(SapiEngineTest, EnumeratesTheClassicAndThenTheOneCoreCategory) {
       SetId(::testing::StrEq(L"HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech_OneCore\\Voices"),
             _))
       .WillOnce(Return(S_OK));
-  const SapiTtsEngine engine{VoiceSelectionPolicy::PreferGerman};
+  const SapiTtsEngine engine{};
   EXPECT_EQ(engine.selectedVoice().id, "VOX-TEST-VOICE-DE");
 }
 
@@ -394,9 +398,11 @@ TEST_F(SapiEngineTest, DiscoversAVoiceOnlyVisibleInTheOneCoreCategory) {
         return S_OK;
       });
 
-  const SapiTtsEngine engine{VoiceSelectionPolicy::RequireGerman};
+  VoiceSelectionRequest requireGerman; // language defaults to "de"
+  requireGerman.required = true;
+  const SapiTtsEngine engine{requireGerman};
   EXPECT_EQ(engine.selectedVoice().id, "VOX-TEST-VOICE-DE");
-  EXPECT_TRUE(engine.selectedVoice().isGerman);
+  EXPECT_EQ(engine.selectedVoice().language, "de");
 }
 
 TEST_F(SapiEngineTest, SkipsATokenWhoseIdCannotBeRead) {
@@ -406,7 +412,7 @@ TEST_F(SapiEngineTest, SkipsATokenWhoseIdCannotBeRead) {
     }
     return ErrorFail; // the only token is skipped -> no usable voice
   });
-  EXPECT_THROW(SapiTtsEngine{VoiceSelectionPolicy::PreferGerman}, EngineError);
+  EXPECT_THROW(SapiTtsEngine{}, EngineError);
 }
 
 TEST_F(SapiEngineTest, SkipsATokenWithAnEmptyId) {
@@ -414,7 +420,7 @@ TEST_F(SapiEngineTest, SkipsATokenWithAnEmptyId) {
     *out = coTaskString(L""); // empty id -> descriptor dropped
     return S_OK;
   });
-  EXPECT_THROW(SapiTtsEngine{VoiceSelectionPolicy::PreferGerman}, EngineError);
+  EXPECT_THROW(SapiTtsEngine{}, EngineError);
 }
 
 TEST_F(SapiEngineTest, OutputStreamRejectsANullWriteBuffer) {
@@ -493,7 +499,7 @@ TEST_F(SapiEngineTest, ToleratesAComApartmentAlreadyInitializedInAnotherMode) {
   // constructor throws.
   ASSERT_TRUE(SUCCEEDED(::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED)));
   const ComScope balance;
-  const SapiTtsEngine engine{VoiceSelectionPolicy::PreferGerman};
+  const SapiTtsEngine engine{};
   EXPECT_EQ(engine.selectedVoice().id, "VOX-TEST-VOICE-DE");
 }
 

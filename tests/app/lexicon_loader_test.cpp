@@ -202,13 +202,18 @@ TEST_F(LexiconLoaderTest, AnExplicitFileWinsAndItsDeclaredLanguageStands) {
   EXPECT_TRUE(loaded.diagnostics.empty());
 }
 
-TEST_F(LexiconLoaderTest, AnExplicitFileMustMatchAnExplicitlyRequestedLanguage) {
-  const std::filesystem::path custom = writeFile("custom.lex", completeTable("en"));
+TEST_F(LexiconLoaderTest, AnExplicitFileWithADifferentLanguageWinsWithAWarning) {
+  // The per-part override has the higher precedence (#88): VOX_LEXICON's
+  // declared language stands even against a set VOX_LANGUAGE — reported, not
+  // rejected.
+  const std::filesystem::path custom =
+      writeFile("custom.lex", completeTableWithButton("en", "my-button"));
 
   const LoadedLexicon loaded = loadExplicit(custom, "de");
 
-  expectFallback(loaded, "\"de\" was expected");
-  EXPECT_THAT(loaded.diagnostics.front(), HasSubstr("VOX_LEXICON"));
+  expectLoadedFile(loaded, "my-button");
+  ASSERT_EQ(loaded.diagnostics.size(), 1U);
+  EXPECT_THAT(loaded.diagnostics.front(), HasSubstr("the explicit file wins"));
 }
 
 TEST_F(LexiconLoaderTest, ABrokenExplicitFileFallsBackToTheDefaultNotTheDirectory) {

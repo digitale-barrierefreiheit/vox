@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781347271256,
+  "lastUpdate": 1781374130235,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -212,6 +212,35 @@ window.BENCHMARK_DATA = {
           {
             "name": "ttfaPipeline p50",
             "value": 0.7,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c86119c419eb34edf543d3c223b0ff520f151547",
+          "message": "feat(audio): windowed-sinc polyphase resampler for PcmConverter (#55)\n\nReplace PcmConverter's linear interpolation with a Kaiser-windowed sinc polyphase FIR (32 taps, 256 phases, beta 9): first-image suppression improves -32 dB -> -88 dB, convert() stays allocation-free, ratio-1 is an exact zero-delay passthrough.\n\nThe FIR's 16-sample group delay would clip each utterance's tail, so this also adds an end-of-stream drain seam: PcmConverter::drain(), a pure-virtual IAudioSink::drain(), a WasapiAudioSink implementation (converter generation + re-arm so a barge-in resets the FIR), and a Reader drain skipped on shutdown.",
+          "timestamp": "2026-06-13T19:53:41+02:00",
+          "tree_id": "99079d4c8c6e3a6f513592a24ddb8b96a3f7284f",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/c86119c419eb34edf543d3c223b0ff520f151547"
+        },
+        "date": 1781374129927,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 1,
             "unit": "us"
           }
         ]

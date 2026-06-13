@@ -341,6 +341,20 @@ TEST_F(DefaultAppTest, AVoxVoiceDivergingFromVoxLanguageWinsWithAWarning) {
   EXPECT_THAT(warnings, HasSubstr("the explicit voice wins"));
 }
 
+TEST_F(DefaultAppTest, AVoxVoiceAgreeingWithVoxLanguageDoesNotWarnAboutDivergence) {
+  // The voice "Hedda" speaks "de"; a request of "DE" must not trip a false
+  // divergence warning (BCP-47 tags compare case-insensitively).
+  const ScopedEnvironment language(L"VOX_LANGUAGE", L"DE");
+  const ScopedEnvironment voice(L"VOX_VOICE", L"Hedda");
+
+  testing::internal::CaptureStderr();
+  const AppDependencies deps = makeDefaultDependencies();
+  const std::string warnings = testing::internal::GetCapturedStderr();
+
+  EXPECT_EQ(selectedVoiceOf(deps).choice, vox::tts::VoiceChoice::ExplicitName);
+  EXPECT_THAT(warnings, testing::Not(HasSubstr("the explicit voice wins")));
+}
+
 TEST_F(DefaultAppTest, AnInvalidVoxLanguageFallsBackToGermanWithAWarning) {
   const ScopedEnvironment env(L"VOX_LANGUAGE", L"not a tag!");
 

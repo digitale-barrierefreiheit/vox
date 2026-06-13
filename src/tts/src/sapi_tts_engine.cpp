@@ -322,7 +322,7 @@ public:
     enumerateVoices();
     const std::optional<SelectedVoice> chosen = selectVoice(descriptors_, request);
     if (!chosen) {
-      throw EngineError("SapiTtsEngine: no usable voice for the requested policy");
+      throw EngineError("SapiTtsEngine: no usable voice for the requested language or voice name");
     }
     selected_ = *chosen;
     const auto token = idToToken_.find(selected_.id);

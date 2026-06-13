@@ -29,7 +29,7 @@ bool equalsIgnoreCaseAscii(std::string_view left, std::string_view right) {
 
 /// True if @p voice speaks the requested @p language (primary subtags match).
 bool speaksLanguage(const VoiceDescriptor& voice, std::string_view language) {
-  return !voice.language.empty() && equalsIgnoreCaseAscii(voice.language, primarySubtag(language));
+  return !voice.language.empty() && sameLanguage(voice.language, language);
 }
 
 const VoiceDescriptor* findByName(std::span<const VoiceDescriptor> available,
@@ -65,10 +65,32 @@ SelectedVoice selected(const VoiceDescriptor& voice, VoiceChoice choice) {
   return SelectedVoice{voice.id, voice.name, voice.language, choice};
 }
 
+/// The voice the request *prefers*, before any fallback: the explicit VOX_VOICE
+/// name when set, otherwise the requested language. An explicit name that is
+/// set but missing yields nullopt without trying the language — a broken
+/// override must not re-enable what it replaced — so the caller goes straight
+/// to the fallback either way nullopt is returned.
+std::optional<SelectedVoice> preferredVoice(std::span<const VoiceDescriptor> available,
+                                            const VoiceSelectionRequest& request) {
+  if (!request.explicitVoice.empty()) {
+    const VoiceDescriptor* byName = findByName(available, request.explicitVoice);
+    return byName == nullptr ? std::nullopt
+                             : std::optional(selected(*byName, VoiceChoice::ExplicitName));
+  }
+  const VoiceDescriptor* byLanguage = findByLanguage(available, request.language);
+  return byLanguage == nullptr
+             ? std::nullopt
+             : std::optional(selected(*byLanguage, VoiceChoice::RequestedLanguage));
+}
+
 } // namespace
 
 std::string_view primarySubtag(std::string_view tag) {
   return tag.substr(0, tag.find('-'));
+}
+
+bool sameLanguage(std::string_view left, std::string_view right) {
+  return equalsIgnoreCaseAscii(primarySubtag(left), primarySubtag(right));
 }
 
 std::string_view languageTagFromLangId(unsigned long langId) {
@@ -118,27 +140,15 @@ std::vector<VoiceDescriptor> mergeVoices(std::vector<VoiceDescriptor> primary,
 
 std::optional<SelectedVoice> selectVoice(std::span<const VoiceDescriptor> available,
                                          const VoiceSelectionRequest& request) {
-  bool explicitVoiceMissed = false;
-  if (!request.explicitVoice.empty()) {
-    if (const VoiceDescriptor* byName = findByName(available, request.explicitVoice)) {
-      return selected(*byName, VoiceChoice::ExplicitName);
-    }
-    // A broken override must not silently re-enable the language preference it
-    // replaced (mirrors VOX_LEXICON, #61): straight to the fallback chain.
-    explicitVoiceMissed = true;
-  }
-  if (!explicitVoiceMissed) {
-    if (const VoiceDescriptor* match = findByLanguage(available, request.language)) {
-      return selected(*match, VoiceChoice::RequestedLanguage);
-    }
+  if (std::optional<SelectedVoice> preferred = preferredVoice(available, request)) {
+    return preferred;
   }
   if (request.required) {
     return std::nullopt; // the gate: a missing match must fail, not degrade
   }
-  if (const VoiceDescriptor* fallback = findFallback(available); fallback != nullptr) {
-    return selected(*fallback, VoiceChoice::Fallback);
-  }
-  return std::nullopt;
+  const VoiceDescriptor* fallback = findFallback(available);
+  return fallback == nullptr ? std::nullopt
+                             : std::optional(selected(*fallback, VoiceChoice::Fallback));
 }
 
 } // namespace vox::tts

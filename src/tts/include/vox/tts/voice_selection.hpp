@@ -66,6 +66,11 @@ struct SelectedVoice {
 ///        @p tag when it has no subtags.
 [[nodiscard]] std::string_view primarySubtag(std::string_view tag);
 
+/// @brief True if @p left and @p right denote the same primary language —
+///        primary subtags compared ASCII case-insensitively, so "de-AT", "de"
+///        and "DE" all match. Two empty tags count as the same.
+[[nodiscard]] bool sameLanguage(std::string_view left, std::string_view right);
+
 /// @brief The BCP-47 primary subtag for a Windows LANGID / LCID @p langId
 ///        (e.g. 0x407 → "de", 0x409 → "en"), or empty when unmapped. Only the
 ///        primary-language bits are considered, so every regional variant of a

@@ -19,6 +19,7 @@ namespace {
 using vox::tts::languageTagFromLangId;
 using vox::tts::mergeVoices;
 using vox::tts::primarySubtag;
+using vox::tts::sameLanguage;
 using vox::tts::SelectedVoice;
 using vox::tts::selectVoice;
 using vox::tts::VoiceChoice;
@@ -164,6 +165,15 @@ TEST(PrimarySubtag, CutsAtTheFirstHyphen) {
   EXPECT_EQ(primarySubtag("de-AT"), "de");
   EXPECT_EQ(primarySubtag("en"), "en");
   EXPECT_EQ(primarySubtag(""), "");
+}
+
+TEST(SameLanguage, ComparesPrimarySubtagsCaseInsensitively) {
+  EXPECT_TRUE(sameLanguage("de", "DE"));
+  EXPECT_TRUE(sameLanguage("de-AT", "de-DE")); // same primary, different region
+  EXPECT_TRUE(sameLanguage("EN", "en-US"));
+  EXPECT_TRUE(sameLanguage("", "")); // two unknown tags count as the same
+  EXPECT_FALSE(sameLanguage("de", "en"));
+  EXPECT_FALSE(sameLanguage("de", "")); // a known tag never matches the unknown
 }
 
 TEST(LanguageTagFromLangId, MapsPrimaryLanguagesAcrossRegions) {

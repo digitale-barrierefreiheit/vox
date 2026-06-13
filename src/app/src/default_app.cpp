@@ -10,6 +10,7 @@
 #  include <iostream>
 #  include <memory>
 #  include <string>
+#  include <string_view>
 #  include <utility>
 
 #  include <vox/app/default_app.hpp>
@@ -71,16 +72,20 @@ std::filesystem::path lexiconDirectory() {
   return exeDir.empty() ? exeDir : exeDir / L"lexicon";
 }
 
-/// @p wide rendered as UTF-8 (voice names may carry non-ASCII characters).
-std::string utf8FromWide(const std::wstring& wide) {
+/// @p wide rendered as UTF-8 (voice names may carry non-ASCII characters). The
+/// explicit length (not -1) means the buffer need not be NUL-terminated, so a
+/// string_view is a faithful input.
+std::string utf8FromWide(std::wstring_view wide) {
   if (wide.empty()) {
     return {};
   }
-  const int sourceLength = static_cast<int>(wide.size());
-  const int bytes =
-      ::WideCharToMultiByte(CP_UTF8, 0, wide.data(), sourceLength, nullptr, 0, nullptr, nullptr);
+  const auto toUtf8 = [wide](char* out, int capacity) {
+    return ::WideCharToMultiByte(CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()), out,
+                                 capacity, nullptr, nullptr);
+  };
+  const int bytes = toUtf8(nullptr, 0);
   std::string out(static_cast<std::size_t>(bytes > 0 ? bytes : 0), '\0');
-  ::WideCharToMultiByte(CP_UTF8, 0, wide.data(), sourceLength, out.data(), bytes, nullptr, nullptr);
+  toUtf8(out.data(), static_cast<int>(out.size()));
   return out;
 }
 
@@ -99,8 +104,7 @@ std::string requestedLanguage() {
   }
   if (!isLanguageTag(tag)) {
     std::cerr << "vox: requested language \"" << tag
-              << "\" (VOX_LANGUAGE) is not a language tag (ASCII letters, digits, \"-\"); "
-                 "using \""
+              << R"(" (VOX_LANGUAGE) is not a language tag (ASCII letters, digits, "-"); using ")"
               << DefaultLanguageTag << "\"\n";
     return std::string(DefaultLanguageTag);
   }
@@ -111,16 +115,17 @@ std::string requestedLanguage() {
 /// go to stderr here — the engine itself does no I/O.
 void reportVoiceOutcome(const vox::tts::VoiceSelectionRequest& request,
                         const vox::tts::SelectedVoice& voice) {
-  using vox::tts::primarySubtag;
-  using vox::tts::VoiceChoice;
-  if (!request.explicitVoice.empty() && voice.choice != VoiceChoice::ExplicitName) {
+  using enum vox::tts::VoiceChoice;
+  if (!request.explicitVoice.empty() && voice.choice != ExplicitName) {
     std::cerr << "vox: voice \"" << request.explicitVoice
               << "\" (VOX_VOICE) is not installed; using \"" << voice.name << "\"\n";
-  } else if (voice.choice == VoiceChoice::Fallback) {
+  } else if (voice.choice == Fallback) {
     std::cerr << "vox: no \"" << request.language << "\" voice is installed; using \"" << voice.name
               << "\"\n";
-  } else if (voice.choice == VoiceChoice::ExplicitName &&
-             voice.language != primarySubtag(request.language)) {
+    // Only warn about a real divergence: a known voice language that differs
+    // from the request (compared case-insensitively by primary subtag).
+  } else if (voice.choice == ExplicitName && !voice.language.empty() &&
+             !vox::tts::sameLanguage(voice.language, request.language)) {
     std::cerr << "vox: voice \"" << voice.name << "\" (VOX_VOICE) speaks \"" << voice.language
               << "\" while the requested language (VOX_LANGUAGE) is \"" << request.language
               << "\"; the explicit voice wins\n";

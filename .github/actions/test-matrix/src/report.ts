@@ -6,6 +6,7 @@
 
 import type { ParsedJob } from './junit.js';
 import { codeCell } from './render.js';
+import { errorMessage } from './util.js';
 
 export interface Inputs {
   mode: string;
@@ -56,18 +57,24 @@ function validInputs(inputs: Inputs, io: Io): boolean {
 
 /** Validate inputs, write the per-job Summary, and (on PRs) fold this job into the comment. */
 export async function run(inputs: Inputs, prNumber: number | undefined, io: Io): Promise<void> {
-  if (!validInputs(inputs, io)) return;
+  try {
+    if (!validInputs(inputs, io)) return;
 
-  const result = inputs.mode === 'report' ? io.readResults(inputs.reportPath) : null;
-  // Always write a per-job Summary in report mode — a "results unavailable" note when the
-  // JUnit is missing is clearer than an empty Summary.
-  if (inputs.mode === 'report') {
-    await io.writeSummary(result ? summaryMarkdown(inputs.job, result) : unavailableMarkdown(inputs.job));
-  }
+    const result = inputs.mode === 'report' ? io.readResults(inputs.reportPath) : null;
+    // Always write a per-job Summary in report mode — a "results unavailable" note when the
+    // JUnit is missing is clearer than an empty Summary.
+    if (inputs.mode === 'report') {
+      await io.writeSummary(result ? summaryMarkdown(inputs.job, result) : unavailableMarkdown(inputs.job));
+    }
 
-  if (prNumber === undefined) {
-    io.info('Not a pull_request event — skipping the PR comment.');
-    return;
+    if (prNumber === undefined) {
+      io.info('Not a pull_request event — skipping the PR comment.');
+      return;
+    }
+    await io.upsertComment(inputs.mode === 'init', inputs.job, prNumber, result);
+  } catch (err) {
+    // Last-resort guard so an unexpected adapter failure fails the step cleanly instead of an
+    // unhandled rejection. validInputs/upsertComment already handle their own expected paths.
+    io.fail(errorMessage(err));
   }
-  await io.upsertComment(inputs.mode === 'init', inputs.job, prNumber, result);
 }

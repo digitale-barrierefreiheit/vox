@@ -14,6 +14,10 @@ inputs:
     description: 'Column label for this job (report mode), e.g. x64, de-DE, asan.'
     required: false
     default: ''
+  jobs:
+    description: 'Comma-separated labels of every test job expected to report this run (init mode), e.g. x64,x86,de-DE,asan,tsan. The summary stays ⏳ until all of them have reported and shows ✅ only once they all pass.'
+    required: false
+    default: ''
   report-path:
     description: 'Path to this job''s JUnit XML file (report mode).'
     required: false

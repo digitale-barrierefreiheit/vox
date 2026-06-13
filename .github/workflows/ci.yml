@@ -55,6 +55,10 @@ jobs:
       - uses: ./.github/actions/test-matrix
         with:
           mode: init
+          # Every test job expected to report below. The summary stays ⏳ until all of these
+          # have reported and shows ✅ only once they all pass, so a partial run is never
+          # read as all-green. Keep in sync with the `report` jobs' `job:` labels.
+          jobs: x64,x86,de-DE,asan,tsan
 
   # ---------------------------------------------------------------------------
   # Shipping toolchain: MSVC, static CRT, 64-bit and 32-bit (R12 wire layout).
@@ -105,6 +109,10 @@ jobs:
           VOX_REQUIRE_AUDIO_DEVICE: "1"
           VOX_REQUIRE_UIA_TREE: "1" # the UIA provider integration test (#40)
         run: just test ${{ matrix.test_preset }}
+      # !cancelled() (not the implicit success()) so this still runs after a failed build/test
+      # step above — it then folds in this job's column, or records an "unavailable" (❌) one
+      # when no JUnit was produced, so a broken job can't leave the summary stuck ⏳ or green.
+      # Deliberately not always(): a cancelled run carries no result and should stay pending.
       - name: Report test results
         if: ${{ !cancelled() }}
         uses: ./.github/actions/test-matrix

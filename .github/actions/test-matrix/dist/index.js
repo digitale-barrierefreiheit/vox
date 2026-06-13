@@ -32797,14 +32797,16 @@ function applyReport(state, opts) {
         mergeUnavailable(state, opts.job);
     }
 }
-/** Parse the init step's comma-separated `jobs` input into the expected-job set, trimming
- *  spaces and dropping empties so a trailing comma or stray whitespace can't seed a blank
- *  label (which would then sit "pending" forever and never let the run go ✅). */
+/** Parse the init step's comma-separated `jobs` input into the expected-job set: trim spaces,
+ *  drop empties (so a trailing comma can't seed a blank label that sits pending forever), and
+ *  de-duplicate (a repeated label would otherwise inflate the X/Y denominator). */
 function parseExpectedJobs(csv) {
-    return csv
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
+    return [
+        ...new Set(csv
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)),
+    ];
 }
 const runMarker = (runId) => `<!-- vox-test-matrix run=${runId} -->`;
 const STATE_OPEN = '<!-- vox-test-matrix-state:';

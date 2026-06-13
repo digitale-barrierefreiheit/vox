@@ -145,10 +145,11 @@ test('parseState back-fills expectedJobs for a legacy comment, and round-trips a
   assert.deepEqual(parseState(renderComment('r', s))?.expectedJobs, ['x64', 'tsan']); // survives round-trip
 });
 
-test('parseExpectedJobs trims spaces and drops empties from the init input', () => {
+test('parseExpectedJobs trims, drops empties, and de-duplicates the init input', () => {
   assert.deepEqual(parseExpectedJobs('x64, x86 ,de-DE,asan,tsan'), ['x64', 'x86', 'de-DE', 'asan', 'tsan']);
   assert.deepEqual(parseExpectedJobs(''), []); // unseeded init (e.g. a non-PR run)
   assert.deepEqual(parseExpectedJobs(' , ,'), []); // stray commas/spaces seed no blank labels
+  assert.deepEqual(parseExpectedJobs('x64,x64, x86 ,x86'), ['x64', 'x86']); // a repeat can't inflate the denominator
 });
 
 test('parseState returns null when the decoded payload is not JSON', () => {

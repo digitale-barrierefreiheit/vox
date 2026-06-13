@@ -185,28 +185,31 @@ void Reader::workerLoop() {
     if (!speechEnabled_.load(std::memory_order_acquire)) {
       continue; // muted after this node was queued; drop it
     }
-    try {
-      const vox::output::Utterance utterance = output_.announce(node);
-      tts_.synthesize(utterance.text,
-                      [this](std::span<const std::byte> pcm) { audio_.write(pcm); });
-      // Natural end of the utterance: flush the resampler's group-delay tail so the
-      // final milliseconds play. Skip it once stop() has cleared running_ — the
-      // synthesize() above was cancelled for shutdown, and draining could back-
-      // pressure on a full ring, delaying teardown for audio stop() then discards.
-      // A barge-in's tail is still dropped by the sink's flush-generation guard.
-      bool stillRunning = false;
-      {
-        const std::scoped_lock lock(mutex_);
-        stillRunning = running_;
-      }
-      if (stillRunning) {
-        audio_.drain();
-      }
-      // A failed announcement (e.g. a SAPI error) must not escape the worker
-      // thread; drop this utterance and keep going.
-      // NOLINTNEXTLINE(bugprone-empty-catch)
-    } catch (...) {
+    speakUtterance(node);
+  }
+}
+
+void Reader::speakUtterance(const vox::model::AccessibleNode& node) {
+  try {
+    const vox::output::Utterance utterance = output_.announce(node);
+    tts_.synthesize(utterance.text, [this](std::span<const std::byte> pcm) { audio_.write(pcm); });
+    // Natural end of the utterance: flush the resampler's group-delay tail so the
+    // final milliseconds play. Skip it once stop() has cleared running_ — the
+    // synthesize() above was cancelled for shutdown, and draining could back-
+    // pressure on a full ring, delaying teardown for audio stop() then discards.
+    // A barge-in's tail is still dropped by the sink's flush-generation guard.
+    bool stillRunning = false;
+    {
+      const std::scoped_lock lock(mutex_);
+      stillRunning = running_;
     }
+    if (stillRunning) {
+      audio_.drain();
+    }
+    // A failed announcement (e.g. a SAPI error) must not escape the worker
+    // thread; drop this utterance and keep going.
+    // NOLINTNEXTLINE(bugprone-empty-catch)
+  } catch (...) {
   }
 }
 

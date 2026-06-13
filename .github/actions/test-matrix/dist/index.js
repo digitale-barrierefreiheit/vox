@@ -32646,10 +32646,7 @@ const io = {
     upsertComment: async (create, job, prNumber, result) => {
         // init seeds the expected-job set so the verdict knows when the run is complete; report
         // steps pass nothing here and inherit it from the comment's embedded state.
-        const expectedJobs = (_actions_core__WEBPACK_IMPORTED_MODULE_1__.getInput('jobs') || '')
-            .split(',')
-            .map((s) => s.trim())
-            .filter(Boolean);
+        const expectedJobs = (0,_render_js__WEBPACK_IMPORTED_MODULE_4__/* .parseExpectedJobs */ .E5)(_actions_core__WEBPACK_IMPORTED_MODULE_1__.getInput('jobs'));
         try {
             await (0,_comment_js__WEBPACK_IMPORTED_MODULE_5__/* .upsert */ .el)({
                 token: _actions_core__WEBPACK_IMPORTED_MODULE_1__.getInput('token') || process.env.GITHUB_TOKEN || '',
@@ -32745,6 +32742,7 @@ function parseJunit(xml) {
 
 /* harmony export */ __nccwpck_require__.d(__webpack_exports__, {
 /* harmony export */   Bu: () => (/* binding */ parseState),
+/* harmony export */   E5: () => (/* binding */ parseExpectedJobs),
 /* harmony export */   MZ: () => (/* binding */ codeCell),
 /* harmony export */   h8: () => (/* binding */ applyReport),
 /* harmony export */   p$: () => (/* binding */ emptyState),
@@ -32798,6 +32796,15 @@ function applyReport(state, opts) {
     else {
         mergeUnavailable(state, opts.job);
     }
+}
+/** Parse the init step's comma-separated `jobs` input into the expected-job set, trimming
+ *  spaces and dropping empties so a trailing comma or stray whitespace can't seed a blank
+ *  label (which would then sit "pending" forever and never let the run go ✅). */
+function parseExpectedJobs(csv) {
+    return csv
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
 }
 const runMarker = (runId) => `<!-- vox-test-matrix run=${runId} -->`;
 const STATE_OPEN = '<!-- vox-test-matrix-state:';
@@ -32896,6 +32903,9 @@ function renderStatusLine(state, totals) {
     const seeded = state.expectedJobs.length > 0;
     const total = seeded ? state.expectedJobs.length : reported;
     const done = total - pending.length;
+    // When seeded, the X/Y counts the *expected* set (done/total), so an unexpected or
+    // mislabelled job column doesn't make the header read like "0/5 jobs reported".
+    const noun = seeded ? 'expected jobs' : 'jobs';
     if (failed.length > 0) {
         const noResults = failed.filter((j) => state.jobs[j].u);
         const parts = [];
@@ -32903,13 +32913,13 @@ function renderStatusLine(state, totals) {
             parts.push(`**${totals.f} failed**`);
         if (noResults.length > 0)
             parts.push(`**${noResults.length} job(s) without results** (${noResults.map(cell).join(', ')})`);
-        return `❌ ${parts.join(', ')}, ${totals.p} passed, ${totals.s} skipped — ${done}/${total} jobs reported`;
+        return `❌ ${parts.join(', ')}, ${totals.p} passed, ${totals.s} skipped — ${done}/${total} ${noun} reported`;
     }
     if (reported === 0)
         return '⏳ Tests running… results appear as each job finishes.';
     if (pending.length > 0)
-        return `⏳ ${totals.p} passed, ${totals.s} skipped so far — ${done}/${total} jobs reported (waiting for ${pending.map(cell).join(', ')})`;
-    return `✅ **All ${totals.p} passed** (${totals.s} skipped) — ${total} jobs reported`;
+        return `⏳ ${totals.p} passed, ${totals.s} skipped so far — ${done}/${total} ${noun} reported (waiting for ${pending.map(cell).join(', ')})`;
+    return `✅ **All ${totals.p} passed** (${totals.s} skipped) — ${total} ${noun} reported`;
 }
 /** Render the whole comment body (marker + tables + embedded state). */
 function renderComment(runId, state) {

@@ -82,6 +82,16 @@ export function applyReport(
   }
 }
 
+/** Parse the init step's comma-separated `jobs` input into the expected-job set, trimming
+ *  spaces and dropping empties so a trailing comma or stray whitespace can't seed a blank
+ *  label (which would then sit "pending" forever and never let the run go ✅). */
+export function parseExpectedJobs(csv: string): string[] {
+  return csv
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 const runMarker = (runId: string): string => `<!-- vox-test-matrix run=${runId} -->`;
 const STATE_OPEN = '<!-- vox-test-matrix-state:';
 const STATE_CLOSE = '-->';
@@ -189,18 +199,21 @@ function renderStatusLine(state: MatrixState, totals: { p: number; f: number; s:
   const seeded = state.expectedJobs.length > 0;
   const total = seeded ? state.expectedJobs.length : reported;
   const done = total - pending.length;
+  // When seeded, the X/Y counts the *expected* set (done/total), so an unexpected or
+  // mislabelled job column doesn't make the header read like "0/5 jobs reported".
+  const noun = seeded ? 'expected jobs' : 'jobs';
 
   if (failed.length > 0) {
     const noResults = failed.filter((j) => state.jobs[j].u);
     const parts: string[] = [];
     if (totals.f > 0) parts.push(`**${totals.f} failed**`);
     if (noResults.length > 0) parts.push(`**${noResults.length} job(s) without results** (${noResults.map(cell).join(', ')})`);
-    return `❌ ${parts.join(', ')}, ${totals.p} passed, ${totals.s} skipped — ${done}/${total} jobs reported`;
+    return `❌ ${parts.join(', ')}, ${totals.p} passed, ${totals.s} skipped — ${done}/${total} ${noun} reported`;
   }
   if (reported === 0) return '⏳ Tests running… results appear as each job finishes.';
   if (pending.length > 0)
-    return `⏳ ${totals.p} passed, ${totals.s} skipped so far — ${done}/${total} jobs reported (waiting for ${pending.map(cell).join(', ')})`;
-  return `✅ **All ${totals.p} passed** (${totals.s} skipped) — ${total} jobs reported`;
+    return `⏳ ${totals.p} passed, ${totals.s} skipped so far — ${done}/${total} ${noun} reported (waiting for ${pending.map(cell).join(', ')})`;
+  return `✅ **All ${totals.p} passed** (${totals.s} skipped) — ${total} ${noun} reported`;
 }
 
 /** Render the whole comment body (marker + tables + embedded state). */

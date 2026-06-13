@@ -109,6 +109,10 @@ jobs:
           VOX_REQUIRE_AUDIO_DEVICE: "1"
           VOX_REQUIRE_UIA_TREE: "1" # the UIA provider integration test (#40)
         run: just test ${{ matrix.test_preset }}
+      # !cancelled() (not the implicit success()) so this still runs after a failed build/test
+      # step above — it then folds in this job's column, or records an "unavailable" (❌) one
+      # when no JUnit was produced, so a broken job can't leave the summary stuck ⏳ or green.
+      # Deliberately not always(): a cancelled run carries no result and should stay pending.
       - name: Report test results
         if: ${{ !cancelled() }}
         uses: ./.github/actions/test-matrix

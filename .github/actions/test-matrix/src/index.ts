@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import * as core from '@actions/core';
 import * as github from '@actions/github';
 import { parseJunit } from './junit.js';
-import { applyReport } from './render.js';
+import { applyReport, parseExpectedJobs } from './render.js';
 import { upsert } from './comment.js';
 import { run, type Io } from './report.js';
 
@@ -27,10 +27,7 @@ const io: Io = {
   upsertComment: async (create, job, prNumber, result) => {
     // init seeds the expected-job set so the verdict knows when the run is complete; report
     // steps pass nothing here and inherit it from the comment's embedded state.
-    const expectedJobs = (core.getInput('jobs') || '')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const expectedJobs = parseExpectedJobs(core.getInput('jobs'));
     try {
       await upsert({
         token: core.getInput('token') || process.env.GITHUB_TOKEN || '',

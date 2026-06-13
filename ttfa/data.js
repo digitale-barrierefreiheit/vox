@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781306181491,
+  "lastUpdate": 1781347271256,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -178,6 +178,35 @@ window.BENCHMARK_DATA = {
           "url": "https://github.com/digitale-barrierefreiheit/vox/commit/4861c7f3148f2cfba39b855b8702bf9d0ae72c7d"
         },
         "date": 1781306181016,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.7,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ba9bf0a5be9fe82b7ecc21d7b8c2b4fbf594f608",
+          "message": "feat(tts+app): couple voice and lexicon language via VOX_LANGUAGE, with per-part overrides (#88)\n\nfeat(tts+app): couple voice and lexicon language via VOX_LANGUAGE, with per-part overrides (#88)\n\nOne requested language (VOX_LANGUAGE, BCP-47 tag, default de) drives both\nthe TTS voice and the announcement lexicon. Voice selection is now\nrequest-driven: VoiceDescriptor/SelectedVoice carry a language tag (SAPI\nLANGID mapped to a BCP-47 primary subtag) instead of an isGerman flag,\nand selectVoice prefers a primary-subtag match, keeps the unchanged\nfallback chain, and records provenance for the app to report.\n\nPer-part overrides win over VOX_LANGUAGE: VOX_VOICE selects a named voice\n(missing name goes straight to the fallback), and VOX_LEXICON's declared\nlanguage stands even against a diverging VOX_LANGUAGE (a warning, not a\nrejection). Fallbacks are untouched; every fallback or divergence is\nreported on stderr by the app, while the tts and lexicon modules expose\noutcomes and do no I/O.\n\nHardened across review: case-insensitive primary-subtag matching on both\nthe voice and lexicon sides, utf8FromWide shrinks to the bytes actually\nwritten, voiceless voices are labelled by id, and isLanguageTag validates\nthe BCP-47 tag shape rather than just its character set.",
+          "timestamp": "2026-06-13T12:24:20+02:00",
+          "tree_id": "756e5fce6212de1fa8c79d404d356d16942fbe8b",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/ba9bf0a5be9fe82b7ecc21d7b8c2b4fbf594f608"
+        },
+        "date": 1781347270804,
         "tool": "customSmallerIsBetter",
         "benches": [
           {

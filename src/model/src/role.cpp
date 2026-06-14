@@ -3,37 +3,33 @@
 
 /// @file
 /// @brief Implementation of vox::model::toString(Role).
+#include <array>
+#include <cstddef>
 #include <string_view>
+#include <utility>
 
 #include <vox/model/role.hpp>
 
 namespace vox::model {
 
+namespace {
+
+// Diagnostic name per Role, indexed by the enum's underlying value. Role values
+// are contiguous from Unknown == 0, so the cast indexes directly. Keep this in
+// the same order as the enum; an out-of-range value falls back to "Unknown".
+constexpr std::array<std::string_view, 10> RoleNames{
+    "Unknown",  "Button",   "Checkbox", "RadioButton", "Edit",
+    "Combobox", "ListItem", "MenuItem", "Link",        "StaticText",
+};
+
+} // namespace
+
 std::string_view toString(Role role) noexcept {
-  using enum Role;
-  switch (role) {
-  case Unknown:
+  const auto index = static_cast<std::size_t>(std::to_underlying(role));
+  if (index >= RoleNames.size()) {
     return "Unknown";
-  case Button:
-    return "Button";
-  case Checkbox:
-    return "Checkbox";
-  case RadioButton:
-    return "RadioButton";
-  case Edit:
-    return "Edit";
-  case Combobox:
-    return "Combobox";
-  case ListItem:
-    return "ListItem";
-  case MenuItem:
-    return "MenuItem";
-  case Link:
-    return "Link";
-  case StaticText:
-    return "StaticText";
   }
-  return "Unknown";
+  return RoleNames.at(index);
 }
 
 } // namespace vox::model

@@ -86,7 +86,7 @@ TEST(KeyboardHookProcessKey, ConsumesAndRemembersAReaderControlKey) {
   std::array<bool, 256> consumed{};
   RecordingHandler handler;
   const CommandMap map;
-  EXPECT_EQ(processKey(true, VkQ, quitChord(true), consumed, map, handler), HookAction::Consume);
+  EXPECT_EQ(processKey(quitChord(true), consumed, map, handler), HookAction::Consume);
   EXPECT_TRUE(consumed[VkQ]);
   ASSERT_EQ(handler.commands.size(), 1U);
   EXPECT_EQ(handler.commands.front(), Command::Quit);
@@ -97,7 +97,7 @@ TEST(KeyboardHookProcessKey, SwallowsAutoRepeatOfAConsumedKeyWithoutReRouting) {
   consumed[VkQ] = true; // its key-down was already consumed
   RecordingHandler handler;
   const CommandMap map;
-  EXPECT_EQ(processKey(true, VkQ, quitChord(true), consumed, map, handler), HookAction::Consume);
+  EXPECT_EQ(processKey(quitChord(true), consumed, map, handler), HookAction::Consume);
   EXPECT_TRUE(handler.commands.empty()); // not routed again
 }
 
@@ -106,7 +106,7 @@ TEST(KeyboardHookProcessKey, SwallowsAndClearsTheKeyUpOfAConsumedKey) {
   consumed[VkQ] = true;
   RecordingHandler handler;
   const CommandMap map;
-  EXPECT_EQ(processKey(false, VkQ, quitChord(false), consumed, map, handler), HookAction::Consume);
+  EXPECT_EQ(processKey(quitChord(false), consumed, map, handler), HookAction::Consume);
   EXPECT_FALSE(consumed[VkQ]);
 }
 
@@ -114,8 +114,7 @@ TEST(KeyboardHookProcessKey, PassesThroughTheKeyUpOfAnUnconsumedKey) {
   std::array<bool, 256> consumed{};
   RecordingHandler handler;
   const CommandMap map;
-  EXPECT_EQ(processKey(false, VkQ, quitChord(false), consumed, map, handler),
-            HookAction::PassThrough);
+  EXPECT_EQ(processKey(quitChord(false), consumed, map, handler), HookAction::PassThrough);
 }
 
 TEST(KeyboardHookProcessKey, RoutesButPassesThroughNavigationKeys) {
@@ -123,7 +122,7 @@ TEST(KeyboardHookProcessKey, RoutesButPassesThroughNavigationKeys) {
   RecordingHandler handler;
   const CommandMap map;
   const KeyEvent tab{.virtualKey = VkTab, .modifiers = {}, .pressed = true, .injected = false};
-  EXPECT_EQ(processKey(true, VkTab, tab, consumed, map, handler), HookAction::PassThrough);
+  EXPECT_EQ(processKey(tab, consumed, map, handler), HookAction::PassThrough);
   EXPECT_FALSE(consumed[VkTab]); // navigation is not swallowed
   ASSERT_EQ(handler.commands.size(), 1U);
   EXPECT_EQ(handler.commands.front(), Command::NavigateNext);
@@ -134,7 +133,7 @@ TEST(KeyboardHookProcessKey, PassesThroughUnboundKeysWithoutRouting) {
   RecordingHandler handler;
   const CommandMap map;
   const KeyEvent letter{.virtualKey = VkA, .modifiers = {}, .pressed = true, .injected = false};
-  EXPECT_EQ(processKey(true, VkA, letter, consumed, map, handler), HookAction::PassThrough);
+  EXPECT_EQ(processKey(letter, consumed, map, handler), HookAction::PassThrough);
   EXPECT_TRUE(handler.commands.empty());
 }
 
@@ -142,8 +141,7 @@ TEST(KeyboardHookProcessKey, AThrowingHandlerDoesNotConsume) {
   std::array<bool, 256> consumed{};
   ThrowingHandler handler;
   const CommandMap map;
-  EXPECT_EQ(processKey(true, VkQ, quitChord(true), consumed, map, handler),
-            HookAction::PassThrough);
+  EXPECT_EQ(processKey(quitChord(true), consumed, map, handler), HookAction::PassThrough);
   EXPECT_FALSE(consumed[VkQ]);
 }
 

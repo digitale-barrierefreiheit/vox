@@ -103,6 +103,50 @@ constexpr std::size_t MinBufferPeriods = 4;
 /// How long the render thread waits on the audio event before re-checking stop.
 constexpr DWORD RenderWaitMs = 200;
 
+/// Test seam (issue #68): when installed, replaces the render thread's event wait
+/// and returns the wait result (e.g. WAIT_OBJECT_0 or WAIT_TIMEOUT), so the loop's
+/// timeout branch is exercised deterministically with no real wait. Empty in
+/// production, where the real WaitForSingleObject runs.
+std::function<DWORD()>& renderWaitFn() {
+  static std::function<DWORD()> fn;
+  return fn;
+}
+
+/// Waits for the audio event up to @ref RenderWaitMs — via the test seam when one
+/// is installed, otherwise the real WaitForSingleObject.
+DWORD renderWait(HANDLE event) {
+  if (const auto& waitFn = renderWaitFn()) {
+    return waitFn();
+  }
+  return ::WaitForSingleObject(event, RenderWaitMs);
+}
+
+/// RAII for the render thread's MMCSS registration: requests "Pro Audio"
+/// real-time scheduling on construction (best-effort — a null handle means MMCSS
+/// was unavailable, and we still render) and reverts it on destruction. Keeping
+/// the register/revert pair in one object lets renderLoop() read as just its loop.
+class MmcssTask {
+public:
+  MmcssTask() {
+    DWORD taskIndex = 0;
+    handle_ = ::AvSetMmThreadCharacteristicsW(L"Pro Audio", &taskIndex);
+  }
+
+  ~MmcssTask() {
+    if (handle_ != nullptr) {
+      ::AvRevertMmThreadCharacteristics(handle_);
+    }
+  }
+
+  MmcssTask(const MmcssTask&) = delete;
+  MmcssTask& operator=(const MmcssTask&) = delete;
+  MmcssTask(MmcssTask&&) = delete;
+  MmcssTask& operator=(MmcssTask&&) = delete;
+
+private:
+  HANDLE handle_{nullptr};
+};
+
 /// RAII for the COM apartment: CoUninitialize iff this object initialized it.
 /// (Mirrors the one in the SAPI backend; each OS-glue TU stays self-contained.)
 class ComApartment {
@@ -167,6 +211,10 @@ SampleFormat detectSampleFormat(const WAVEFORMATEX& format) {
 namespace testing {
 void setEnumeratorFactory(EnumeratorFactory factory) {
   enumeratorFactory() = std::move(factory);
+}
+
+void setRenderWaitFn(RenderWaitFn waitFn) {
+  renderWaitFn() = std::move(waitFn);
 }
 } // namespace testing
 
@@ -438,35 +486,35 @@ private:
   void renderLoop() {
     // The render thread issues WASAPI COM calls, and COM must be initialized
     // per-thread. The interfaces were created on the MTA, so this thread joins
-    // the MTA too (no marshaling needed).
+    // the MTA too (no marshaling needed). MMCSS gives it real-time scheduling
+    // (avoids priority inversion, ADR-10); both are released when this returns.
     const ComApartment renderThreadCom;
-
-    // Real-time scheduling for the render thread (avoids priority inversion,
-    // ADR-10). Best-effort: if MMCSS is unavailable we still render.
-    DWORD taskIndex = 0;
-    HANDLE mmcss = ::AvSetMmThreadCharacteristicsW(L"Pro Audio", &taskIndex);
+    const MmcssTask mmcss;
 
     while (!stopRequested_.load(std::memory_order_acquire)) {
-      const DWORD waited = ::WaitForSingleObject(audioEvent_, RenderWaitMs);
-      if (stopRequested_.load(std::memory_order_acquire)) {
-        break;
-      }
-      if (waited != WAIT_OBJECT_0) {
-        continue; // timed out — loop back and re-check the stop flag
-      }
-      if (flushRequested_.load(std::memory_order_acquire) && !serviceFlush()) {
-        // The stream is wedged; set stop so the loop exits on the next check,
-        // skipping renderAvailable() on it. The flush flag is already cleared, so
-        // a blocked producer (which also checks stopRequested_) is released.
-        stopRequested_.store(true, std::memory_order_release);
-        continue;
-      }
-      renderAvailable();
+      renderTick();
     }
+  }
 
-    if (mmcss != nullptr) {
-      ::AvRevertMmThreadCharacteristics(mmcss);
+  /// One render-thread iteration: wait for the device event (or a stop), then
+  /// service a pending flush and render whatever the ring holds. Sets the stop
+  /// flag itself when the stream wedges, so the loop is a bare stop-flag check.
+  void renderTick() {
+    const DWORD waited = renderWait(audioEvent_);
+    if (stopRequested_.load(std::memory_order_acquire)) {
+      return;
     }
+    if (waited != WAIT_OBJECT_0) {
+      return; // timed out — loop back and re-check the stop flag
+    }
+    if (flushRequested_.load(std::memory_order_acquire) && !serviceFlush()) {
+      // The stream is wedged; set stop so the loop exits on the next check,
+      // skipping renderAvailable() on it. The flush flag is already cleared, so
+      // a blocked producer (which also checks stopRequested_) is released.
+      stopRequested_.store(true, std::memory_order_release);
+      return;
+    }
+    renderAvailable();
   }
 
   /// Services a pending flush: stop the stream, drop buffered audio, restart.

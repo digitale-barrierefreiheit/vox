@@ -72,6 +72,9 @@ public:
 private:
   /// Builds the polyphase windowed-sinc kernel for the source→target ratio.
   void buildKernel();
+  /// Fills phase row @p phase of the polyphase table with unnormalized taps,
+  /// returning the row's summed DC gain (for normalizeRow()).
+  [[nodiscard]] double fillPhaseRow(std::span<float> row, std::size_t phase) const;
   /// Pushes one source sample into the history ring (newest-overwrites-oldest).
   void pushSample(float sample) noexcept;
   /// Reads the source sample @p back positions before the newest (0 == newest).

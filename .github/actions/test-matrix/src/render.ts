@@ -189,10 +189,22 @@ export const codeCell = (s: string): string => {
   return `${fence}${pad}${safe}${pad}${fence}`;
 };
 
-/** The one-line headline. ✅ is reserved for a fully-reported, all-passed run: every expected
- *  job has reported and none failed. ❌ the moment any job fails or comes back without results.
- *  ⏳ while still waiting on expected jobs — so a partial run is never shown as all-green. */
-function renderStatusLine(state: MatrixState, totals: { p: number; f: number; s: number }): string {
+type Totals = { p: number; f: number; s: number };
+
+/** The job sets and X/Y denominator the headline is built from. `failed` is any job that
+ *  failed or came back without results; `pending` is every *expected* job yet to report
+ *  (set-based, so an unexpected job can't stand in for a missing one); `done`/`total`/`noun`
+ *  describe the reported-vs-expected progress (falling back to the live count when unseeded). */
+interface StatusFacts {
+  failed: string[];
+  pending: string[];
+  reported: number;
+  done: number;
+  total: number;
+  noun: string;
+}
+
+function statusFacts(state: MatrixState): StatusFacts {
   const reported = state.jobOrder.length;
   const failed = state.jobOrder.filter((j) => state.jobs[j].f > 0 || state.jobs[j].u);
   // The gate is set-based: every *expected* job must have reported. A count alone would pass
@@ -206,34 +218,52 @@ function renderStatusLine(state: MatrixState, totals: { p: number; f: number; s:
   // When seeded, the X/Y counts the *expected* set (done/total), so an unexpected or
   // mislabelled job column doesn't make the header read like "0/5 jobs reported".
   const noun = seeded ? 'expected jobs' : 'jobs';
-
-  if (failed.length > 0) {
-    const noResults = failed.filter((j) => state.jobs[j].u);
-    const parts: string[] = [];
-    if (totals.f > 0) parts.push(`**${totals.f} failed**`);
-    if (noResults.length > 0) parts.push(`**${noResults.length} job(s) without results** (${noResults.map(cell).join(', ')})`);
-    return `❌ ${parts.join(', ')}, ${totals.p} passed, ${totals.s} skipped — ${done}/${total} ${noun} reported`;
-  }
-  if (reported === 0) return '⏳ Tests running… results appear as each job finishes.';
-  if (pending.length > 0)
-    return `⏳ ${totals.p} passed, ${totals.s} skipped so far — ${done}/${total} ${noun} reported (waiting for ${pending.map(cell).join(', ')})`;
-  return `✅ **All ${totals.p} passed** (${totals.s} skipped) — ${total} ${noun} reported`;
+  return { failed, pending, reported, done, total, noun };
 }
 
-/** Render the whole comment body (marker + tables + embedded state). */
-export function renderComment(runId: string, state: MatrixState): string {
-  const jobs = state.jobOrder;
-  const totals = jobs.reduce(
+/** ❌: list the failure(s) — count of failed tests and/or jobs that published no results. */
+function failureLine(state: MatrixState, totals: Totals, facts: StatusFacts): string {
+  const noResults = facts.failed.filter((j) => state.jobs[j].u);
+  const parts: string[] = [];
+  if (totals.f > 0) parts.push(`**${totals.f} failed**`);
+  if (noResults.length > 0) parts.push(`**${noResults.length} job(s) without results** (${noResults.map(cell).join(', ')})`);
+  return `❌ ${parts.join(', ')}, ${totals.p} passed, ${totals.s} skipped — ${facts.done}/${facts.total} ${facts.noun} reported`;
+}
+
+/** ⏳: passed/skipped so far, with the still-awaited jobs named. */
+function pendingLine(totals: Totals, facts: StatusFacts): string {
+  return `⏳ ${totals.p} passed, ${totals.s} skipped so far — ${facts.done}/${facts.total} ${facts.noun} reported (waiting for ${facts.pending.map(cell).join(', ')})`;
+}
+
+/** ✅: a fully-reported, all-passed run. */
+function successLine(totals: Totals, facts: StatusFacts): string {
+  return `✅ **All ${totals.p} passed** (${totals.s} skipped) — ${facts.total} ${facts.noun} reported`;
+}
+
+/** The one-line headline. ✅ is reserved for a fully-reported, all-passed run: every expected
+ *  job has reported and none failed. ❌ the moment any job fails or comes back without results.
+ *  ⏳ while still waiting on expected jobs — so a partial run is never shown as all-green. */
+function renderStatusLine(state: MatrixState, totals: Totals): string {
+  const facts = statusFacts(state);
+  if (facts.failed.length > 0) return failureLine(state, totals, facts);
+  if (facts.reported === 0) return '⏳ Tests running… results appear as each job finishes.';
+  if (facts.pending.length > 0) return pendingLine(totals, facts);
+  return successLine(totals, facts);
+}
+
+/** Sum the per-job pass/fail/skip counts the headline and run verdict are built from. */
+function computeTotals(state: MatrixState, jobs: string[]): Totals {
+  return jobs.reduce(
     (a, j) => {
       const c = state.jobs[j];
       return { p: a.p + c.p, f: a.f + c.f, s: a.s + c.s };
     },
     { p: 0, f: 0, s: 0 },
   );
+}
 
-  const header = `### 🧪 Test results — run [#${state.runNumber}](${state.runUrl}) \`${state.commit}\``;
-  const statusLine = renderStatusLine(state, totals);
-
+/** Per-job ✅/❌/⏭️/total tallies; a job that published no JUnit shows ⚠️ "no results". */
+function renderSummaryTable(state: MatrixState, jobs: string[]): string {
   let summary = '| Job | ✅ | ❌ | ⏭️ | Total |\n|---|--:|--:|--:|--:|\n';
   for (const j of jobs) {
     const c = state.jobs[j];
@@ -241,23 +271,45 @@ export function renderComment(runId: string, state: MatrixState): string {
       ? `| ${cell(j)} | — | ⚠️ | — | no results |\n`
       : `| ${cell(j)} | ${c.p} | ${c.f} | ${c.s} | ${c.p + c.f + c.s} |\n`;
   }
+  return summary;
+}
 
-  const colHead = `| Test | ${jobs.map(cell).join(' | ')} |\n|---|${jobs.map(() => ':-:').join('|')}|`;
-  const row = (i: number): string =>
-    `| ${codeCell(state.testNames[i])} | ${jobs.map((j) => ICON[codeAt(state.jobs[j], i)]).join(' | ')} |`;
+/** Header row + alignment for a test × jobs grid (shared by the failures and full tables). */
+const matrixHead = (jobs: string[]): string =>
+  `| Test | ${jobs.map(cell).join(' | ')} |\n|---|${jobs.map(() => ':-:').join('|')}|`;
 
+/** One grid row: the test name as a code span, then each job's status icon for that test. */
+const matrixRow = (state: MatrixState, jobs: string[], i: number): string =>
+  `| ${codeCell(state.testNames[i])} | ${jobs.map((j) => ICON[codeAt(state.jobs[j], i)]).join(' | ')} |`;
+
+/** The ❌ Failed tests grid, limited to tests failing in some job; '' when none failed. */
+function renderFailuresTable(state: MatrixState, jobs: string[]): string {
   const failedIdx = state.testNames
     .map((_, i) => i)
     .filter((i) => jobs.some((j) => codeAt(state.jobs[j], i) === 'F'));
-  const failures =
-    failedIdx.length > 0 ? `\n#### ❌ Failed tests\n${colHead}\n${failedIdx.map(row).join('\n')}\n` : '';
+  if (failedIdx.length === 0) return '';
+  const rows = failedIdx.map((i) => matrixRow(state, jobs, i)).join('\n');
+  return `\n#### ❌ Failed tests\n${matrixHead(jobs)}\n${rows}\n`;
+}
 
-  const full =
-    state.testNames.length > 0
-      ? `\n<details><summary>Full test matrix (${state.testNames.length} tests × ${jobs.length} jobs)</summary>\n\n${colHead}\n${state.testNames
-          .map((_, i) => row(i))
-          .join('\n')}\n\n</details>\n`
-      : '';
+/** The collapsible full test × jobs grid; '' when there are no tests to show. */
+function renderFullMatrix(state: MatrixState, jobs: string[]): string {
+  if (state.testNames.length === 0) return '';
+  const rows = state.testNames.map((_, i) => matrixRow(state, jobs, i)).join('\n');
+  return `\n<details><summary>Full test matrix (${state.testNames.length} tests × ${jobs.length} jobs)</summary>\n\n${matrixHead(jobs)}\n${rows}\n\n</details>\n`;
+}
+
+/** Render the whole comment body (marker + tables + embedded state). */
+export function renderComment(runId: string, state: MatrixState): string {
+  const jobs = state.jobOrder;
+  const totals = computeTotals(state, jobs);
+
+  const header = `### 🧪 Test results — run [#${state.runNumber}](${state.runUrl}) \`${state.commit}\``;
+  const statusLine = renderStatusLine(state, totals);
+
+  const summary = renderSummaryTable(state, jobs);
+  const failures = renderFailuresTable(state, jobs);
+  const full = renderFullMatrix(state, jobs);
 
   return [
     runMarker(runId),

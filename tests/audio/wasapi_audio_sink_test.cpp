@@ -97,6 +97,7 @@ protected:
 
   void TearDown() override {
     vox::audio::testing::setEnumeratorFactory({});
+    vox::audio::testing::setRenderWaitFn({});
   }
 
   /// Default behaviours for the whole chain — overridden per-test to inject one
@@ -247,6 +248,28 @@ TEST_F(WasapiAcquisitionTest, StartsAndStopsCleanlyOnTheHappyPath) {
   // stop() joins it without throwing — covering acquireDevice's success branch.
   WasapiAudioSink sink(AudioFormat{22050, 16, 1});
   EXPECT_NO_THROW(sink.start());
+  EXPECT_NO_THROW(sink.stop());
+}
+
+TEST_F(WasapiAcquisitionTest, RenderThreadSurvivesAWaitTimeout) {
+  // Drive the render thread's event wait through the seam: report WAIT_TIMEOUT
+  // once (the idle "timed out, loop back" branch), then WAIT_OBJECT_0 so the
+  // thread renders normally instead of spinning. Block on a promise the seam
+  // fulfils, so this is deterministic — no real 200 ms wait and no sleep.
+  auto timedOut = std::make_shared<std::promise<void>>();
+  std::future<void> timeoutHappened = timedOut->get_future();
+  auto fired = std::make_shared<std::atomic<bool>>(false);
+  vox::audio::testing::setRenderWaitFn([timedOut, fired]() -> unsigned long {
+    if (!fired->exchange(true)) {
+      timedOut->set_value();
+      return WAIT_TIMEOUT; // the timeout branch under test
+    }
+    return WAIT_OBJECT_0;
+  });
+
+  WasapiAudioSink sink(AudioFormat{22050, 16, 1});
+  ASSERT_NO_THROW(sink.start());
+  ASSERT_EQ(timeoutHappened.wait_for(WaitTimeout), std::future_status::ready);
   EXPECT_NO_THROW(sink.stop());
 }
 

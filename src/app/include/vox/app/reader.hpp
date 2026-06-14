@@ -81,9 +81,23 @@ public:
   void onCommand(vox::input::Command command) override;
 
 private:
+  /// @brief Marks the worker loop as running (sets the flag under the lock).
+  void markRunning();
+  /// @brief Re-attaches the lifetime-long focus guard to this Reader under its lock.
+  void attachFocusGuard();
+  /// @brief Subscribes the provider's focus callback, routed through the guard.
+  void subscribeToFocusChanges();
+  /// @brief Announces the already-focused element, if any, so a launch speaks now.
+  void announceInitialFocus();
   void onFocusChanged(const vox::model::AccessibleNode& node);
   void bargeIn();
   void workerLoop();
+  /// @brief Blocks until a node is pending or the worker is told to stop, then
+  ///        takes the pending node. Returns nullopt on a stop request or a
+  ///        spurious wake-up (the caller re-checks the running flag).
+  std::optional<vox::model::AccessibleNode> waitForNextNode();
+  /// @brief True while the worker loop should keep running (reads under the lock).
+  bool isRunning();
   /// @brief Announces, synthesizes, and (unless stop() has begun) drains one node.
   ///        Swallows any synthesis failure so the worker loop keeps running.
   void speakUtterance(const vox::model::AccessibleNode& node);

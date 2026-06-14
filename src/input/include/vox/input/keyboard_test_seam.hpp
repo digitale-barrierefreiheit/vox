@@ -19,7 +19,6 @@
 #if defined(_WIN32)
 
 #  include <array>
-#  include <cstddef>
 #  include <cstdint>
 #  include <functional>
 
@@ -41,12 +40,11 @@ namespace detail {
 ///        callback so it is testable with no real hook.
 ///
 /// On key-down it routes @p event through @p map / @p handler; a consumed key is
-/// remembered in @p consumed (indexed by @p vk) so its auto-repeat and key-up are
-/// also swallowed. On key-up it consumes iff the matching key-down was consumed.
-/// @param pressed  True for key-down/sys-key-down, false for key-up.
-/// @param vk       The virtual-key code, masked to [0, 255].
-HookAction processKey(bool pressed, std::size_t vk, const KeyEvent& event,
-                      std::array<bool, 256>& consumed, const CommandMap& map,
+/// remembered in @p consumed (indexed by the virtual-key code masked to
+/// [0, 255]) so its auto-repeat and key-up are also swallowed. On key-up it
+/// consumes iff the matching key-down was consumed. The press/key-up distinction
+/// is taken from @p event.pressed.
+HookAction processKey(const KeyEvent& event, std::array<bool, 256>& consumed, const CommandMap& map,
                       ICommandHandler& handler);
 
 /// The decoded fields of one WH_KEYBOARD_LL event, bundled so the dispatch entry

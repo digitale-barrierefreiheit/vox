@@ -3,6 +3,7 @@
 
 /// @file
 /// @brief Implementation of vox::output::OutputManager.
+#include <array>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -33,34 +34,71 @@ void appendWord(std::vector<std::string>& parts, std::string_view word) {
   }
 }
 
-/// Appends the German state words for @p node, in announcement order.
-void appendStates(std::vector<std::string>& parts, const AccessibleNode& node,
-                  const Lexicon& lexicon) {
-  const vox::model::StateSet& states = node.states;
+/// Whether @p role announces a toggle (checked/unchecked/mixed) at all.
+bool isCheckableRole(Role role) {
+  return role == Role::Checkbox || role == Role::RadioButton;
+}
 
-  // Toggle state is only meaningful for, and only announced on, checkable roles.
-  if (node.role == Role::Checkbox || node.role == Role::RadioButton) {
-    StateConcept toggle = StateConcept::Unchecked;
-    if (states.test(State::Mixed)) {
-      toggle = StateConcept::Mixed;
-    } else if (states.test(State::Checked)) {
-      toggle = StateConcept::Checked;
-    }
-    appendWord(parts, lexicon.state(toggle));
+/// The toggle concept a checkable control is in (mixed wins over checked).
+StateConcept toggleConcept(const vox::model::StateSet& states) {
+  if (states.test(State::Mixed)) {
+    return StateConcept::Mixed;
   }
+  if (states.test(State::Checked)) {
+    return StateConcept::Checked;
+  }
+  return StateConcept::Unchecked;
+}
+
+/// Appends the toggle word for a checkable role; nothing for other roles.
+void appendToggle(std::vector<std::string>& parts, const AccessibleNode& node,
+                  const Lexicon& lexicon) {
+  if (isCheckableRole(node.role)) {
+    appendWord(parts, lexicon.state(toggleConcept(node.states)));
+  }
+}
+
+/// Appends expanded/collapsed for an expandable control; nothing otherwise.
+void appendExpansion(std::vector<std::string>& parts, const vox::model::StateSet& states,
+                     const Lexicon& lexicon) {
   if (states.test(State::Expandable)) {
     appendWord(parts, lexicon.state(states.test(State::Expanded) ? StateConcept::Expanded
                                                                  : StateConcept::Collapsed));
   }
-  if (states.test(State::Selected)) {
-    appendWord(parts, lexicon.state(StateConcept::Selected));
+}
+
+/// A control state announced verbatim when its flag is present, in table order.
+struct FlagWord {
+  State flag;
+  StateConcept stateConcept;
+};
+
+/// Plain "flag present → word" states, in announcement order (selected, then
+/// read-only, then disabled). Toggle and expansion are conditional and handled
+/// separately above.
+constexpr std::array<FlagWord, 3> FlagWords{{
+    {.flag = State::Selected, .stateConcept = StateConcept::Selected},
+    {.flag = State::ReadOnly, .stateConcept = StateConcept::ReadOnly},
+    {.flag = State::Disabled, .stateConcept = StateConcept::Disabled},
+}};
+
+/// Appends the @ref FlagWords whose flags are present, preserving table order.
+void appendFlagWords(std::vector<std::string>& parts, const vox::model::StateSet& states,
+                     const Lexicon& lexicon) {
+  for (const FlagWord& entry : FlagWords) {
+    if (states.test(entry.flag)) {
+      appendWord(parts, lexicon.state(entry.stateConcept));
+    }
   }
-  if (states.test(State::ReadOnly)) {
-    appendWord(parts, lexicon.state(StateConcept::ReadOnly));
-  }
-  if (states.test(State::Disabled)) {
-    appendWord(parts, lexicon.state(StateConcept::Disabled));
-  }
+}
+
+/// Appends the German state words for @p node, in announcement order.
+void appendStates(std::vector<std::string>& parts, const AccessibleNode& node,
+                  const Lexicon& lexicon) {
+  // Toggle state is only meaningful for, and only announced on, checkable roles.
+  appendToggle(parts, node, lexicon);
+  appendExpansion(parts, node.states, lexicon);
+  appendFlagWords(parts, node.states, lexicon);
 }
 
 /// Joins @p parts with ", ".

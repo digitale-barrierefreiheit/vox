@@ -43,35 +43,49 @@ void Reader::start() {
   audio_.start(); // may throw (no device): nothing spawned yet, so nothing to undo
   started_ = true;
   try {
-    {
-      const std::scoped_lock lock(mutex_);
-      running_ = true;
-    }
+    markRunning();
     worker_ = std::jthread([this] { workerLoop(); });
-    // Route the focus callback through a shared guard so it stays safe even if
-    // a provider invokes it after this Reader is destroyed. Since #60 a
-    // stopped provider swallows new events; the guard drops the invocation
-    // possibly still in flight across a stop — and anything a misbehaving
-    // provider might deliver.
-    {
-      // Re-attach the single, lifetime-long guard (created in the constructor)
-      // under its lock, reusing it across stop()/start() cycles.
-      const std::scoped_lock lock(guard_->mutex);
-      guard_->reader = this;
-    }
-    provider_.start([guard = guard_](const vox::model::AccessibleNode& node) {
-      const std::scoped_lock lock(guard->mutex);
-      if (guard->reader != nullptr) {
-        guard->reader->onFocusChanged(node);
-      }
-    });
-    // Announce whatever already has focus, so launching over a dialog speaks now.
-    if (const std::optional<vox::model::AccessibleNode> focused = provider_.focusedElement()) {
-      onFocusChanged(*focused);
-    }
+    attachFocusGuard();
+    subscribeToFocusChanges();
+    announceInitialFocus();
   } catch (...) {
     stop(); // release the worker/provider/audio we partially brought up
     throw;
+    // The closing brace below is an unreachable scope-exit after the rethrow, which
+    // OpenCppCoverage reports uncovered by design (issue #121); exclude just it.
+  } // LCOV_EXCL_LINE
+}
+
+void Reader::markRunning() {
+  const std::scoped_lock lock(mutex_);
+  running_ = true;
+}
+
+void Reader::attachFocusGuard() {
+  // Re-attach the single, lifetime-long guard (created in the constructor)
+  // under its lock, reusing it across stop()/start() cycles.
+  const std::scoped_lock lock(guard_->mutex);
+  guard_->reader = this;
+}
+
+void Reader::subscribeToFocusChanges() {
+  // Route the focus callback through a shared guard so it stays safe even if
+  // a provider invokes it after this Reader is destroyed. Since #60 a
+  // stopped provider swallows new events; the guard drops the invocation
+  // possibly still in flight across a stop — and anything a misbehaving
+  // provider might deliver.
+  provider_.start([guard = guard_](const vox::model::AccessibleNode& node) {
+    const std::scoped_lock lock(guard->mutex);
+    if (guard->reader != nullptr) {
+      guard->reader->onFocusChanged(node);
+    }
+  });
+}
+
+void Reader::announceInitialFocus() {
+  // Announce whatever already has focus, so launching over a dialog speaks now.
+  if (const std::optional<vox::model::AccessibleNode> focused = provider_.focusedElement()) {
+    onFocusChanged(*focused);
   }
 }
 
@@ -158,34 +172,38 @@ void Reader::bargeIn() {
   tts_.cancel();
 }
 
+std::optional<vox::model::AccessibleNode> Reader::waitForNextNode() {
+  std::unique_lock lock(mutex_);
+  cv_.wait(lock, [this] { return pending_.has_value() || !running_; });
+  if (!running_ || !pending_.has_value()) {
+    return std::nullopt; // stop requested, or a spurious wake-up
+  }
+  std::optional<vox::model::AccessibleNode> node = std::move(pending_);
+  pending_.reset();
+  return node;
+}
+
+bool Reader::isRunning() {
+  const std::scoped_lock lock(mutex_);
+  return running_;
+}
+
 void Reader::workerLoop() {
-  while (true) {
-    vox::model::AccessibleNode node;
-    {
-      std::unique_lock lock(mutex_);
-      cv_.wait(lock, [this] { return pending_.has_value() || !running_; });
-      if (!running_) {
-        return;
-      }
-      if (!pending_.has_value()) {
-        continue; // spurious wake-up
-      }
-      node = std::move(*pending_);
-      pending_.reset();
+  while (isRunning()) {
+    const std::optional<vox::model::AccessibleNode> node = waitForNextNode();
+    if (!node.has_value()) {
+      continue; // stop requested (loop condition re-checks) or a spurious wake-up
     }
-    {
-      // stop() may have set running_ false after we dequeued but before this
-      // blocking synthesis begins; cancel() alone can be lost if it lands before
-      // synthesize() starts (engines reset their cancel flag there).
-      const std::scoped_lock lock(mutex_);
-      if (!running_) {
-        return;
-      }
+    // stop() may have set running_ false after we dequeued but before this
+    // blocking synthesis begins; cancel() alone can be lost if it lands before
+    // synthesize() starts (engines reset their cancel flag there).
+    if (!isRunning()) {
+      return;
     }
     if (!speechEnabled_.load(std::memory_order_acquire)) {
       continue; // muted after this node was queued; drop it
     }
-    speakUtterance(node);
+    speakUtterance(*node);
   }
 }
 

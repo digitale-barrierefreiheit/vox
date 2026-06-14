@@ -86,49 +86,72 @@ double kaiser(double u) {
   return besselI0(KaiserBeta * arg) * InvKaiserI0;
 }
 
-} // namespace
+/// Scales a phase row to unity DC gain (robust to window/cutoff choice). A zero sum
+/// leaves the row untouched (norm = 1) rather than dividing by zero.
+void normalizeRow(std::span<float> row, double rowSum) {
+  const auto norm = rowSum != 0.0 ? static_cast<float>(1.0 / rowSum) : 1.0F;
+  for (std::size_t tap = 0; tap < Taps; ++tap) {
+    row[tap] *= norm;
+  }
+}
 
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters) — rate/channels/format are distinct roles
-PcmConverter::PcmConverter(AudioFormat source, std::uint32_t targetRate,
-                           std::uint16_t targetChannels, SampleFormat targetFormat)
-    : history_(Taps, 0.0F), targetRate_(targetRate), targetChannels_(targetChannels),
-      targetFormat_(targetFormat) {
+/// Validates the conversion and returns the source→target step (source samples
+/// advanced per output sample). The format checks run *before* the division, so
+/// step_ can be a member initializer that still never divides by a zero target
+/// rate — an unbridgeable format throws std::invalid_argument instead. @p source
+/// must be 16-bit mono at a non-zero rate (the only thing the TTS engine emits);
+/// the target must have a non-zero rate and channel count.
+double validatedStep(const AudioFormat& source, std::uint32_t targetRate,
+                     std::uint16_t targetChannels) {
   if (source.bitsPerSample != 16U || source.channels != 1U || source.sampleRate == 0U) {
     throw std::invalid_argument("PcmConverter: source must be 16-bit mono PCM at a non-zero rate");
   }
   if (targetRate == 0U || targetChannels == 0U) {
     throw std::invalid_argument("PcmConverter: target rate and channel count must be non-zero");
   }
-  step_ = static_cast<double>(source.sampleRate) / static_cast<double>(targetRate);
-  bypass_ = source.sampleRate == targetRate;
+  return static_cast<double>(source.sampleRate) / static_cast<double>(targetRate);
+}
+
+} // namespace
+
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters) — rate/channels/format are distinct roles
+PcmConverter::PcmConverter(AudioFormat source, std::uint32_t targetRate,
+                           std::uint16_t targetChannels, SampleFormat targetFormat)
+    : history_(Taps, 0.0F), step_(validatedStep(source, targetRate, targetChannels)),
+      bypass_(source.sampleRate == targetRate), targetRate_(targetRate),
+      targetChannels_(targetChannels), targetFormat_(targetFormat) {
   if (!bypass_) {
     buildKernel();
   }
 }
 
-void PcmConverter::buildKernel() {
+/// Fills phase row @p phase of the polyphase table with the unnormalized
+/// Kaiser-windowed sinc taps and returns their sum (the row's DC gain). The
+/// double tap weight is accumulated into the returned sum before being narrowed
+/// to float, so normalizeRow() divides by the full-precision DC gain.
+double PcmConverter::fillPhaseRow(std::span<float> row, std::size_t phase) const {
   // Cutoff at the lower Nyquist (cycles per source sample): 0.5 when upsampling,
   // scaled down by the ratio when downsampling so we anti-alias rather than image.
-  const double ratio = 1.0 / step_; // target / source
-  const double cutoff = 0.5 * std::min(1.0, ratio);
+  const double cutoff = 0.5 * std::min(1.0, 1.0 / step_); // 1.0 / step_ == target / source
+  const double frac = static_cast<double>(phase) / static_cast<double>(Phases);
+  double rowSum = 0.0;
+  for (std::size_t tap = 0; tap < Taps; ++tap) {
+    // Distance from the output point to this tap's source sample, in source-
+    // sample units: tap 0 is the oldest (HalfTaps-1 ahead), tap Taps-1 newest.
+    const double x = frac + (static_cast<double>(HalfTaps) - 1.0 - static_cast<double>(tap));
+    const double h = normalizedSinc(2.0 * cutoff * x) * kaiser(x / static_cast<double>(HalfTaps));
+    row[tap] = static_cast<float>(h);
+    rowSum += h;
+  }
+  return rowSum;
+}
 
+void PcmConverter::buildKernel() {
   kernel_.resize((Phases + 1) * Taps);
   for (std::size_t phase = 0; phase <= Phases; ++phase) {
-    const double frac = static_cast<double>(phase) / static_cast<double>(Phases);
-    double rowSum = 0.0;
-    for (std::size_t tap = 0; tap < Taps; ++tap) {
-      // Distance from the output point to this tap's source sample, in source-
-      // sample units: tap 0 is the oldest (HalfTaps-1 ahead), tap Taps-1 newest.
-      const double x = frac + (static_cast<double>(HalfTaps) - 1.0 - static_cast<double>(tap));
-      const double h = normalizedSinc(2.0 * cutoff * x) * kaiser(x / static_cast<double>(HalfTaps));
-      kernel_[(phase * Taps) + tap] = static_cast<float>(h);
-      rowSum += h;
-    }
-    // Normalize each phase row to unity DC gain (robust to window/cutoff choice).
-    const auto norm = rowSum != 0.0 ? static_cast<float>(1.0 / rowSum) : 1.0F;
-    for (std::size_t tap = 0; tap < Taps; ++tap) {
-      kernel_[(phase * Taps) + tap] *= norm;
-    }
+    const auto row = std::span(kernel_.data() + (phase * Taps), Taps);
+    const double rowSum = fillPhaseRow(row, phase);
+    normalizeRow(row, rowSum);
   }
 }
 

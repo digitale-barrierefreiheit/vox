@@ -91,19 +91,18 @@ namespace detail {
 bool dispatchLowLevelKey(const LowLevelKey& key, std::array<bool, 256>& consumed,
                          const CommandMap& map, ICommandHandler& handler) {
   const bool pressed = (key.message == WM_KEYDOWN || key.message == WM_SYSKEYDOWN);
-  const std::size_t vk = key.vkCode & 0xFFU; // vkCode is 1..254
   const KeyEvent event{.virtualKey = key.vkCode,
                        .modifiers = key.modifiers,
                        .pressed = pressed,
                        .injected = (key.flags & LLKHF_INJECTED) != 0U};
-  return processKey(pressed, vk, event, consumed, map, handler) == HookAction::Consume;
+  return processKey(event, consumed, map, handler) == HookAction::Consume;
 }
 
-HookAction processKey(bool pressed, std::size_t vk, const KeyEvent& event,
-                      std::array<bool, 256>& consumed, const CommandMap& map,
+HookAction processKey(const KeyEvent& event, std::array<bool, 256>& consumed, const CommandMap& map,
                       ICommandHandler& handler) {
   using enum HookAction;
-  if (pressed) {
+  const std::size_t vk = event.virtualKey & 0xFFU; // virtualKey (VK_*) is 1..254
+  if (event.pressed) {
     if (consumed[vk]) {
       return Consume; // auto-repeat of a key we are consuming: swallow
     }

@@ -99,6 +99,34 @@ TEST(PcmRing, ClearDiscardsReadableData) {
   EXPECT_EQ(out, sequence(5, 50));
 }
 
+// Consumer body: drains @p ring into @p received until @p total bytes arrive,
+// backing off (rather than busy-spinning) whenever the ring is momentarily
+// empty. Runs on its own thread in the concurrent test below.
+void drainUntil(PcmRing& ring, std::vector<std::byte>& received, std::size_t total) {
+  std::array<std::byte, 32> buf{};
+  while (received.size() < total) {
+    const std::size_t n = ring.read(buf);
+    if (n == 0) {
+      std::this_thread::yield(); // empty: back off instead of busy-spinning
+      continue;
+    }
+    received.insert(received.end(), buf.begin(), buf.begin() + static_cast<std::ptrdiff_t>(n));
+  }
+}
+
+// Producer body: feeds all of @p data into @p ring, advancing past whatever was
+// accepted each call and backing off whenever the ring is momentarily full.
+void feedAll(PcmRing& ring, std::span<const std::byte> data) {
+  std::size_t offset = 0;
+  while (offset < data.size()) {
+    const std::size_t n = ring.write(data.subspan(offset));
+    if (n == 0) {
+      std::this_thread::yield(); // full: let the consumer drain
+    }
+    offset += n;
+  }
+}
+
 // Concurrent run: a producer streams a long known sequence through a small ring
 // while a consumer drains it. Asserts every byte arrives exactly once and in
 // order — and, under TSan, that the cursor handshake has no data race.
@@ -106,31 +134,13 @@ TEST(PcmRing, ConcurrentProducerConsumerPreservesOrder) {
   constexpr std::size_t Capacity = 64;
   constexpr std::size_t Total = 1U << 16U;
   PcmRing ring{Capacity};
+  const std::vector<std::byte> all = sequence(Total);
 
   std::vector<std::byte> received;
   received.reserve(Total);
 
-  std::jthread consumer([&ring, &received] {
-    std::array<std::byte, 32> buf{};
-    while (received.size() < Total) {
-      const std::size_t n = ring.read(buf);
-      if (n == 0) {
-        std::this_thread::yield(); // empty: back off instead of busy-spinning
-        continue;
-      }
-      received.insert(received.end(), buf.begin(), buf.begin() + static_cast<std::ptrdiff_t>(n));
-    }
-  });
-
-  const std::vector<std::byte> all = sequence(Total);
-  std::size_t offset = 0;
-  while (offset < Total) {
-    const std::size_t n = ring.write(std::span<const std::byte>(all).subspan(offset));
-    if (n == 0) {
-      std::this_thread::yield(); // full: let the consumer drain
-    }
-    offset += n;
-  }
+  std::jthread consumer([&ring, &received] { drainUntil(ring, received, Total); });
+  feedAll(ring, all);
   consumer.join();
 
   ASSERT_EQ(received.size(), Total);

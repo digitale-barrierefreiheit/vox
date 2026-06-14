@@ -119,21 +119,36 @@ const std::string& voiceLabel(const vox::tts::SelectedVoice& voice) {
   return voice.name.empty() ? voice.id : voice.name;
 }
 
+/// True if an explicit VOX_VOICE was asked for but did not match, so the engine
+/// fell back to some other voice — the user should know their name went unused.
+bool explicitVoiceWasNotInstalled(const vox::tts::VoiceSelectionRequest& request,
+                                  const vox::tts::SelectedVoice& voice) {
+  using enum vox::tts::VoiceChoice;
+  return !request.explicitVoice.empty() && voice.choice != ExplicitName;
+}
+
+/// True if the explicit voice that won speaks a known language differing from
+/// the request — a real divergence (compared case-insensitively by primary
+/// subtag), as opposed to an unknown or already-matching voice language.
+bool explicitVoiceDivergesFromRequest(const vox::tts::VoiceSelectionRequest& request,
+                                      const vox::tts::SelectedVoice& voice) {
+  using enum vox::tts::VoiceChoice;
+  return voice.choice == ExplicitName && !voice.language.empty() &&
+         !vox::tts::sameLanguage(voice.language, request.language);
+}
+
 /// Reports how the voice request worked out (#88): fallbacks and divergences
 /// go to stderr here — the engine itself does no I/O.
 void reportVoiceOutcome(const vox::tts::VoiceSelectionRequest& request,
                         const vox::tts::SelectedVoice& voice) {
   using enum vox::tts::VoiceChoice;
-  if (!request.explicitVoice.empty() && voice.choice != ExplicitName) {
+  if (explicitVoiceWasNotInstalled(request, voice)) {
     std::cerr << "vox: voice \"" << request.explicitVoice
               << "\" (VOX_VOICE) is not installed; using \"" << voiceLabel(voice) << "\"\n";
   } else if (voice.choice == Fallback) {
     std::cerr << "vox: no \"" << request.language << "\" voice is installed; using \""
               << voiceLabel(voice) << "\"\n";
-    // Only warn about a real divergence: a known voice language that differs
-    // from the request (compared case-insensitively by primary subtag).
-  } else if (voice.choice == ExplicitName && !voice.language.empty() &&
-             !vox::tts::sameLanguage(voice.language, request.language)) {
+  } else if (explicitVoiceDivergesFromRequest(request, voice)) {
     std::cerr << "vox: voice \"" << voiceLabel(voice) << "\" (VOX_VOICE) speaks \""
               << voice.language << "\" while the requested language (VOX_LANGUAGE) is \""
               << request.language << "\"; the explicit voice wins\n";

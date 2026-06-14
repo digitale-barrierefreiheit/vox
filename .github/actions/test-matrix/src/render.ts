@@ -154,6 +154,15 @@ function isMatrixState(v: unknown): v is MatrixState {
   );
 }
 
+/** Back-fill expectedJobs for a comment written before the field existed, so a run that is in
+ *  flight across a deploy still parses (and merges) instead of resetting mid-run. A no-op for a
+ *  non-object payload — isMatrixState rejects it afterwards. */
+function backfillExpectedJobs(decoded: unknown): void {
+  if (typeof decoded !== 'object' || decoded === null) return;
+  const obj = decoded as Record<string, unknown>;
+  if (obj.expectedJobs === undefined) obj.expectedJobs = [];
+}
+
 /** Recover the embedded state from a comment body, or null if absent/corrupt/malformed. */
 export function parseState(body: string): MatrixState | null {
   const open = body.indexOf(STATE_OPEN);
@@ -163,11 +172,7 @@ export function parseState(body: string): MatrixState | null {
   if (end < 0) return null;
   try {
     const decoded = decodeState(body.slice(start, end).trim());
-    // Back-fill expectedJobs for a comment written before the field existed, so a run that
-    // is in flight across a deploy still parses (and merges) instead of resetting mid-run.
-    if (decoded && typeof decoded === 'object' && (decoded as Record<string, unknown>).expectedJobs === undefined) {
-      (decoded as Record<string, unknown>).expectedJobs = [];
-    }
+    backfillExpectedJobs(decoded);
     return isMatrixState(decoded) ? decoded : null;
   } catch {
     return null;
@@ -252,8 +257,8 @@ function renderStatusLine(state: MatrixState, totals: Totals): string {
 }
 
 /** Sum the per-job pass/fail/skip counts the headline and run verdict are built from. */
-function computeTotals(state: MatrixState, jobs: string[]): Totals {
-  return jobs.reduce(
+function computeTotals(state: MatrixState): Totals {
+  return state.jobOrder.reduce(
     (a, j) => {
       const c = state.jobs[j];
       return { p: a.p + c.p, f: a.f + c.f, s: a.s + c.s };
@@ -263,9 +268,9 @@ function computeTotals(state: MatrixState, jobs: string[]): Totals {
 }
 
 /** Per-job ✅/❌/⏭️/total tallies; a job that published no JUnit shows ⚠️ "no results". */
-function renderSummaryTable(state: MatrixState, jobs: string[]): string {
+function renderSummaryTable(state: MatrixState): string {
   let summary = '| Job | ✅ | ❌ | ⏭️ | Total |\n|---|--:|--:|--:|--:|\n';
-  for (const j of jobs) {
+  for (const j of state.jobOrder) {
     const c = state.jobs[j];
     summary += c.u
       ? `| ${cell(j)} | — | ⚠️ | — | no results |\n`
@@ -275,41 +280,40 @@ function renderSummaryTable(state: MatrixState, jobs: string[]): string {
 }
 
 /** Header row + alignment for a test × jobs grid (shared by the failures and full tables). */
-const matrixHead = (jobs: string[]): string =>
-  `| Test | ${jobs.map(cell).join(' | ')} |\n|---|${jobs.map(() => ':-:').join('|')}|`;
+const matrixHead = (state: MatrixState): string =>
+  `| Test | ${state.jobOrder.map(cell).join(' | ')} |\n|---|${state.jobOrder.map(() => ':-:').join('|')}|`;
 
 /** One grid row: the test name as a code span, then each job's status icon for that test. */
-const matrixRow = (state: MatrixState, jobs: string[], i: number): string =>
-  `| ${codeCell(state.testNames[i])} | ${jobs.map((j) => ICON[codeAt(state.jobs[j], i)]).join(' | ')} |`;
+const matrixRow = (state: MatrixState, i: number): string =>
+  `| ${codeCell(state.testNames[i])} | ${state.jobOrder.map((j) => ICON[codeAt(state.jobs[j], i)]).join(' | ')} |`;
 
 /** The ❌ Failed tests grid, limited to tests failing in some job; '' when none failed. */
-function renderFailuresTable(state: MatrixState, jobs: string[]): string {
+function renderFailuresTable(state: MatrixState): string {
   const failedIdx = state.testNames
     .map((_, i) => i)
-    .filter((i) => jobs.some((j) => codeAt(state.jobs[j], i) === 'F'));
+    .filter((i) => state.jobOrder.some((j) => codeAt(state.jobs[j], i) === 'F'));
   if (failedIdx.length === 0) return '';
-  const rows = failedIdx.map((i) => matrixRow(state, jobs, i)).join('\n');
-  return `\n#### ❌ Failed tests\n${matrixHead(jobs)}\n${rows}\n`;
+  const rows = failedIdx.map((i) => matrixRow(state, i)).join('\n');
+  return `\n#### ❌ Failed tests\n${matrixHead(state)}\n${rows}\n`;
 }
 
 /** The collapsible full test × jobs grid; '' when there are no tests to show. */
-function renderFullMatrix(state: MatrixState, jobs: string[]): string {
+function renderFullMatrix(state: MatrixState): string {
   if (state.testNames.length === 0) return '';
-  const rows = state.testNames.map((_, i) => matrixRow(state, jobs, i)).join('\n');
-  return `\n<details><summary>Full test matrix (${state.testNames.length} tests × ${jobs.length} jobs)</summary>\n\n${matrixHead(jobs)}\n${rows}\n\n</details>\n`;
+  const rows = state.testNames.map((_, i) => matrixRow(state, i)).join('\n');
+  return `\n<details><summary>Full test matrix (${state.testNames.length} tests × ${state.jobOrder.length} jobs)</summary>\n\n${matrixHead(state)}\n${rows}\n\n</details>\n`;
 }
 
 /** Render the whole comment body (marker + tables + embedded state). */
 export function renderComment(runId: string, state: MatrixState): string {
-  const jobs = state.jobOrder;
-  const totals = computeTotals(state, jobs);
+  const totals = computeTotals(state);
 
   const header = `### 🧪 Test results — run [#${state.runNumber}](${state.runUrl}) \`${state.commit}\``;
   const statusLine = renderStatusLine(state, totals);
 
-  const summary = renderSummaryTable(state, jobs);
-  const failures = renderFailuresTable(state, jobs);
-  const full = renderFullMatrix(state, jobs);
+  const summary = renderSummaryTable(state);
+  const failures = renderFailuresTable(state);
+  const full = renderFullMatrix(state);
 
   return [
     runMarker(runId),

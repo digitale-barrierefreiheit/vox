@@ -1,6 +1,6 @@
 # Third-party notices
 
-Vox **0.0.1 bundles no third-party libraries.** The `vox` executable uses only
+Vox **bundles no third-party libraries.** The `vox` executable uses only
 Windows system APIs (UI Automation, SAPI, WASAPI, Win32) and the Microsoft C/C++
 runtime, which is statically linked (ADR-08) and provided under the Microsoft
 Windows SDK / Visual C++ runtime terms.

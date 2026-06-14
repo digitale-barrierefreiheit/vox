@@ -34,14 +34,14 @@ BEGIN
     BLOCK "040904B0"
     BEGIN
       VALUE "CompanyName",      "Digitale Barrierefreiheit e.V."
-      VALUE "FileDescription",  "Vox screen reader"
+      VALUE "FileDescription",  "Vox — Open-Source Accessibility Tool"
       VALUE "FileVersion",      "@PROJECT_VERSION@"
       VALUE "InternalName",     "vox"
-      VALUE "LegalCopyright",   "Copyright (C) 2026 Digitale Barrierefreiheit e.V. Licensed under Apache-2.0."
+      VALUE "LegalCopyright",   "Copyright (C) 2026 Digitale Barrierefreiheit e.V. — Licensed under Apache-2.0"
       VALUE "OriginalFilename", "vox.exe"
       VALUE "ProductName",      "Vox"
       VALUE "ProductVersion",   "@PROJECT_VERSION@"
-      VALUE "Comments",         "Apache-2.0. https://github.com/digitale-barrierefreiheit/vox  (Latin 'vox' = voice.)"
+      VALUE "Comments",         "Apache-2.0 — https://github.com/digitale-barrierefreiheit/vox — (Latin 'vox' = voice)"
     END
   END
   BLOCK "VarFileInfo"

@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781455069790,
+  "lastUpdate": 1781473906311,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -357,6 +357,35 @@ window.BENCHMARK_DATA = {
           {
             "name": "ttfaPipeline p50",
             "value": 0.5,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "cb74e06a5443644c16a861892288886d84445ea2",
+          "message": "test+refactor: raise main-branch coverage to 100% and finish the CodeScene 10.0 pass (#109)\n\nCloses the remaining main-branch release blockers (#107):\n\n- Raise whole-codebase coverage 96.24% -> 100% with focused unit tests for\n  OS-glue / COM error paths, using vox::testing fault-injection seams (#68):\n  enumerator / render-wait / CoInitializeEx / CreateEventW and an\n  operator-new OOM seam for the SAPI output stream.\n- Push the 5 remaining hotspots to 10.0 Code Health: reader, pcm_converter,\n  wasapi_audio_sink, mapper, sapi_tts_engine (guard-clause restructuring,\n  argument bundling, helper extraction).\n- Resolve the 10 Sonar issues from the coverage pass (S6004, S5008, S3574,\n  S6232, S1186, ...) and 3 Copilot findings (deterministic CreateEventW last\n  error, ComInitFn init/uninit-balance contract doc, renderDeviceBuffer\n  underflow guard) -- no suppressions.\n- 39 audited LCOV_EXCL_LINE exclusions limited to genuinely-untestable\n  defensive guards and OS-callback glue.\n\nCodeScene (dev) and SonarCloud gates pass; new-code coverage 100%, 0 issues.",
+          "timestamp": "2026-06-14T23:35:34+02:00",
+          "tree_id": "cafa3416ebe459b0a987cc2c518f18571f2bb406",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/cb74e06a5443644c16a861892288886d84445ea2"
+        },
+        "date": 1781473905596,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.9,
             "unit": "us"
           }
         ]

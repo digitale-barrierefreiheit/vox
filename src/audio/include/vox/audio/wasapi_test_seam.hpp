@@ -54,6 +54,14 @@ void setRenderWaitFn(RenderWaitFn waitFn);
 ///        actually breaking COM for the process. The function is called once per
 ///        apartment the sink creates. An empty function restores the real
 ///        `CoInitializeEx`. Test-only, not thread-safe.
+///
+///        Contract: a call that reports success (a non-`FAILED` code other than
+///        `RPC_E_CHANGED_MODE`) MUST have actually called `CoInitializeEx` — the
+///        guard then owns the initialization and balances it with `CoUninitialize`
+///        on teardown, so faking success leaves COM unbalanced on the thread. To
+///        fault initialization instead, return a `FAILED` code or
+///        `RPC_E_CHANGED_MODE`: the guard throws and does not call
+///        `CoUninitialize`, so no real init is needed on that path.
 using ComInitFn = std::function<long()>;
 void setComInitFn(ComInitFn initFn);
 

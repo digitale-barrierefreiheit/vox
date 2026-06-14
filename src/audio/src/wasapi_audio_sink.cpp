@@ -149,6 +149,10 @@ std::function<bool()>& failCreateEventFn() {
 /// failure) when the test seam asks to fault it, otherwise the real CreateEventW.
 HANDLE createRenderEvent() {
   if (const auto& failFn = failCreateEventFn(); failFn && failFn()) {
+    // Mirror a real CreateEventW failure: set a deterministic last error so the
+    // caller's DeviceError carries a meaningful code rather than whatever a prior
+    // Win32 call happened to leave in this thread's last-error slot.
+    ::SetLastError(ERROR_NOT_ENOUGH_MEMORY);
     return nullptr;
   }
   return ::CreateEventW(nullptr, FALSE, FALSE, nullptr);

@@ -465,10 +465,16 @@ TEST_F(WasapiAcquisitionTest, RenderThreadSurvivesAComInitFailure) {
 
 TEST_F(WasapiAcquisitionTest, ThrowsWhenTheRenderEventCannotBeCreated) {
   // CreateEventW failing leaves a null handle; startEventDrivenClient must turn
-  // that into a DeviceError rather than proceeding with no event to wait on.
+  // that into a DeviceError carrying the deterministic last-error code (the seam
+  // mirrors a real failure), rather than proceeding with no event to wait on.
   vox::audio::testing::setFailCreateEventFn([]() { return true; });
   WasapiAudioSink sink(AudioFormat{22050, 16, 1});
-  EXPECT_THROW(sink.start(), DeviceError);
+  try {
+    sink.start();
+    ADD_FAILURE() << "start() should throw when the render event cannot be created";
+  } catch (const DeviceError& error) {
+    EXPECT_EQ(error.code(), static_cast<std::uint32_t>(ERROR_NOT_ENOUGH_MEMORY));
+  }
 }
 
 TEST_F(WasapiAcquisitionTest, SizesTheRingByBufferPeriodsWhenTheyDominate) {

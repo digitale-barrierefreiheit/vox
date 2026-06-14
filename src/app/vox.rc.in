@@ -6,6 +6,12 @@
 // embedded LICENSE / NOTICE are read from the repo files at build time, so nothing
 // is duplicated (single source of truth, #103).
 
+// Decode this script as UTF-8 (it contains non-ASCII text, e.g. em-dashes and may
+// carry umlauts). Without this the resource compiler reads it as the system ANSI
+// code page and the strings become mojibake in the file's Properties dialog.
+// Honoured by both Microsoft rc.exe and LLVM llvm-rc.
+#pragma code_page(65001)
+
 #include <windows.h>
 
 #define IDI_VOX     1

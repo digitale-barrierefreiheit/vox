@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781394222296,
+  "lastUpdate": 1781430303343,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -299,6 +299,35 @@ window.BENCHMARK_DATA = {
           {
             "name": "ttfaPipeline p50",
             "value": 0.5,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "803d1ca4af9ca5c0fb2927e9a548942cf6fa60d5",
+          "message": "build(release): first-release preparation — branding, metadata, changelog, packaging & workflow (#103)\n\nPrepare Vox for its first dev->main release (#103):\n\n- Branding: the Vox logo (transparent) + mark-only variant + multi-resolution\n  vox.ico; logo in the README.\n- Executable metadata: generated vox.rc with VERSIONINFO + application icon +\n  LICENSE/NOTICE embedded by reference; UTF-8 (#pragma code_page).\n- Version reset to 0.0.0 (the first release bumps patch to 0.0.1).\n- CHANGELOG.md (Keep a Changelog) on the [Unreleased] promotion model.\n- Packaging: CMake install() + CPack x64 ZIP (incl. data/lexicon, licences) +\n  SHA-256; THIRD-PARTY-NOTICES.\n- Automated release workflow (prepare/gate/publish) reusing the back-merge deploy\n  key, with tested helper scripts (prepare-release.sh, changelog-section.sh) and\n  RELEASING.md.\n\nFollow-ups: code signing (#104), application manifest (#105).",
+          "timestamp": "2026-06-14T11:28:55+02:00",
+          "tree_id": "e1f9ca7d8cefba9e909f18a59b881571afac73de",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/803d1ca4af9ca5c0fb2927e9a548942cf6fa60d5"
+        },
+        "date": 1781430302923,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.6,
             "unit": "us"
           }
         ]

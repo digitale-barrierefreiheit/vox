@@ -43,35 +43,47 @@ void Reader::start() {
   audio_.start(); // may throw (no device): nothing spawned yet, so nothing to undo
   started_ = true;
   try {
-    {
-      const std::scoped_lock lock(mutex_);
-      running_ = true;
-    }
+    markRunning();
     worker_ = std::jthread([this] { workerLoop(); });
-    // Route the focus callback through a shared guard so it stays safe even if
-    // a provider invokes it after this Reader is destroyed. Since #60 a
-    // stopped provider swallows new events; the guard drops the invocation
-    // possibly still in flight across a stop — and anything a misbehaving
-    // provider might deliver.
-    {
-      // Re-attach the single, lifetime-long guard (created in the constructor)
-      // under its lock, reusing it across stop()/start() cycles.
-      const std::scoped_lock lock(guard_->mutex);
-      guard_->reader = this;
-    }
-    provider_.start([guard = guard_](const vox::model::AccessibleNode& node) {
-      const std::scoped_lock lock(guard->mutex);
-      if (guard->reader != nullptr) {
-        guard->reader->onFocusChanged(node);
-      }
-    });
-    // Announce whatever already has focus, so launching over a dialog speaks now.
-    if (const std::optional<vox::model::AccessibleNode> focused = provider_.focusedElement()) {
-      onFocusChanged(*focused);
-    }
+    attachFocusGuard();
+    subscribeToFocusChanges();
+    announceInitialFocus();
   } catch (...) {
     stop(); // release the worker/provider/audio we partially brought up
     throw;
+  }
+}
+
+void Reader::markRunning() {
+  const std::scoped_lock lock(mutex_);
+  running_ = true;
+}
+
+void Reader::attachFocusGuard() {
+  // Re-attach the single, lifetime-long guard (created in the constructor)
+  // under its lock, reusing it across stop()/start() cycles.
+  const std::scoped_lock lock(guard_->mutex);
+  guard_->reader = this;
+}
+
+void Reader::subscribeToFocusChanges() {
+  // Route the focus callback through a shared guard so it stays safe even if
+  // a provider invokes it after this Reader is destroyed. Since #60 a
+  // stopped provider swallows new events; the guard drops the invocation
+  // possibly still in flight across a stop — and anything a misbehaving
+  // provider might deliver.
+  provider_.start([guard = guard_](const vox::model::AccessibleNode& node) {
+    const std::scoped_lock lock(guard->mutex);
+    if (guard->reader != nullptr) {
+      guard->reader->onFocusChanged(node);
+    }
+  });
+}
+
+void Reader::announceInitialFocus() {
+  // Announce whatever already has focus, so launching over a dialog speaks now.
+  if (const std::optional<vox::model::AccessibleNode> focused = provider_.focusedElement()) {
+    onFocusChanged(*focused);
   }
 }
 

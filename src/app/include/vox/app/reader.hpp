@@ -81,6 +81,14 @@ public:
   void onCommand(vox::input::Command command) override;
 
 private:
+  /// @brief Marks the worker loop as running (sets the flag under the lock).
+  void markRunning();
+  /// @brief Re-attaches the lifetime-long focus guard to this Reader under its lock.
+  void attachFocusGuard();
+  /// @brief Subscribes the provider's focus callback, routed through the guard.
+  void subscribeToFocusChanges();
+  /// @brief Announces the already-focused element, if any, so a launch speaks now.
+  void announceInitialFocus();
   void onFocusChanged(const vox::model::AccessibleNode& node);
   void bargeIn();
   void workerLoop();

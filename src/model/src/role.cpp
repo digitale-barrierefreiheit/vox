@@ -6,6 +6,7 @@
 #include <array>
 #include <cstddef>
 #include <string_view>
+#include <utility>
 
 #include <vox/model/role.hpp>
 
@@ -24,7 +25,7 @@ constexpr std::array<std::string_view, 10> RoleNames{
 } // namespace
 
 std::string_view toString(Role role) noexcept {
-  const auto index = static_cast<std::size_t>(role);
+  const auto index = static_cast<std::size_t>(std::to_underlying(role));
   if (index >= RoleNames.size()) {
     return "Unknown";
   }

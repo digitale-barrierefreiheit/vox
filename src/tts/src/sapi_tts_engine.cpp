@@ -315,24 +315,8 @@ void setTokenCategoryFactory(TokenCategoryFactory factory) {
 class SapiTtsEngine::Impl {
 public:
   explicit Impl(const VoiceSelectionRequest& request) {
-    if (const HRESULT hr = createVoice(voice_.ReleaseAndGetAddressOf()); FAILED(hr) || !voice_) {
-      throw EngineError(static_cast<std::uint32_t>(effectiveError(hr)),
-                        "SapiTtsEngine: failed to create the SAPI voice");
-    }
-    enumerateVoices();
-    const std::optional<SelectedVoice> chosen = selectVoice(descriptors_, request);
-    if (!chosen) {
-      throw EngineError("SapiTtsEngine: no usable voice for the requested language or voice name");
-    }
-    selected_ = *chosen;
-    const auto token = idToToken_.find(selected_.id);
-    if (token == idToToken_.end()) {
-      throw EngineError("SapiTtsEngine: the selected voice token is no longer available");
-    }
-    if (const HRESULT hr = voice_->SetVoice(token->second.Get()); FAILED(hr)) {
-      throw EngineError(static_cast<std::uint32_t>(hr),
-                        "SapiTtsEngine: failed to activate the selected voice");
-    }
+    createSapiVoice();
+    selectAndBindVoice(request);
   }
 
   ~Impl() = default;
@@ -406,6 +390,35 @@ private:
   void reportSpeakResult(HRESULT spoken) const {
     if (FAILED(spoken) && !cancelled_.load(std::memory_order_relaxed)) {
       throw EngineError(static_cast<std::uint32_t>(spoken), "SapiTtsEngine: synthesis failed");
+    }
+  }
+
+  /// Creates the SAPI voice into voice_, throwing if the COM call fails or
+  /// leaves the pointer null.
+  void createSapiVoice() {
+    if (const HRESULT hr = createVoice(voice_.ReleaseAndGetAddressOf()); FAILED(hr) || !voice_) {
+      throw EngineError(static_cast<std::uint32_t>(effectiveError(hr)),
+                        "SapiTtsEngine: failed to create the SAPI voice");
+    }
+  }
+
+  /// Enumerates the installed voices, applies the pure selectVoice() for
+  /// @p request, and activates the chosen voice token. Throws if no voice
+  /// matches, if its token has since vanished, or if SAPI rejects the change.
+  void selectAndBindVoice(const VoiceSelectionRequest& request) {
+    enumerateVoices();
+    const std::optional<SelectedVoice> chosen = selectVoice(descriptors_, request);
+    if (!chosen) {
+      throw EngineError("SapiTtsEngine: no usable voice for the requested language or voice name");
+    }
+    selected_ = *chosen;
+    const auto token = idToToken_.find(selected_.id);
+    if (token == idToToken_.end()) {
+      throw EngineError("SapiTtsEngine: the selected voice token is no longer available");
+    }
+    if (const HRESULT hr = voice_->SetVoice(token->second.Get()); FAILED(hr)) {
+      throw EngineError(static_cast<std::uint32_t>(hr),
+                        "SapiTtsEngine: failed to activate the selected voice");
     }
   }
 

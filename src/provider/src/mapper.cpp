@@ -3,7 +3,6 @@
 
 /// @file
 /// @brief Implementation of vox::provider::mapElement.
-#include <algorithm>
 #include <array>
 #include <utility>
 
@@ -38,9 +37,12 @@ constexpr std::array<std::pair<int, Role>, 9> ControlTypeRoles{{
 }};
 
 Role mapRole(int controlTypeId) {
-  const auto match =
-      std::ranges::find(ControlTypeRoles, controlTypeId, &std::pair<int, Role>::first);
-  return match != ControlTypeRoles.end() ? match->second : Role::Unknown;
+  for (const auto& [id, role] : ControlTypeRoles) {
+    if (id == controlTypeId) {
+      return role;
+    }
+  }
+  return Role::Unknown;
 }
 
 // Checked/Mixed from the modern Toggle pattern, else the legacy MSAA state bits

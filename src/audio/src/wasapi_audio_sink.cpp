@@ -253,25 +253,14 @@ public:
       // interfaces are created and later released — not at construction.
       apartment_.emplace();
       acquireDevice();
+      // running_ goes true before the launch so the render thread (and any
+      // racing write()/flush()) sees a live sink the moment it starts.
+      running_.store(true, std::memory_order_release);
+      launchRenderThread();
+      startAudioClient();
     } catch (...) {
       stop(); // release whatever was created, so a retry starts clean
       throw;
-    }
-
-    running_.store(true, std::memory_order_release);
-    try {
-      renderThread_ = std::jthread([this] { renderLoopGuarded(); });
-    } catch (...) {
-      // Translate a std::jthread failure (e.g. std::system_error) so start()
-      // honours its documented DeviceError contract; release the device.
-      stop();
-      throw DeviceError("WasapiAudioSink: failed to create the render thread");
-    }
-
-    if (const HRESULT hr = audioClient_->Start(); FAILED(hr)) {
-      stop();
-      throw DeviceError(static_cast<std::uint32_t>(hr),
-                        "WasapiAudioSink: IAudioClient::Start failed");
     }
   }
 
@@ -352,6 +341,26 @@ private:
   void acquireDevice() {
     activateAudioClient();
     initializeStream();
+  }
+
+  /// Spawns the render thread, translating a std::jthread failure (e.g.
+  /// std::system_error) into a DeviceError so start() honours its documented
+  /// contract. Runs after running_ is set, so the new thread sees a live sink.
+  void launchRenderThread() {
+    try {
+      renderThread_ = std::jthread([this] { renderLoopGuarded(); });
+    } catch (...) {
+      throw DeviceError("WasapiAudioSink: failed to create the render thread");
+    }
+  }
+
+  /// Starts the audio client, throwing DeviceError with the native code on
+  /// failure — the final bring-up step, with the render thread already running.
+  void startAudioClient() {
+    if (const HRESULT hr = audioClient_->Start(); FAILED(hr)) {
+      throw DeviceError(static_cast<std::uint32_t>(hr),
+                        "WasapiAudioSink: IAudioClient::Start failed");
+    }
   }
 
   /// device enumerator -> default render endpoint -> activated IAudioClient.

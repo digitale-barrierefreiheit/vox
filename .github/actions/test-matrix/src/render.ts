@@ -251,20 +251,19 @@ function renderStatusLine(state: MatrixState, totals: Totals): string {
   return successLine(totals, facts);
 }
 
-/** Render the whole comment body (marker + tables + embedded state). */
-export function renderComment(runId: string, state: MatrixState): string {
-  const jobs = state.jobOrder;
-  const totals = jobs.reduce(
+/** Sum the per-job pass/fail/skip counts the headline and run verdict are built from. */
+function computeTotals(state: MatrixState, jobs: string[]): Totals {
+  return jobs.reduce(
     (a, j) => {
       const c = state.jobs[j];
       return { p: a.p + c.p, f: a.f + c.f, s: a.s + c.s };
     },
     { p: 0, f: 0, s: 0 },
   );
+}
 
-  const header = `### 🧪 Test results — run [#${state.runNumber}](${state.runUrl}) \`${state.commit}\``;
-  const statusLine = renderStatusLine(state, totals);
-
+/** Per-job ✅/❌/⏭️/total tallies; a job that published no JUnit shows ⚠️ "no results". */
+function renderSummaryTable(state: MatrixState, jobs: string[]): string {
   let summary = '| Job | ✅ | ❌ | ⏭️ | Total |\n|---|--:|--:|--:|--:|\n';
   for (const j of jobs) {
     const c = state.jobs[j];
@@ -272,23 +271,45 @@ export function renderComment(runId: string, state: MatrixState): string {
       ? `| ${cell(j)} | — | ⚠️ | — | no results |\n`
       : `| ${cell(j)} | ${c.p} | ${c.f} | ${c.s} | ${c.p + c.f + c.s} |\n`;
   }
+  return summary;
+}
 
-  const colHead = `| Test | ${jobs.map(cell).join(' | ')} |\n|---|${jobs.map(() => ':-:').join('|')}|`;
-  const row = (i: number): string =>
-    `| ${codeCell(state.testNames[i])} | ${jobs.map((j) => ICON[codeAt(state.jobs[j], i)]).join(' | ')} |`;
+/** Header row + alignment for a test × jobs grid (shared by the failures and full tables). */
+const matrixHead = (jobs: string[]): string =>
+  `| Test | ${jobs.map(cell).join(' | ')} |\n|---|${jobs.map(() => ':-:').join('|')}|`;
 
+/** One grid row: the test name as a code span, then each job's status icon for that test. */
+const matrixRow = (state: MatrixState, jobs: string[], i: number): string =>
+  `| ${codeCell(state.testNames[i])} | ${jobs.map((j) => ICON[codeAt(state.jobs[j], i)]).join(' | ')} |`;
+
+/** The ❌ Failed tests grid, limited to tests failing in some job; '' when none failed. */
+function renderFailuresTable(state: MatrixState, jobs: string[]): string {
   const failedIdx = state.testNames
     .map((_, i) => i)
     .filter((i) => jobs.some((j) => codeAt(state.jobs[j], i) === 'F'));
-  const failures =
-    failedIdx.length > 0 ? `\n#### ❌ Failed tests\n${colHead}\n${failedIdx.map(row).join('\n')}\n` : '';
+  if (failedIdx.length === 0) return '';
+  const rows = failedIdx.map((i) => matrixRow(state, jobs, i)).join('\n');
+  return `\n#### ❌ Failed tests\n${matrixHead(jobs)}\n${rows}\n`;
+}
 
-  const full =
-    state.testNames.length > 0
-      ? `\n<details><summary>Full test matrix (${state.testNames.length} tests × ${jobs.length} jobs)</summary>\n\n${colHead}\n${state.testNames
-          .map((_, i) => row(i))
-          .join('\n')}\n\n</details>\n`
-      : '';
+/** The collapsible full test × jobs grid; '' when there are no tests to show. */
+function renderFullMatrix(state: MatrixState, jobs: string[]): string {
+  if (state.testNames.length === 0) return '';
+  const rows = state.testNames.map((_, i) => matrixRow(state, jobs, i)).join('\n');
+  return `\n<details><summary>Full test matrix (${state.testNames.length} tests × ${jobs.length} jobs)</summary>\n\n${matrixHead(jobs)}\n${rows}\n\n</details>\n`;
+}
+
+/** Render the whole comment body (marker + tables + embedded state). */
+export function renderComment(runId: string, state: MatrixState): string {
+  const jobs = state.jobOrder;
+  const totals = computeTotals(state, jobs);
+
+  const header = `### 🧪 Test results — run [#${state.runNumber}](${state.runUrl}) \`${state.commit}\``;
+  const statusLine = renderStatusLine(state, totals);
+
+  const summary = renderSummaryTable(state, jobs);
+  const failures = renderFailuresTable(state, jobs);
+  const full = renderFullMatrix(state, jobs);
 
   return [
     runMarker(runId),

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/vox-logo.svg" alt="Vox — a German-first screen reader for Windows" width="200">
+</p>
+
 # Vox — Open-Source Accessibility Tool
 
 [![CI](https://github.com/digitale-barrierefreiheit/vox/actions/workflows/ci.yml/badge.svg)](https://github.com/digitale-barrierefreiheit/vox/actions/workflows/ci.yml)

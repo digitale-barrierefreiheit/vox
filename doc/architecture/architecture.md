@@ -1,6 +1,6 @@
-# Architecture Documentation — Klar Screen Reader
+# Architecture Documentation — Vox Screen Reader
 
-> **Working title:** *Klar* (German: "clear / lucid"). Replace with the final product name.
+> **Product name:** *Vox* (Latin: "voice").
 > **Format:** arc42 (v8 section structure). Markdown with embedded Mermaid diagrams for machine/AI readability.
 > **Status:** Draft / design phase.
 > **Scope of this document:** the architecture of a Windows screen reader focused on (1) low system overhead, (2) low speech latency, and (3) high-quality German text-to-speech.
@@ -9,7 +9,7 @@
 
 ## 1. Introduction and Goals
 
-*Klar* is a Windows screen reader for blind and low-vision users. It conveys on-screen information through speech and braille, with a particular focus on the German language and on being noticeably lighter and more responsive than existing readers (NVDA, JAWS, Dolphin SuperNova).
+*Vox* is a Windows screen reader for blind and low-vision users. It conveys on-screen information through speech and braille, with a particular focus on the German language and on being noticeably lighter and more responsive than existing readers (NVDA, JAWS, Dolphin SuperNova).
 
 ### 1.1 Requirements Overview
 
@@ -62,17 +62,17 @@ Supporting goals: **stability/reliability** (the user depends on this software t
 ```mermaid
 graph LR
     User([Blind / low-vision user])
-    subgraph Klar[Klar Screen Reader]
+    subgraph Vox[Vox Screen Reader]
       Core
     end
     Apps[Applications<br/>browsers, Office, Explorer, terminals]
     Speakers([Audio output / speakers])
     Braille([Braille display])
 
-    User -- keyboard / commands --> Klar
-    Apps -- accessibility data + events --> Klar
-    Klar -- speech --> Speakers
-    Klar -- braille cells --> Braille
+    User -- keyboard / commands --> Vox
+    Apps -- accessibility data + events --> Vox
+    Vox -- speech --> Speakers
+    Vox -- braille cells --> Braille
     Speakers -- audio --> User
     Braille -- tactile --> User
 ```
@@ -106,11 +106,11 @@ graph LR
 
 ## 5. Building Block View
 
-### 5.1 Level 1 — Whitebox: Klar Core
+### 5.1 Level 1 — Whitebox: Vox Core
 
 ```mermaid
 graph TD
-    subgraph Core[Klar Core process - C++]
+    subgraph Core[Vox Core process - C++]
       Input[Input Layer<br/>keyboard hook, command/gesture mapping]
       Provider[Provider Layer<br/>UIA client / IA2 / MSAA fallback]
       Model[Accessibility Object Model<br/>+ Browse-mode virtual buffer]
@@ -219,7 +219,7 @@ graph LR
       UIthread --> Hook --> HReader --> Ring1
       Ring2 --> Hook
     end
-    subgraph CoreP[Klar Core process]
+    subgraph CoreP[Vox Core process]
       Consumer[Consumer thread]
       ModelC[Object Model]
       Consumer --> ModelC
@@ -272,7 +272,7 @@ Provider Layer detects poor/absent UIA, falls back to IA2 (browser) or MSAA; if 
 ```mermaid
 graph TD
     subgraph Machine[User's Windows machine]
-      subgraph KlarProc[Klar Core process]
+      subgraph VoxProc[Vox Core process]
         CoreC[C++ Core, Object Model, Output Mgr]
         TTSW[TTS Inference Worker - warm ONNX session]
       end
@@ -320,6 +320,7 @@ Techniques applied to the hot paths:
 - **Arena / bump allocators** for transient per-operation scratch: allocate, use, then reset with a single pointer move — never free individually.
 - **Pre-allocated ring buffers** for Helper↔Core and the audio pipeline — fixed size, zero per-message allocation.
 - **Resident PCM**: the Tier-0 phrase cache lives in memory as pre-decoded PCM. The **audio render callback never allocates, never takes a contended lock, and never page-faults** (consider `VirtualLock` on audio buffers; guard against priority inversion).
+- **Pre-built resampler kernel**: `PcmConverter` resamples TTS PCM to the device mix format with a **windowed-sinc polyphase** filter (#55) whose kernel and sample history are allocated once at construction, so converting each delivered chunk allocates nothing on the producer path (ADR-10); at equal rates it degrades to an exact, zero-delay passthrough.
 - **Thread-local reusable scratch** (e.g., a growable UTF-16 buffer reset between utterances) instead of constructing fresh strings in loops.
 - **Private heap** (`HeapCreate`; the Low-Fragmentation Heap is the default on modern Windows) per subsystem to isolate the allocations that remain and cut cross-thread contention.
 - **Helper side**: write straight into the SHM ring → **zero allocation in the host's heap** on the hot path.
@@ -342,7 +343,7 @@ Backed by `CreateFileMapping` (pagefile-backed) + `MapViewOfFile`. The control b
 
 ```cpp
 // Little-endian, fixed layout, asserted identical on both bitness builds.
-constexpr uint32_t KLAR_MAGIC = 0x314C4B52;          // "RKL1"
+constexpr uint32_t VOX_MAGIC = 0x31584F56;           // "VOX1"
 enum ConsumerState : uint32_t { RUNNING=0, SPINNING=1, SLEEPING=2 };
 
 struct alignas(64) ProducerBlock {                   // written by helper only
@@ -484,13 +485,16 @@ These practices are part of the architecture: at this performance target and rel
 
 - **TDD for the deterministic core.** The performance- and correctness-critical logic is pure and fast to test, so write the test first: the SPSC ring index math, record framing/codec, German normalization and G2P rules, the resync scope/debounce logic, braille translation, and command parsing. Red-green-refactor genuinely fits these.
 - **A testability seam at the speech boundary (ADR-12).** The Output Manager exposes the *would-be-spoken text* as an inspectable artifact **before** it reaches TTS. Tests then assert "navigating to this control produces utterance X" on text, not audio — making behavior testable without sound hardware or a real synthesizer.
-- **Test pyramid.** Many fast unit tests over the pure cores; a thinner integration tier driving a **purpose-built test application** with known UIA/IA2 trees; a small end-to-end tier asserting on captured utterance text. Avoid trying to automate audio assertions — assert upstream.
+- **Test pyramid.** Many fast unit tests over the pure cores; a thinner integration tier driving a **purpose-built test application** (`tests/support/uia_test_app/`, #40) — a Win32 app with a known UIA control tree (button, checkbox, radio, labelled edits, combobox, list) that the provider integration test reads through the real `IUIAutomation` stack as keyboard focus cycles each control; and a small end-to-end tier that feeds those *provider-read* nodes through `OutputManager::announce()` and asserts the German utterance (real element → provider → `AccessibleNode` → utterance, no audio). Gated by `VOX_REQUIRE_UIA_TREE=1` on the Windows CI jobs; skips cleanly without an interactive desktop. Avoid trying to automate audio assertions — assert upstream.
 - **Fakes behind interfaces.** Provider, TTS engine, audio sink, and braille display sit behind interfaces with fakes, so object-model and output logic run in isolation.
 
 #### 8.6.2 Coverage — measured where it means something
 
-- Target **high branch coverage (≥ ~90%)** on the pure cores (codec, normalization, ring, resync, diffing); accept lower on OS glue (injection, WASAPI), which is integration-tested instead.
+- Target **high branch coverage (≥ ~90%)** on the pure cores (codec, normalization, ring, resync, diffing).
 - Coverage is a guardrail, not a goal: branch coverage of normalization/parsing **edge cases** matters; line coverage of trivial getters does not. Do not chase 100% by testing the trivial — and never write assertions that merely re-state the implementation.
+- **The OS-glue adapters are unit-covered too, with no real device (issue #68).** Each adapter exposes a narrow test seam — a factory the test fills with **mock COM objects** (`IMMDeviceEnumerator`→`IAudioClient`→`IAudioRenderClient`; `ISpVoice` + the SAPI token chain; `IUIAutomation`→element→patterns) or, for the keyboard hook, a fake `SetWindowsHookEx` plus the per-key decision factored into a pure `processKey`. The mocks fault-inject every `HRESULT`, so the acquisition, error, synthesis, extraction, and decision paths run in the ordinary coverage job. This is what ADR-12's pure-core/thin-adapter split buys: with the COM creation injected, the glue's branches are reachable from a test. A *real* device/voice/hook is still exercised by the labelled `*_itest` integration tests, but coverage no longer depends on one.
+- **The application is a testable object, not logic in `main()`.** `vox::app::App` holds its collaborators (provider, TTS, audio behind their interfaces; the keyboard hook behind `IInputHook`) and runs the start → wait-for-exit → stop loop, so the run-loop and its fatal-error handling are unit-tested with fakes. The Windows composition root — `makeDefaultDependencies()` — builds the real stack and is itself covered hardware-free through the same SAPI seam (the only constructor that needs a voice). `main()` is then a one-line entry point that wires the two.
+- The **SonarCloud new-code coverage gate therefore measures everything.** No production source is in `sonar.coverage.exclusions` — only the tests, which do not measure their own coverage. The handful of irreducibly OS-bound lines (the live-modifier read, the message loop, the callback's event unpacking) are exercised by the labelled `*_itest` integration tests.
 
 #### 8.6.3 Concurrency, fuzz, and property testing
 
@@ -501,8 +505,8 @@ These practices are part of the architecture: at this performance target and rel
 
 #### 8.6.4 Performance and memory testing
 
-- **Microbenchmarks with percentile budgets.** Benchmark hot paths (ring enqueue/dequeue, codec, normalization, time-to-first-audio) and track **p50/p99/p99.9** — tail latency is what users feel, not the mean. Encode the §1.2/§10 budgets as pass/fail assertions.
-- **A CI performance-regression gate** on stable, dedicated hardware compares against a baseline and fails on regressions beyond a relative threshold (use relative thresholds to absorb CI noise).
+- **Microbenchmarks with percentile budgets.** Benchmark hot paths (ring enqueue/dequeue, codec, normalization, time-to-first-audio) and track **p50/p99/p99.9** — tail latency is what users feel, not the mean. Encode the §1.2/§10 budgets as pass/fail assertions. Realised for time-to-first-audio (`benchmarks/`, #41): the pipeline benchmark drives the real `Reader`/`OutputManager` over the deterministic fakes and enforces **p99 ≤ 10% of the Q1 budget** in-process (Vox's own overhead may never eat what the synthesizer needs), and the real-SAPI first-chunk benchmark measures the true synthesis start against the **200 ms** budget on the German-voice-provisioned `benchmarks` CI job.
+- **A CI performance-regression gate** on stable, dedicated hardware compares against a baseline and fails on regressions beyond a relative threshold (use relative thresholds to absorb CI noise). Realised as the `benchmarks` job: the pipeline **median (p50)** is compared against the `dev` baseline (the `benchmark-data` branch) at a generous 300% threshold. Only the median feeds the relative gate — on shared hosted runners (not yet the dedicated hardware this section assumes) the µs-scale tail percentiles vary up to ~8× between runs of identical code, so a relative tail gate would be noise-driven; the tails are protected by the absolute in-process budget above (which stays the authoritative gate) and reported per run.
 - **No-allocation enforcement.** A debug allocator **asserts on any allocation from the audio render thread or inside the in-context hook**, mechanically enforcing ADR-10 rather than trusting discipline.
 - **Memory health:** leak detection (Application Verifier, CRT debug heap, ASan), allocation tracking on hot paths, and **24h+ soak tests** under continuous simulated navigation watching working-set/RSS for slow leaks and fragmentation.
 
@@ -522,15 +526,16 @@ The policy is **patterns for structure, data-oriented design for hot loops** (AD
 #### 8.6.7 Tooling, CI, and review gates
 
 - **CI builds both 32-bit and 64-bit**, runs the full test suite, the sanitizer builds, the clang-format/clang-tidy gates, the benchmark-regression gate, and the **cross-bitness wire-layout test** (asserts identical `sizeof`/`offsetof` for every shared struct — guards R12).
-- **Static analysis:** clang-tidy (incl. Core Guidelines checks) and MSVC `/analyze`.
+- **Static analysis:** clang-tidy (incl. Core Guidelines checks) and MSVC `/analyze`, plus a **SonarCloud** scan (`sonar.yml`) whose **quality gate is a required merge gate** — a pull request does not merge while the gate is red. Where a Sonar rule conflicts with a deliberate decision here (e.g. the lock-free ring's explicit memory orderings, the host-stability exception firewalls, or the unavoidable Win32/COM ABI casts at the OS-glue seam), the deviation is **suppressed in version control** with a justification (`sonar.issue.ignore.multicriteria` in `sonar-project.properties`) and recorded as documented technical debt, rather than silently resolved in the Sonar UI. ThreadSanitizer — not Sonar's static heuristics — is the authoritative gate for memory ordering (§8.6.3).
 - **Mandatory review** against a short checklist: hot-path allocation? thread-safety/ordering? names? test added? graceful-degradation path?
-- **Error-handling discipline:** exceptions permitted only in Core cold paths; the helper, audio callback, and hot paths use status/error codes. A fault must **degrade gracefully** (fall back to out-of-process, keep speaking) and **never crash the host**.
+- **Error-handling discipline:** exceptions permitted only in Core cold paths; the helper, audio callback, and hot paths use status/error codes. A fault must **degrade gracefully** (fall back to out-of-process, keep speaking) and **never crash the host**. Cold-path OS/COM failures are raised as the typed **`vox::OsError`** taxonomy (`vox::audio::DeviceError` / `vox::tts::EngineError` / `vox::input::HookError`), which carries the originating `HRESULT`/`GetLastError()` code so a handler can catch by subsystem and logs can report the native code.
 - **Observability:** structured, leveled logging and counters (dropped records, resync count, latency histograms) for field diagnosis — opt-in and **privacy-respecting** (no announced content logged by default).
 - **Reproducible builds:** pinned dependencies and **versioned models/voices**.
+- **Run summaries:** CI publishes results so a run's health reads at a glance. Each test job writes a pass/fail/skip table to the run **Summary**, and four families of **per-run PR comments** are posted (each keyed to the run id, so a new run posts its own fresh comments): a live **test ✕ job matrix** (per-job counts, a failures table, and a collapsible full matrix), a **SonarCloud** summary (quality gate + new-code coverage + open issues), a **clang-tidy** summary (clean, or the diagnostics), and a **TTFA benchmark** summary (p50/p99/p99.9 per benchmark + budget status, #41). The matrix is maintained by the bundled TypeScript **`test-matrix`** action (`.github/actions/test-matrix`, fed by `ctest --output-junit` from `just test`); the gate and tidy comments use the small **`upsert-comment`** composite action. The `test-matrix` action is unit-tested (`node:test`) and its own coverage is reported to SonarCloud via `c8` → lcov, run in the Sonar job.
 
 #### 8.6.8 Dogfooding with target users — the real acceptance test
 
-The decisive measure of success is not a coverage number; it is whether blind users navigating real applications in German find *Klar* fast and natural. **Test continuously with blind users and native German speakers from the first milestone**, run usability sessions each release, and let their feedback set priorities. An engineering team can pass every automated gate and still build the wrong thing without this. (See R14.)
+The decisive measure of success is not a coverage number; it is whether blind users navigating real applications in German find *Vox* fast and natural. **Test continuously with blind users and native German speakers from the first milestone**, run usability sessions each release, and let their feedback set priorities. An engineering team can pass every automated gate and still build the wrong thing without this. (See R14.)
 
 ---
 
@@ -555,7 +560,8 @@ The decisive measure of success is not a coverage number; it is whether blind us
 *Decision:* models exported to ONNX, run on CPU. *Rationale:* no GPU dependency (C2); broad model ecosystem (Piper-class VITS, Kokoro-class for reading). *Note:* benchmark quantization per target — int8 is not guaranteed faster than fp32.
 
 **ADR-07 — Dedicated German front-end.**
-*Decision:* a German normalization + G2P stage feeding all tiers, with a German-trained acoustic model. *Rationale:* much perceived German quality lives in normalization/G2P, not just the acoustic model.
+*Decision:* a German normalization + G2P stage feeding all tiers, with a German-trained acoustic model. *Rationale:* much perceived German quality lives in normalization/G2P, not just the acoustic model. *Note:* German-first also depends on *finding* the user's German voice: the SAPI backend enumerates both the classic `SPCAT_VOICES` catalogue and the **OneCore** hive (`Speech_OneCore`, where Windows-Settings/language-pack voices register), merged with classic precedence (#52) — without the OneCore pass, a Settings-installed German voice is invisible and the engine would silently fall back to English.
+*Note (announcement vocabulary, #61):* the role/state words are data, not code: per-language `key = value` tables (`data/lexicon/*.lex`), each declaring the language it stands for (`language = <BCP-47 tag>`). At startup the app loads `lexicon\<tag>.lex` next to the executable (tag from `VOX_LANGUAGE`, default `de`; `VOX_LEXICON` points at an explicit file instead and is authoritative). A file replaces the default wholesale — never layers over it, so one announcement cannot mix languages — and is accepted only if its declaration matches and no required key is missing; otherwise the app reports the reason on stderr and falls back to the embedded German `de.lex`, so the reader always speaks. Users and contributors add a language by dropping `<tag>.lex` beside the shipped `de.lex`/`en.lex` — no code change. Since #88 the same `VOX_LANGUAGE` also drives **voice selection** (prefer a voice whose primary language subtag matches; the SAPI LANGID is mapped to a BCP-47 tag), so words and voice are requested as one language; `VOX_VOICE=<name>` overrides the voice part the way `VOX_LEXICON` overrides the lexicon part (each override wins over `VOX_LANGUAGE`, with a divergence reported instead of rejected). The fallbacks stay independent (system-default voice; embedded German table) and every fallback or divergence is reported on stderr **by the app** — the lexicon and TTS modules expose outcomes but do no I/O.
 
 **ADR-08 — C runtime: static-link the compiler runtime; rely on the OS Universal CRT; keep the helper CRT-minimal.**
 *Decision:* link the compiler runtime statically (`/MT`) for Core and helper, so there is **no Visual C++ Redistributable dependency** to install or version-mismatch on end-user machines; rely on the Universal CRT (UCRT), which is part of Windows 10+. The in-process helper additionally minimizes or statically links a trimmed CRT and disables exceptions/RTTI, keeping its footprint tiny and avoiding clashes with whatever runtime the host already loaded.
@@ -640,6 +646,7 @@ The decisive measure of success is not a coverage number; it is whether blind us
 | R14 | Built without continuous input from blind users / native German speakers → wrong priorities, unnatural speech. | Dogfood with target users from the first milestone; native-speaker review of the German corpus; usability sessions every release (§8.6.8). |
 | R15 | Performance regressions creep in unnoticed. | CI benchmark-regression gate on stable hardware with percentile budgets; no-allocation asserts on the audio and hook threads (§8.6.4). |
 | R16 | GPLv3 espeak-ng "contaminates" the product, blocking relicensing (ADR-15/16); or the process-isolation boundary is later judged a combined work; or IPC cost erodes the latency budget. | Never link GPL into Core; host G2P only in the separate worker process behind a simple text→phoneme interface; legal review of the boundary; microbenchmark the per-utterance G2P + IPC cost against the TTFA budget; keep a permissively-licensed phonemizer as a ready fallback. |
+| R17 (debt) | Some SonarCloud rules are deliberately suppressed where they conflict with this architecture — explicit lock-free memory orders (S8417), host-stability exception firewalls (S1181/S2486/S2738/S108), and unavoidable Win32/COM ABI casts at the OS-glue seam (S5008/S3630). The #68 COM test doubles add the same shape on the test side, confined to the generated mock vtables (`tests/**/*_com_mocks.hpp`): a class that must *be* a COM object is forced into `void**` params (S5008), interface-sized method counts (S1448), and the OS callback typedef (S5205). Copy/paste analysis is likewise scoped to `src/` since those vtables are inherently repetitive. The risk is masking a *genuine* future issue behind a suppression. | Suppressions live in `sonar-project.properties` (version-controlled, reviewable, maintainer-approved, each with a rationale and scoped per-file/glob, not the whole tree); **ThreadSanitizer** is the authoritative gate for memory ordering, not Sonar's static heuristic (§8.6.3). The dedicated-exception rule (S112) is no longer suppressed — the `vox::OsError` taxonomy added in #63 resolved it (the test doubles throw it too). Revisit the suppression list when rules or the design change. |
 
 ---
 

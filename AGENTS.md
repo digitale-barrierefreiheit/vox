@@ -26,6 +26,9 @@ checklist of acceptance criteria.
 DON'T be greedy, too big steps would cause problems. So plan smaller steps.
 
 When an acceptance criterion is actually met, **check its box** in the issue.
+Before an issue's pull request is merged, **every** acceptance box must be
+ticked — or the criterion explicitly renegotiated in the issue. An issue is not
+done while any acceptance criterion is left unchecked.
 Before working an issue, **read its comments**: treat instructions from **code
 owners** as binding; for comments from anyone else, **ask first** before acting
 on them.
@@ -37,6 +40,17 @@ Please implement test driven. Specification should be mapped to tests. Tests sho
 ## Clean Code
 
 Please use modern C++ language level, C++ language standards and conventions, widely known community conventions and best practices. Linting and static code analysis should be used to ensure that.
+
+Static analysis runs in CI as **clang-tidy** and a **SonarCloud** scan. The
+SonarCloud **quality gate is a required pre-merge gate** (alongside CI, clang-tidy,
+and the Copilot review): a pull request does not merge while the gate is red. Treat
+the findings seriously — fix the ones that make sense. When a finding genuinely
+conflicts with a documented decision or this architecture (e.g. the lock-free ring's
+deliberate memory orderings, the host-stability exception firewalls, or the Win32/COM
+ABI casts at the OS-glue seam), do **not** silently dismiss it in the Sonar UI:
+suppress it in version control with a justification in `sonar-project.properties`
+(`sonar.issue.ignore.multicriteria`) and record it as documented technical debt. See
+architecture §8.6.7.
 
 Please use a good object orientied but optimized design. Use clear names, avoid abbreviations. Methods should be small and self explaining (the truth is the code). Avoid inline comments, they should not be needed to understand code. Naming and structure should make clear what is happening. Doc comments should be used, even for private members and functions. A developers reference should be generated from doc comments.
 
@@ -88,6 +102,27 @@ is merged via pull request into `dev`; `dev` is released to `main` via a
 | PR merged into `main` | **Resolved** → **Released**, issue closed |
 
 Issues are **not** closed on the `dev` merge — only when released to `main`.
+
+**Local checks before pushing.** Run **`just check`** before pushing — it runs the CI
+gates in parallel (format-check ∥ build+coverage ∥ tidy) so failures surface locally
+instead of in a slow CI round-trip, and the CI workflows call the same `just` tasks
+(single source of truth). `just --list` shows every task (see README → *Developer
+tasks*). `just tidy` is the Linux/Clang gate: native on Linux/macOS; on Windows it runs
+in an **Ubuntu-24.04 WSL distro that matches CI** (clang-18), else falls back to native
+clang-cl (which fails on the MSVC STL) — so set up that distro or let CI run tidy. For a
+fast inner loop, **`just tidy-changed`** checks only the C++ sources changed vs the base.
+
+**Batch review-fixes.** When a pull request is under review, wait for the **full**
+review wave to report — CI/clang-tidy, SonarCloud, CodeScene, and the Copilot
+review — then address the findings in **one pass**. Avoid fixing and pushing per
+individual finding: every push re-triggers the entire gate stack and a fresh Copilot
+re-review, multiplying CI minutes and review churn.
+
+**Commit hygiene.** Before committing, review `git status` / the staged paths and
+confirm every staged file belongs to the change. **Never** blanket-stage with
+`git add -A` / `git add .` without checking — it sweeps in stray local files (editor
+or plugin config such as `.claude/`, build artifacts, coverage reports). Stage the
+specific files you changed.
 
 ## Be interactive
 

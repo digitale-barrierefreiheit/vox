@@ -1,0 +1,133 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
+
+/// @file
+/// @brief The MVP screen-reader orchestrator: focus -> utterance -> TTS -> audio.
+///
+/// `Reader` wires the pipeline of §6.1 over the module *interfaces*
+/// (`IProvider` / `ITtsEngine` / `IAudioSink`), so the whole flow is testable
+/// with fakes; the Windows `main()` constructs the real implementations and
+/// hands them in. On a focus change it builds a German utterance and speaks it;
+/// a navigation key barges in.
+///
+/// Threading (§8): focus events (provider thread) and commands (hook thread)
+/// only stash state and wake the synthesis worker thread, which runs the
+/// blocking announce + synthesize + write — so the event threads never block on
+/// synthesis.
+#ifndef VOX_APP_READER_HPP
+#define VOX_APP_READER_HPP
+
+#include <atomic>
+#include <condition_variable>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <thread>
+
+#include <vox/audio/iaudio_sink.hpp>
+#include <vox/input/command.hpp>
+#include <vox/input/command_handler.hpp>
+#include <vox/model/accessible_node.hpp>
+#include <vox/output/output_manager.hpp>
+#include <vox/provider/iprovider.hpp>
+#include <vox/tts/itts_engine.hpp>
+
+namespace vox::app {
+
+class Reader;
+
+namespace detail {
+/// Keeps the provider's focus callback safe if it fires after the Reader is
+/// gone. Two layers since #60: a stopped UiaProvider swallows every event
+/// reaching its sink (detached before unregistration, whatever UIA answers),
+/// and this guard drops any invocations already past the sink's callback copy
+/// when the stop happened — plus anything a future, misbehaving IProvider
+/// might deliver. The callback holds a shared_ptr to this guard and only
+/// touches `reader` while it is non-null under the lock; Reader::stop()
+/// detaches it before teardown.
+struct ReaderFocusGuard {
+  std::mutex mutex;
+  Reader* reader{nullptr};
+};
+} // namespace detail
+
+/// Orchestrates the focus -> speech pipeline and barge-in for the MVP reader.
+class Reader : public vox::input::ICommandHandler {
+public:
+  /// @brief Builds a reader over the given seams. @p provider, @p tts and
+  ///        @p audio must outlive the reader; @p output is taken by value.
+  Reader(vox::provider::IProvider& provider, vox::tts::ITtsEngine& tts,
+         vox::audio::IAudioSink& audio, vox::output::OutputManager output);
+  ~Reader() override;
+
+  Reader(const Reader&) = delete;
+  Reader& operator=(const Reader&) = delete;
+  Reader(Reader&&) = delete;
+  Reader& operator=(Reader&&) = delete;
+
+  /// @brief Starts audio, the synthesis worker, and focus subscription, then
+  ///        announces the already-focused element.
+  /// @throws whatever `IAudioSink::start()` or the provider throw.
+  void start();
+
+  /// @brief Stops focus subscription, the worker, and audio, releasing all.
+  ///        Idempotent. Must not be called from within the hook callback.
+  void stop();
+
+  /// @brief Blocks until a Quit command is received or stop() is called.
+  void waitForExit();
+
+  /// @brief Handles a reader command (invoked on the keyboard-hook thread).
+  void onCommand(vox::input::Command command) override;
+
+private:
+  /// @brief Marks the worker loop as running (sets the flag under the lock).
+  void markRunning();
+  /// @brief Re-attaches the lifetime-long focus guard to this Reader under its lock.
+  void attachFocusGuard();
+  /// @brief Subscribes the provider's focus callback, routed through the guard.
+  void subscribeToFocusChanges();
+  /// @brief Announces the already-focused element, if any, so a launch speaks now.
+  void announceInitialFocus();
+  void onFocusChanged(const vox::model::AccessibleNode& node);
+  void bargeIn();
+  /// @brief Toggles speech on/off; barges in on what is playing when muting.
+  void toggleSpeech();
+  /// @brief Signals waitForExit() so the app run-loop can quit.
+  void requestExit();
+  void workerLoop();
+  /// @brief Blocks until a node is pending or the worker is told to stop, then
+  ///        takes the pending node. Returns nullopt on a stop request or a
+  ///        spurious wake-up (the caller re-checks the running flag).
+  std::optional<vox::model::AccessibleNode> waitForNextNode();
+  /// @brief True while the worker loop should keep running (reads under the lock).
+  bool isRunning();
+  /// @brief Announces, synthesizes, and (unless stop() has begun) drains one node.
+  ///        Swallows any synthesis failure so the worker loop keeps running.
+  void speakUtterance(const vox::model::AccessibleNode& node);
+
+  vox::provider::IProvider& provider_;
+  vox::tts::ITtsEngine& tts_;
+  vox::audio::IAudioSink& audio_;
+  vox::output::OutputManager output_;
+
+  std::jthread worker_;
+  std::mutex mutex_;
+  std::condition_variable cv_;
+  std::optional<vox::model::AccessibleNode> pending_; ///< Latest node to announce.
+  bool running_{false};                               ///< Worker-loop condition.
+  bool started_{false};                               ///< Guards start()/stop().
+  std::atomic<bool> speechEnabled_{true};
+
+  std::mutex exitMutex_;
+  std::condition_variable exitCv_;
+  bool exitRequested_{false};
+
+  /// Outlives a late provider callback. Created with the Reader (an in-class
+  /// initializer, so it exists once and is reused across stop()/start() cycles).
+  std::shared_ptr<detail::ReaderFocusGuard> guard_{std::make_shared<detail::ReaderFocusGuard>()};
+};
+
+} // namespace vox::app
+
+#endif // VOX_APP_READER_HPP

@@ -1,0 +1,85 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
+
+/// @file
+/// @brief WIN32-only test seams over KeyboardHook (issue #68).
+///
+/// Two seams make the hook unit-testable with no real WH_KEYBOARD_LL install:
+///  - `detail::processKey` is the per-key decision the hook callback makes
+///    (auto-repeat / consume / key-up swallowing), factored out of the Win32
+///    `hookProc` so it is tested directly with a fake handler.
+///  - `testing::setInstallHookOverride` replaces the `SetWindowsHookEx` call so a
+///    test can simulate a successful or failed install and exercise the
+///    start/stop lifecycle without touching the desktop.
+///
+/// Production code sets no override and installs the real low-level hook.
+#ifndef VOX_INPUT_KEYBOARD_TEST_SEAM_HPP
+#define VOX_INPUT_KEYBOARD_TEST_SEAM_HPP
+
+#if defined(_WIN32)
+
+#  include <array>
+#  include <cstdint>
+#  include <functional>
+
+#  include <vox/input/command_handler.hpp>
+#  include <vox/input/command_map.hpp>
+#  include <vox/input/key_event.hpp>
+
+namespace vox::input {
+
+/// What the keyboard hook should do with a key it just saw.
+enum class HookAction {
+  PassThrough, ///< Let the key reach the foreground app (CallNextHookEx).
+  Consume,     ///< Hide the key from the app (it drove a reader command).
+};
+
+namespace detail {
+
+/// @brief The keyboard hook's per-key decision, factored out of the Win32
+///        callback so it is testable with no real hook.
+///
+/// On key-down it routes @p event through @p map / @p handler; a consumed key is
+/// remembered in @p consumed (indexed by the virtual-key code masked to
+/// [0, 255]) so its auto-repeat and key-up are also swallowed. On key-up it
+/// consumes iff the matching key-down was consumed. The press/key-up distinction
+/// is taken from @p event.pressed.
+HookAction processKey(const KeyEvent& event, std::array<bool, 256>& consumed, const CommandMap& map,
+                      ICommandHandler& handler);
+
+/// The decoded fields of one WH_KEYBOARD_LL event, bundled so the dispatch entry
+/// point takes few arguments. Integer types keep this Windows-header-free.
+struct LowLevelKey {
+  std::uintptr_t message; ///< WM_KEYDOWN / WM_SYSKEYDOWN / WM_KEYUP / WM_SYSKEYUP
+  std::uint32_t vkCode;   ///< virtual-key code
+  std::uint32_t flags;    ///< carries LLKHF_INJECTED
+  KeyModifiers modifiers; ///< the live Shift/Control/Alt/Win state
+};
+
+/// @brief The hook callback's translation step, factored out of the Win32
+///        `hookProc` so it is testable with no real hook. Builds a KeyEvent from
+///        @p key, routes it via processKey(), and reports whether the key should
+///        be consumed (hidden from the foreground app).
+[[nodiscard]] bool dispatchLowLevelKey(const LowLevelKey& key, std::array<bool, 256>& consumed,
+                                       const CommandMap& map, ICommandHandler& handler);
+
+} // namespace detail
+
+namespace testing {
+
+/// @brief Replaces the low-level hook install. Returns true to simulate a
+///        successful install, false to simulate `SetWindowsHookEx` failing. No
+///        real hook handle is created, so teardown has nothing to unhook.
+using InstallHookOverride = std::function<bool()>;
+
+/// @brief Installs @p installer for subsequent `KeyboardHook::start()` calls; an
+///        empty installer restores the real install. Test-only, not thread-safe.
+void setInstallHookOverride(InstallHookOverride installer);
+
+} // namespace testing
+
+} // namespace vox::input
+
+#endif // defined(_WIN32)
+
+#endif // VOX_INPUT_KEYBOARD_TEST_SEAM_HPP

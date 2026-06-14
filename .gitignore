@@ -12,7 +12,11 @@ CMakeFiles/
 cmake_install.cmake
 CTestTestfile.cmake
 compile_commands.json
-Testing/
+# CTest output dir — anchored to the repo root so it can't swallow source
+# directories named "testing" (git is case-insensitive on Windows). In-source
+# builds are blocked and build trees live under /build/, so this only guards a
+# stray top-level run.
+/Testing/
 
 # ---------------------------------------------------------------------------
 # vcpkg (manifest mode: deps are restored, never committed)
@@ -68,6 +72,28 @@ Testing/
 *.gcno
 *.profraw
 *.profdata
+
+# ---------------------------------------------------------------------------
+# Coverage report (OpenCppCoverage / `just coverage`, anchored to the repo root)
+# ---------------------------------------------------------------------------
+/coverage.xml
+
+# ---------------------------------------------------------------------------
+# CI test results (JUnit from `just test`, consumed by the test-matrix action)
+# ---------------------------------------------------------------------------
+/test-results.xml
+
+# ---------------------------------------------------------------------------
+# Benchmark results (`just bench` + the CI baseline conversion, repo-root only)
+# ---------------------------------------------------------------------------
+/benchmark-results.json
+/benchmark-data.json
+
+# ---------------------------------------------------------------------------
+# Node action build deps (the test-matrix action; its bundled dist/ IS committed)
+# ---------------------------------------------------------------------------
+.github/actions/*/node_modules/
+.github/actions/*/coverage/
 
 # ---------------------------------------------------------------------------
 # Generated documentation (Doxygen)

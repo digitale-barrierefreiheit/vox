@@ -7,4 +7,22 @@
 find_package(GTest CONFIG REQUIRED)
 include(GoogleTest)
 
+# Shared test-support (fakes) first, so test targets can link vox::testing.
+add_subdirectory(support)
+
+# The purpose-built UIA test app (#40) — a Windows-only child process the provider
+# integration test launches. Added before provider/ so its target exists for the
+# itest's dependency + injected path.
+if(WIN32)
+  add_subdirectory(support/uia_test_app)
+endif()
+
 add_subdirectory(core)
+add_subdirectory(model)
+add_subdirectory(german)
+add_subdirectory(output)
+add_subdirectory(provider)
+add_subdirectory(audio)
+add_subdirectory(tts)
+add_subdirectory(input)
+add_subdirectory(app)

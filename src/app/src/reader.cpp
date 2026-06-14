@@ -1,0 +1,246 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
+
+#include <atomic>
+#include <cstddef>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <span>
+#include <utility>
+
+#include <vox/app/reader.hpp>
+#include <vox/audio/iaudio_sink.hpp>
+#include <vox/input/command.hpp>
+#include <vox/model/accessible_node.hpp>
+#include <vox/output/output_manager.hpp>
+#include <vox/output/utterance.hpp>
+#include <vox/provider/iprovider.hpp>
+#include <vox/tts/itts_engine.hpp>
+
+namespace vox::app {
+
+Reader::Reader(vox::provider::IProvider& provider, vox::tts::ITtsEngine& tts,
+               vox::audio::IAudioSink& audio, vox::output::OutputManager output)
+    : provider_(provider), tts_(tts), audio_(audio), output_(std::move(output)) {}
+
+Reader::~Reader() {
+  try {
+    stop();
+    // NOLINTNEXTLINE(bugprone-empty-catch) — dtor firewall: must never throw.
+  } catch (...) {
+  }
+}
+
+void Reader::start() {
+  if (started_) {
+    return;
+  }
+  {
+    const std::scoped_lock lock(exitMutex_);
+    exitRequested_ = false; // fresh run: a prior Quit must not leak into waitForExit()
+  }
+  audio_.start(); // may throw (no device): nothing spawned yet, so nothing to undo
+  started_ = true;
+  try {
+    markRunning();
+    worker_ = std::jthread([this] { workerLoop(); });
+    attachFocusGuard();
+    subscribeToFocusChanges();
+    announceInitialFocus();
+  } catch (...) {
+    stop(); // release the worker/provider/audio we partially brought up
+    throw;
+    // The closing brace below is an unreachable scope-exit after the rethrow, which
+    // OpenCppCoverage reports uncovered by design (issue #121); exclude just it.
+  } // LCOV_EXCL_LINE
+}
+
+void Reader::markRunning() {
+  const std::scoped_lock lock(mutex_);
+  running_ = true;
+}
+
+void Reader::attachFocusGuard() {
+  // Re-attach the single, lifetime-long guard (created in the constructor)
+  // under its lock, reusing it across stop()/start() cycles.
+  const std::scoped_lock lock(guard_->mutex);
+  guard_->reader = this;
+}
+
+void Reader::subscribeToFocusChanges() {
+  // Route the focus callback through a shared guard so it stays safe even if
+  // a provider invokes it after this Reader is destroyed. Since #60 a
+  // stopped provider swallows new events; the guard drops the invocation
+  // possibly still in flight across a stop — and anything a misbehaving
+  // provider might deliver.
+  provider_.start([guard = guard_](const vox::model::AccessibleNode& node) {
+    const std::scoped_lock lock(guard->mutex);
+    if (guard->reader != nullptr) {
+      guard->reader->onFocusChanged(node);
+    }
+  });
+}
+
+void Reader::announceInitialFocus() {
+  // Announce whatever already has focus, so launching over a dialog speaks now.
+  if (const std::optional<vox::model::AccessibleNode> focused = provider_.focusedElement()) {
+    onFocusChanged(*focused);
+  }
+}
+
+void Reader::stop() {
+  if (!started_) {
+    return;
+  }
+  started_ = false;
+  if (guard_) {
+    // Detach first: after this, no provider callback will touch this Reader.
+    const std::scoped_lock lock(guard_->mutex);
+    guard_->reader = nullptr;
+  }
+  // Events are swallowed from here on; the guard detached above already drops
+  // any invocations still in flight (#60).
+  provider_.stop();
+  {
+    const std::scoped_lock lock(mutex_);
+    running_ = false;
+    pending_.reset();
+  }
+  tts_.cancel(); // unblock a synthesize() in progress
+  cv_.notify_all();
+  if (worker_.joinable()) {
+    worker_.join();
+  }
+  audio_.stop();
+  {
+    // Unblock waitForExit() too, so a stop() (or destruction) without a prior
+    // Quit does not leave another thread waiting forever.
+    const std::scoped_lock lock(exitMutex_);
+    exitRequested_ = true;
+    exitCv_.notify_all();
+  }
+}
+
+void Reader::waitForExit() {
+  std::unique_lock lock(exitMutex_);
+  exitCv_.wait(lock, [this] { return exitRequested_; });
+}
+
+void Reader::onCommand(vox::input::Command command) {
+  using enum vox::input::Command;
+  switch (command) {
+  case NavigateNext:
+  case NavigatePrevious:
+  case NavigateUp:
+  case NavigateDown:
+    bargeIn(); // the focus-changed event will bring the new announcement
+    break;
+  case ToggleSpeech:
+    toggleSpeech();
+    break;
+  case Quit:
+    requestExit();
+    break;
+  case None:
+    break;
+  }
+}
+
+void Reader::toggleSpeech() {
+  const bool wasEnabled = speechEnabled_.load(std::memory_order_acquire);
+  speechEnabled_.store(!wasEnabled, std::memory_order_release);
+  if (wasEnabled) {
+    bargeIn(); // muting: silence what is playing
+  }
+}
+
+void Reader::requestExit() {
+  const std::scoped_lock lock(exitMutex_);
+  exitRequested_ = true;
+  exitCv_.notify_all();
+}
+
+void Reader::onFocusChanged(const vox::model::AccessibleNode& node) {
+  if (!speechEnabled_.load(std::memory_order_acquire)) {
+    return;
+  }
+  bargeIn(); // interrupt the previous announcement
+  {
+    const std::scoped_lock lock(mutex_);
+    pending_ = node; // latest focus wins (coalesces rapid navigation)
+  }
+  cv_.notify_one();
+}
+
+void Reader::bargeIn() {
+  audio_.flush();
+  tts_.cancel();
+}
+
+std::optional<vox::model::AccessibleNode> Reader::waitForNextNode() {
+  std::unique_lock lock(mutex_);
+  cv_.wait(lock, [this] { return pending_.has_value() || !running_; });
+  if (!running_ || !pending_.has_value()) {
+    return std::nullopt; // stop requested, or a spurious wake-up
+  }
+  std::optional<vox::model::AccessibleNode> node = std::move(pending_);
+  pending_.reset();
+  return node;
+}
+
+bool Reader::isRunning() {
+  const std::scoped_lock lock(mutex_);
+  return running_;
+}
+
+void Reader::workerLoop() {
+  while (isRunning()) {
+    const std::optional<vox::model::AccessibleNode> node = waitForNextNode();
+    if (!node.has_value()) {
+      continue; // stop requested (loop condition re-checks) or a spurious wake-up
+    }
+    // stop() may have set running_ false after we dequeued but before this
+    // blocking synthesis begins; cancel() alone can be lost if it lands before
+    // synthesize() starts (engines reset their cancel flag there). Hitting this
+    // needs stop() to flip running_ in the gap after waitForNextNode() dequeued
+    // — a TOCTOU race with no deterministic test seam (stop() also resets
+    // pending_ and joins), so exclude the guarded return.
+    if (!isRunning()) {
+      return; // LCOV_EXCL_LINE
+    }
+    // Likewise a TOCTOU race: onFocusChanged() refuses to queue while muted, so a
+    // pending node here was queued enabled; reaching this needs toggleSpeech() to
+    // land in the gap before this check — no deterministic seam, so exclude it.
+    if (!speechEnabled_.load(std::memory_order_acquire)) {
+      continue; // LCOV_EXCL_LINE — muted after this node was queued; drop it
+    }
+    speakUtterance(*node);
+  }
+}
+
+void Reader::speakUtterance(const vox::model::AccessibleNode& node) {
+  try {
+    const vox::output::Utterance utterance = output_.announce(node);
+    tts_.synthesize(utterance.text, [this](std::span<const std::byte> pcm) { audio_.write(pcm); });
+    // Natural end of the utterance: flush the resampler's group-delay tail so the
+    // final milliseconds play. Skip it once stop() has cleared running_ — the
+    // synthesize() above was cancelled for shutdown, and draining could back-
+    // pressure on a full ring, delaying teardown for audio stop() then discards.
+    // A barge-in's tail is still dropped by the sink's flush-generation guard.
+    bool stillRunning = false;
+    {
+      const std::scoped_lock lock(mutex_);
+      stillRunning = running_;
+    }
+    if (stillRunning) {
+      audio_.drain();
+    }
+    // A failed announcement (e.g. a SAPI error) must not escape the worker
+    // thread; drop this utterance and keep going.
+    // NOLINTNEXTLINE(bugprone-empty-catch)
+  } catch (...) {
+  }
+}
+
+} // namespace vox::app

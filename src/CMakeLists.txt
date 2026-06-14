@@ -10,3 +10,27 @@
 # its own CMakeLists and a `vox::<module>` alias. The single `core` library
 # below is the seed: it anchors the build, namespace, and include layout.
 add_subdirectory(core)
+
+# vox::model — normalized, provider-independent Accessibility Object Model.
+add_subdirectory(model)
+
+# vox::german — German announcement vocabulary + minimal normalization.
+add_subdirectory(german)
+
+# vox::output — Output Manager v0 + inspectable Utterance seam.
+add_subdirectory(output)
+
+# vox::provider — accessibility provider seam (UIA today; portable mapper, COM glue).
+add_subdirectory(provider)
+
+# vox::audio — small PCM seam (AudioFormat + PcmBuffer) shared by TTS and audio.
+add_subdirectory(audio)
+
+# vox::tts — text-to-speech seam (ITtsEngine; portable selection, SAPI5 glue).
+add_subdirectory(tts)
+
+# vox::input — input layer (portable command mapping; WH_KEYBOARD_LL hook glue).
+add_subdirectory(input)
+
+# vox::app — the MVP reader: portable Reader orchestrator + the `vox` executable.
+add_subdirectory(app)

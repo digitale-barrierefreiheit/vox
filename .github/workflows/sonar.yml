@@ -1,0 +1,123 @@
+name: SonarQube
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    types: [opened, synchronize, reopened]
+jobs:
+  build:
+    name: Analyze
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      pull-requests: write # post the SonarQube summary comment on PRs
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+      - uses: lukka/get-cmake@591817e96fcad43505fb4eae36172462abb3a42e # v4.3.3
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        with:
+          arch: amd64
+      # run-vcpkg runs AFTER the MSVC env so its VCPKG_ROOT is not clobbered by
+      # the vcvars that ship with Visual Studio's bundled vcpkg.
+      - uses: ./.github/actions/vcpkg-baseline
+      - name: Set up vcpkg (pinned to the manifest baseline)
+        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11.6
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_BASELINE }}
+      - name: Install OpenCppCoverage
+        run: choco install OpenCppCoverage --version=0.9.9.0 -y --no-progress
+      # `just coverage` builds the Debug config (the PDB line info OpenCppCoverage
+      # needs) and runs the suite under coverage, exporting Cobertura for Sonar — the
+      # exact invocation developers run locally. It limits measurement to our src/
+      # (not vcpkg/STL) and covers the test exes ctest spawns. The device/voice
+      # integration tests skip here (no hardware): that OS glue is integration-tested,
+      # not coverage-gated (sonar.coverage.exclusions, 8.6.2).
+      - name: Test with coverage
+        run: just coverage x64-msvc-debug
+        env:
+          VOX_OCC: C:\Program Files\OpenCppCoverage\OpenCppCoverage.exe
+      # The TypeScript test-matrix action is covered by its own node:test suite; produce its
+      # lcov here (CI's dist-sync job runs the tests but not under coverage) and rebase the
+      # paths to the repo root so Sonar matches them to the files it analyzes.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: TypeScript action coverage (lcov for Sonar)
+        shell: bash
+        working-directory: .github/actions/test-matrix
+        run: |
+          npm ci --ignore-scripts
+          npm run coverage
+          sed -i 's#\\#/#g; s#^SF:src/#SF:.github/actions/test-matrix/src/#' coverage/lcov.info
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@713881670b6b3676cda39549040e2d88c70d582e # v8.2.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      - name: SonarQube Quality Gate Check
+        uses: SonarSource/sonarqube-quality-gate-action@cf038b0e0cdecfa9e56c198bbb7d21d751d62c3b # v1.2.0
+        timeout-minutes: 10
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      # Build a SonarCloud summary (gate + new-code coverage + open issues) from the API in
+      # JavaScript, write it to the run Summary and a file; the next step posts it as a PR
+      # comment. Auxiliary — continue-on-error so a hiccup never fails the gate job.
+      - name: SonarCloud summary
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        uses: actions/github-script@v9
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        with:
+          script: |
+            const fs = require('fs');
+            const api = 'https://sonarcloud.io/api';
+            const pr = process.env.PR ? `&pullRequest=${process.env.PR}` : '';
+            const auth = 'Basic ' + Buffer.from(`${process.env.SONAR_TOKEN}:`).toString('base64');
+            const get = async (path) => {
+              try {
+                const res = await fetch(`${api}${path}`, { headers: { Authorization: auth } });
+                return res.ok ? await res.json() : {};
+              } catch {
+                return {};
+              }
+            };
+            const gateData = await get(`/qualitygates/project_status?projectKey=vox${pr}`);
+            const status = gateData.projectStatus?.status ?? '';
+            // new_coverage's value comes from the gate condition (actualValue, already
+            // rounded); the measures API returns it under `periods`, not the new-code value.
+            const conditions = gateData.projectStatus?.conditions ?? [];
+            const covCond = conditions.find((c) => c.metricKey === 'new_coverage');
+            const cov = covCond ? `${covCond.actualValue}%` : 'n/a';
+            const issues = (await get(`/issues/search?componentKeys=vox${pr}&resolved=false&ps=1`)).total ?? 0;
+            const badge = { OK: '✅ Passed', ERROR: '❌ Failed' }[status] ?? `❔ ${status || 'unknown'}`;
+            // Run-specific marker so each run gets its own comment instead of updating the last.
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              `<!-- vox-sonar run=${context.runId} -->`,
+              `## 🔍 SonarCloud — run [#${context.runNumber}](${runUrl})`,
+              '| Metric | Result |',
+              '|---|---|',
+              `| Quality gate | ${badge} |`,
+              `| New-code coverage | ${cov} |`,
+              `| Open issues | ${issues} |`,
+              '',
+              '[SonarCloud new-code dashboard](https://sonarcloud.io/summary/new_code?id=vox)',
+              '',
+            ].join('\n');
+            fs.writeFileSync('sonar-comment.md', body);
+            await core.summary.addRaw(body).write();
+      - name: Post SonarCloud PR comment
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        continue-on-error: true
+        uses: ./.github/actions/upsert-comment
+        with:
+          marker: '<!-- vox-sonar run=${{ github.run_id }} -->'
+          body-file: sonar-comment.md
+

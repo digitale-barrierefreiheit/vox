@@ -110,6 +110,15 @@ HRESULT effectiveError(HRESULT hr) {
   return FAILED(hr) ? hr : E_POINTER;
 }
 
+/// Messages for two EngineError throws that sit on defensive/unreachable paths.
+/// Hoisting them to namespace scope keeps each throw statement short enough that
+/// its trailing coverage-exclusion marker stays on the same line under
+/// clang-format's 100-column limit (the message text is a compile-time constant,
+/// not an executable coverage line).
+constexpr const char* ComInitFailedMessage = "SapiTtsEngine: COM initialization failed";
+constexpr const char* VoiceTokenLostMessage =
+    "SapiTtsEngine: the selected voice token is no longer available";
+
 /// Transparent hash so the voice-id map can be looked up by `std::string_view`
 /// without constructing a `std::string` key (heterogeneous lookup).
 struct TransparentStringHash {
@@ -168,7 +177,7 @@ public:
         sink_(std::span<const std::byte>(bytes, cb));
       } catch (...) { // never let an exception cross the COM ABI boundary
         return E_FAIL;
-      }
+      } // LCOV_EXCL_LINE — scope-exit after the return (OpenCppCoverage #121)
     }
     if (written != nullptr) {
       *written = cb;
@@ -253,7 +262,9 @@ public:
       *waveFormat = nullptr;
       auto* copy = static_cast<WAVEFORMATEX*>(::CoTaskMemAlloc(sizeof(WAVEFORMATEX)));
       if (copy == nullptr) {
-        return E_OUTOFMEMORY;
+        // Defensive: a CoTaskMemAlloc of a fixed 18-byte struct failing is an
+        // OOM the unit suite cannot fault-inject (no seam over CoTaskMemAlloc).
+        return E_OUTOFMEMORY; // LCOV_EXCL_LINE
       }
       *copy = format_;
       *waveFormat = copy;
@@ -278,11 +289,15 @@ public:
       // apartment. That is fine for our use, but we do not own the
       // initialization and must not balance it with CoUninitialize.
       initialized_ = false;
-    } else if (FAILED(hr)) {
-      throw EngineError(static_cast<std::uint32_t>(hr), "SapiTtsEngine: COM initialization failed");
-    } else {
-      initialized_ = true; // S_OK or S_FALSE — we own a reference to release
+      return;
     }
+    if (FAILED(hr)) {
+      // A genuine CoInitializeEx failure (not the tolerated RPC_E_CHANGED_MODE).
+      // Unreachable from the unit suite: there is no seam over CoInitializeEx and
+      // a healthy MTA init never fails, so this firewall throw stays uncovered.
+      throw EngineError(static_cast<std::uint32_t>(hr), ComInitFailedMessage); // LCOV_EXCL_LINE
+    }
+    initialized_ = true; // S_OK or S_FALSE — we own a reference to release
   }
 
   ~ComApartment() {
@@ -315,24 +330,8 @@ void setTokenCategoryFactory(TokenCategoryFactory factory) {
 class SapiTtsEngine::Impl {
 public:
   explicit Impl(const VoiceSelectionRequest& request) {
-    if (const HRESULT hr = createVoice(voice_.ReleaseAndGetAddressOf()); FAILED(hr) || !voice_) {
-      throw EngineError(static_cast<std::uint32_t>(effectiveError(hr)),
-                        "SapiTtsEngine: failed to create the SAPI voice");
-    }
-    enumerateVoices();
-    const std::optional<SelectedVoice> chosen = selectVoice(descriptors_, request);
-    if (!chosen) {
-      throw EngineError("SapiTtsEngine: no usable voice for the requested language or voice name");
-    }
-    selected_ = *chosen;
-    const auto token = idToToken_.find(selected_.id);
-    if (token == idToToken_.end()) {
-      throw EngineError("SapiTtsEngine: the selected voice token is no longer available");
-    }
-    if (const HRESULT hr = voice_->SetVoice(token->second.Get()); FAILED(hr)) {
-      throw EngineError(static_cast<std::uint32_t>(hr),
-                        "SapiTtsEngine: failed to activate the selected voice");
-    }
+    createSapiVoice();
+    selectAndBindVoice(request);
   }
 
   ~Impl() = default;
@@ -406,6 +405,38 @@ private:
   void reportSpeakResult(HRESULT spoken) const {
     if (FAILED(spoken) && !cancelled_.load(std::memory_order_relaxed)) {
       throw EngineError(static_cast<std::uint32_t>(spoken), "SapiTtsEngine: synthesis failed");
+    }
+  }
+
+  /// Creates the SAPI voice into voice_, throwing if the COM call fails or leaves
+  /// the pointer null.
+  void createSapiVoice() {
+    if (const HRESULT hr = createVoice(voice_.ReleaseAndGetAddressOf()); FAILED(hr) || !voice_) {
+      throw EngineError(static_cast<std::uint32_t>(effectiveError(hr)),
+                        "SapiTtsEngine: failed to create the SAPI voice");
+    }
+  }
+
+  /// Enumerates the installed voices, applies the pure selectVoice() for @p
+  /// request, and activates the chosen voice token. Throws if no voice matches or
+  /// if SAPI rejects the change.
+  void selectAndBindVoice(const VoiceSelectionRequest& request) {
+    enumerateVoices();
+    const std::optional<SelectedVoice> chosen = selectVoice(descriptors_, request);
+    if (!chosen) {
+      throw EngineError("SapiTtsEngine: no usable voice for the requested language or voice name");
+    }
+    selected_ = *chosen;
+    const auto token = idToToken_.find(selected_.id);
+    if (token == idToToken_.end()) {
+      // Unreachable: selectVoice() only returns an id drawn from descriptors_,
+      // and addVoice() registers every such id in idToToken_, so the lookup
+      // above always hits. Kept as a defensive guard against a future drift.
+      throw EngineError(VoiceTokenLostMessage); // LCOV_EXCL_LINE
+    }
+    if (const HRESULT hr = voice_->SetVoice(token->second.Get()); FAILED(hr)) {
+      throw EngineError(static_cast<std::uint32_t>(hr),
+                        "SapiTtsEngine: failed to activate the selected voice");
     }
   }
 

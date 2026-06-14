@@ -11,6 +11,7 @@
 #  include <cstddef>
 #  include <cstdint>
 #  include <stdexcept>
+#  include <string_view>
 #  include <vector>
 
 #  include <gtest/gtest.h>
@@ -231,6 +232,24 @@ TEST(KeyboardHookLifecycle, StartThrowsWhenTheInstallFails) {
   RecordingHandler handler;
   KeyboardHook hook(handler, CommandMap{});
   EXPECT_THROW(hook.start(), HookError);
+}
+
+TEST(KeyboardHookLifecycle, StartTranslatesAThrowingInstallIntoAHookError) {
+  [[maybe_unused]] const SeamGuard guard;
+  // An installer that throws is caught by the hook thread's exception firewall,
+  // which records a generic "the hook thread failed" and signals ready so
+  // start() unblocks and surfaces it as a HookError (with no native code).
+  vox::input::testing::setInstallHookOverride([]() -> bool { throw HandlerError{}; });
+  RecordingHandler handler;
+  KeyboardHook hook(handler, CommandMap{});
+  try {
+    hook.start();
+    FAIL() << "start() should have thrown";
+  } catch (const HookError& error) {
+    EXPECT_EQ(error.code(), 0U);
+    const std::string_view what{error.what()};
+    EXPECT_NE(what.find("the hook thread failed"), std::string_view::npos);
+  }
 }
 
 TEST(KeyboardHookLifecycle, StartTwiceThrows) {

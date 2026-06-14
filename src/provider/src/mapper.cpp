@@ -45,57 +45,103 @@ Role mapRole(int controlTypeId) {
   return Role::Unknown;
 }
 
+// --- Legacy MSAA state-bit predicates ----------------------------------------
+// Standard Win32 controls reach UIA through the MSAA bridge and expose state via these
+// bits rather than the modern patterns. legacyState is 0 when unread, so each is a safe
+// no-op then. Naming the tests keeps the apply* helpers free of raw bit arithmetic.
+bool legacyMixed(const UiaElementData& data) {
+  return (data.legacyState & UiaLegacyStateMixed) != 0U;
+}
+
+bool legacyChecked(const UiaElementData& data) {
+  return (data.legacyState & UiaLegacyStateChecked) != 0U;
+}
+
+bool legacyExpanded(const UiaElementData& data) {
+  return (data.legacyState & UiaLegacyStateExpanded) != 0U;
+}
+
+bool legacyCollapsed(const UiaElementData& data) {
+  return (data.legacyState & UiaLegacyStateCollapsed) != 0U;
+}
+
+bool legacySelected(const UiaElementData& data) {
+  return (data.legacyState & UiaLegacyStateSelected) != 0U;
+}
+
+bool legacyReadOnly(const UiaElementData& data) {
+  return (data.legacyState & UiaLegacyStateReadOnly) != 0U;
+}
+
+// --- Toggle (Checked/Mixed) --------------------------------------------------
+void applyModernToggle(StateSet& states, const UiaElementData& data) {
+  if (data.toggleState == UiaToggleStateOn) {
+    states.set(Checked);
+  } else if (data.toggleState == UiaToggleStateIndeterminate) {
+    states.set(Mixed);
+  }
+}
+
+void applyLegacyToggle(StateSet& states, const UiaElementData& data) {
+  if (legacyMixed(data)) {
+    states.set(Mixed);
+  } else if (legacyChecked(data)) {
+    states.set(Checked);
+  }
+}
+
 // Checked/Mixed from the modern Toggle pattern, else the legacy MSAA state bits
-// (standard Win32 controls expose state only through the legacy bridge). legacyState
-// is 0 when unread, so the bit tests are safely no-ops then.
+// (standard Win32 controls expose state only through the legacy bridge).
 void applyToggle(StateSet& states, const UiaElementData& data) {
   if (data.hasToggle) {
-    if (data.toggleState == UiaToggleStateOn) {
-      states.set(Checked);
-    } else if (data.toggleState == UiaToggleStateIndeterminate) {
-      states.set(Mixed);
-    }
+    applyModernToggle(states, data);
+  } else {
+    applyLegacyToggle(states, data);
+  }
+}
+
+// --- ExpandCollapse ----------------------------------------------------------
+void applyModernExpandCollapse(StateSet& states, const UiaElementData& data) {
+  if (data.expandCollapseState == UiaExpandCollapseStateLeafNode) {
     return;
   }
-  if ((data.legacyState & UiaLegacyStateMixed) != 0U) {
-    states.set(Mixed);
-  } else if ((data.legacyState & UiaLegacyStateChecked) != 0U) {
-    states.set(Checked);
+  states.set(Expandable);
+  if (data.expandCollapseState == UiaExpandCollapseStateExpanded ||
+      data.expandCollapseState == UiaExpandCollapseStatePartiallyExpanded) {
+    states.set(Expanded);
+  }
+}
+
+// Legacy fallback: a standard Win32 combobox surfaces expand/collapse through the legacy
+// state bits, not the modern pattern.
+void applyLegacyExpandCollapse(StateSet& states, const UiaElementData& data) {
+  if (legacyExpanded(data)) {
+    states.set(Expandable);
+    states.set(Expanded);
+  } else if (legacyCollapsed(data)) {
+    states.set(Expandable);
   }
 }
 
 void applyExpandCollapse(StateSet& states, const UiaElementData& data) {
   if (data.hasExpandCollapse) {
-    if (data.expandCollapseState == UiaExpandCollapseStateLeafNode) {
-      return;
-    }
-    states.set(Expandable);
-    if (data.expandCollapseState == UiaExpandCollapseStateExpanded ||
-        data.expandCollapseState == UiaExpandCollapseStatePartiallyExpanded) {
-      states.set(Expanded);
-    }
-    return;
-  }
-  // Legacy fallback: a standard Win32 combobox surfaces expand/collapse through the legacy
-  // state bits, not the modern pattern.
-  if ((data.legacyState & UiaLegacyStateExpanded) != 0U) {
-    states.set(Expandable);
-    states.set(Expanded);
-  } else if ((data.legacyState & UiaLegacyStateCollapsed) != 0U) {
-    states.set(Expandable);
+    applyModernExpandCollapse(states, data);
+  } else {
+    applyLegacyExpandCollapse(states, data);
   }
 }
 
+// --- Selected ----------------------------------------------------------------
 // Selected from the modern SelectionItem pattern when present (so it can authoritatively
 // say "not selected"), else the legacy MSAA state bit.
 void applySelected(StateSet& states, const UiaElementData& data) {
-  const bool selected =
-      data.hasSelectionItem ? data.isSelected : (data.legacyState & UiaLegacyStateSelected) != 0U;
+  const bool selected = data.hasSelectionItem ? data.isSelected : legacySelected(data);
   if (selected) {
     states.set(Selected);
   }
 }
 
+// --- ReadOnly / Value --------------------------------------------------------
 // "Read-only" and a value are concepts only for value-bearing roles (an editable field or a
 // combo box); other roles (e.g. a static text, trivially read-only) must not report them.
 bool isValueBearing(Role role) {
@@ -108,8 +154,7 @@ void applyReadOnly(vox::model::AccessibleNode& node, const UiaElementData& data)
   if (!isValueBearing(node.role)) {
     return;
   }
-  const bool readOnly =
-      data.hasReadOnly ? data.isReadOnly : (data.legacyState & UiaLegacyStateReadOnly) != 0U;
+  const bool readOnly = data.hasReadOnly ? data.isReadOnly : legacyReadOnly(data);
   if (readOnly) {
     node.states.set(ReadOnly);
   }

@@ -47,19 +47,44 @@ void setEnumeratorFactory(EnumeratorFactory factory);
 using RenderWaitFn = std::function<unsigned long()>;
 void setRenderWaitFn(RenderWaitFn waitFn);
 
+/// @brief Replaces the sink's `CoInitializeEx` with @p initFn, which returns the
+///        `HRESULT` (as `long`) the apartment guard then checks. Lets a test
+///        exercise the COM-initialization-failed branch — on the `start()`/`stop()`
+///        thread or, by failing a later call, on the render thread — without
+///        actually breaking COM for the process. The function is called once per
+///        apartment the sink creates. An empty function restores the real
+///        `CoInitializeEx`. Test-only, not thread-safe.
+using ComInitFn = std::function<long()>;
+void setComInitFn(ComInitFn initFn);
+
+/// @brief Replaces the sink's `CreateEventW` with @p eventFn, which returns the
+///        event handle (or `nullptr` to fault the creation, as the real call does
+///        on failure). Lets a test drive the "cannot create the render event"
+///        branch deterministically. An empty function restores the real
+///        `CreateEventW`. Test-only, not thread-safe.
+using CreateEventFn = std::function<void*()>;
+void setCreateEventFn(CreateEventFn eventFn);
+
 } // namespace testing
 
 namespace detail {
+
+/// @brief The device buffer's geometry: how many frames it holds and how many
+///        bytes each frame is. Bundled so renderDeviceBuffer takes one descriptor
+///        rather than two loosely-related scalars.
+struct DeviceBufferLayout {
+  unsigned int frameCount; ///< Total frames the device buffer holds.
+  std::size_t frameBytes;  ///< Bytes per frame (channels * bytes-per-sample).
+};
 
 /// @brief Renders one device buffer's worth of audio: queries padding, acquires
 ///        the WASAPI buffer, copies from @p ring, and releases it (silent on an
 ///        empty ring, zero-padded on a partial underrun). This is the render
 ///        thread's per-tick step, factored out so its silent / partial-underrun /
 ///        full-copy branches are unit-testable with mock COM and no real device
-///        (issue #68). @p bufferFrameCount and @p frameBytes describe the device
-///        buffer geometry.
+///        (issue #68). @p layout describes the device buffer geometry.
 void renderDeviceBuffer(IAudioClient& client, IAudioRenderClient& renderClient, PcmRing& ring,
-                        unsigned int bufferFrameCount, std::size_t frameBytes);
+                        DeviceBufferLayout layout);
 
 } // namespace detail
 

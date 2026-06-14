@@ -103,10 +103,13 @@ void normalizeRow(std::span<float> row, double rowSum) {
 /// the target must have a non-zero rate and channel count.
 double validatedStep(const AudioFormat& source, std::uint32_t targetRate,
                      std::uint16_t targetChannels) {
-  if (source.bitsPerSample != 16U || source.channels != 1U || source.sampleRate == 0U) {
+  const bool sourceIsMono16BitPcm =
+      source.bitsPerSample == 16U && source.channels == 1U && source.sampleRate != 0U;
+  if (!sourceIsMono16BitPcm) {
     throw std::invalid_argument("PcmConverter: source must be 16-bit mono PCM at a non-zero rate");
   }
-  if (targetRate == 0U || targetChannels == 0U) {
+  const bool targetIsValid = targetRate != 0U && targetChannels != 0U;
+  if (!targetIsValid) {
     throw std::invalid_argument("PcmConverter: target rate and channel count must be non-zero");
   }
   return static_cast<double>(source.sampleRate) / static_cast<double>(targetRate);

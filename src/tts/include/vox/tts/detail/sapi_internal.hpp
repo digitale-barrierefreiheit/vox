@@ -50,7 +50,11 @@ inline std::wstring toWide(std::string_view utf8) {
   if (const int written = ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(), length,
                                                 out.data(), chars);
       written != chars) {
-    return {};
+    // Unreachable defensive guard: the sizing pass above and this write pass run the
+    // same deterministic conversion over the same immutable buffer + flags, so the
+    // write always returns the queried `chars`; no mock seam can fault-inject a
+    // mismatch on the direct ::MultiByteToWideChar call.
+    return {}; // LCOV_EXCL_LINE
   }
   return out;
 }
@@ -71,7 +75,11 @@ inline std::string toUtf8(const wchar_t* text) {
   if (const int written = ::WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, text, -1, out.data(),
                                                 bytes, nullptr, nullptr);
       written != bytes) {
-    return {};
+    // Unreachable defensive guard: the sizing pass above and this write pass run the
+    // same deterministic conversion over the same immutable string + flags, so the
+    // write always returns the queried `bytes`; no mock seam can fault-inject a
+    // mismatch on the direct ::WideCharToMultiByte call.
+    return {}; // LCOV_EXCL_LINE
   }
   out.resize(static_cast<std::size_t>(bytes) - 1U); // drop the embedded terminator
   return out;

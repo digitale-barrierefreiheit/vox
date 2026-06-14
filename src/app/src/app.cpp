@@ -33,9 +33,11 @@ void stopQuietly(Stop&& stop, const char* what) noexcept {
     std::forward<Stop>(stop)();
   } catch (const std::exception& error) {
     std::cerr << "vox: error stopping " << what << ": " << error.what() << '\n';
-  } catch (...) {
-    std::cerr << "vox: error stopping " << what << ": unknown exception\n";
-  }
+    // Firewall for a non-std throwable from a stop() seam; tests cannot throw a
+    // non-std type (clang-tidy hicpp-exception-baseclass), so this arm is unreachable.
+  } catch (...) {                                                           // LCOV_EXCL_LINE
+    std::cerr << "vox: error stopping " << what << ": unknown exception\n"; // LCOV_EXCL_LINE
+  } // LCOV_EXCL_LINE
 }
 
 } // namespace
@@ -60,12 +62,14 @@ int App::run() noexcept {
     std::cerr << "vox: fatal error: " << error.what() << '\n';
     teardown(); // stop whatever start() brought up before failing
     return 1;
-  } catch (...) {
-    // This is the process boundary; a non-std exception must not terminate it.
-    std::cerr << "vox: fatal error: unknown exception\n";
-    teardown();
-    return 1;
-  }
+    // This is the process boundary; a non-std exception must not terminate it. Tests
+    // cannot throw a non-std type (clang-tidy hicpp-exception-baseclass), so it is
+    // unreachable from the run-loop's startup seams.
+  } catch (...) {                                         // LCOV_EXCL_LINE
+    std::cerr << "vox: fatal error: unknown exception\n"; // LCOV_EXCL_LINE
+    teardown();                                           // LCOV_EXCL_LINE
+    return 1;                                             // LCOV_EXCL_LINE
+  } // LCOV_EXCL_LINE
 }
 
 void App::teardown() noexcept {

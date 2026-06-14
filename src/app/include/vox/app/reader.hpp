@@ -91,6 +91,10 @@ private:
   void announceInitialFocus();
   void onFocusChanged(const vox::model::AccessibleNode& node);
   void bargeIn();
+  /// @brief Toggles speech on/off; barges in on what is playing when muting.
+  void toggleSpeech();
+  /// @brief Signals waitForExit() so the app run-loop can quit.
+  void requestExit();
   void workerLoop();
   /// @brief Blocks until a node is pending or the worker is told to stop, then
   ///        takes the pending node. Returns nullopt on a stop request or a

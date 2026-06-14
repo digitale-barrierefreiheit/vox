@@ -27,7 +27,7 @@ constexpr std::array<std::string_view, 10> RoleNames{
 std::string_view toString(Role role) noexcept {
   const auto index = static_cast<std::size_t>(std::to_underlying(role));
   if (index >= RoleNames.size()) {
-    return "Unknown";
+    return "Unknown"; // LCOV_EXCL_LINE — defensive out-of-range guard (see role_test.cpp)
   }
   return RoleNames.at(index);
 }

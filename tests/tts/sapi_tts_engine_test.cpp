@@ -520,6 +520,152 @@ TEST_F(SapiEngineTest, OutputStreamWriteFirewallsASinkException) {
       [](std::span<const std::byte>) { throw SinkError{}; });
 }
 
+/// A no-op probe sink: a metadata stream call (Read/SetSize/Stat-null/...) that
+/// forwards no PCM must leave the caller's sink idle.
+const vox::tts::ITtsEngine::PcmSink kIdleSink = [](std::span<const std::byte>) {
+  ADD_FAILURE() << "sink must not run for a metadata stream call";
+};
+
+/// A sink that silently accepts PCM, for probes that first Write real bytes (to
+/// advance the stream position) before exercising Seek/Stat.
+const vox::tts::ITtsEngine::PcmSink kAcceptingSink = [](std::span<const std::byte>) {};
+
+TEST_F(SapiEngineTest, OutputStreamReadIsNotImplemented) {
+  withOutputStream(
+      [](ISpStreamFormat* stream) {
+        std::array<std::byte, 4> buffer{};
+        ULONG read = 7;
+        // PcmSinkStream is write-only: ISequentialStream::Read is rejected.
+        EXPECT_EQ(stream->Read(buffer.data(), static_cast<ULONG>(buffer.size()), &read), E_NOTIMPL);
+      },
+      kIdleSink);
+}
+
+TEST_F(SapiEngineTest, OutputStreamSeekTracksTheAppendOnlyPosition) {
+  withOutputStream(
+      [](ISpStreamFormat* stream) {
+        // First write three bytes so the position is non-zero, then probe Seek.
+        const std::array<std::byte, 3> pcm{std::byte{1}, std::byte{2}, std::byte{3}};
+        ULONG written = 0;
+        ASSERT_EQ(stream->Write(pcm.data(), static_cast<ULONG>(pcm.size()), &written), S_OK);
+
+        ULARGE_INTEGER where{};
+        LARGE_INTEGER move{};
+
+        // SET: absolute offset from the start.
+        move.QuadPart = 1;
+        EXPECT_EQ(stream->Seek(move, STREAM_SEEK_SET, &where), S_OK);
+        EXPECT_EQ(where.QuadPart, 1U);
+
+        // CUR: relative to the current position (now 1) — advance by 2.
+        move.QuadPart = 2;
+        EXPECT_EQ(stream->Seek(move, STREAM_SEEK_CUR, &where), S_OK);
+        EXPECT_EQ(where.QuadPart, 3U);
+
+        // END: append-only stream reports no real end, so END uses the current
+        // position as its base — a zero move leaves it unchanged.
+        move.QuadPart = 0;
+        EXPECT_EQ(stream->Seek(move, STREAM_SEEK_END, &where), S_OK);
+        EXPECT_EQ(where.QuadPart, 3U);
+
+        // A null out-param is allowed (the seek still succeeds).
+        move.QuadPart = 0;
+        EXPECT_EQ(stream->Seek(move, STREAM_SEEK_SET, nullptr), S_OK);
+      },
+      kAcceptingSink);
+}
+
+TEST_F(SapiEngineTest, OutputStreamSeekRejectsAnUnknownOriginAndNegativeTarget) {
+  withOutputStream(
+      [](ISpStreamFormat* stream) {
+        ULARGE_INTEGER where{};
+        LARGE_INTEGER move{};
+
+        // An origin that is neither SET/CUR/END is rejected outright.
+        move.QuadPart = 0;
+        EXPECT_EQ(stream->Seek(move, 99U, &where), STG_E_INVALIDFUNCTION);
+
+        // A target before the start of the stream is rejected (negative offset
+        // from position 0 via SET).
+        move.QuadPart = -1;
+        EXPECT_EQ(stream->Seek(move, STREAM_SEEK_SET, &where), STG_E_INVALIDFUNCTION);
+      },
+      kIdleSink);
+}
+
+TEST_F(SapiEngineTest, OutputStreamUnsupportedIStreamMethodsReturnNotImplemented) {
+  withOutputStream(
+      [](ISpStreamFormat* stream) {
+        const ULARGE_INTEGER zero{};
+        EXPECT_EQ(stream->SetSize(zero), E_NOTIMPL);
+        EXPECT_EQ(stream->CopyTo(nullptr, zero, nullptr, nullptr), E_NOTIMPL);
+        EXPECT_EQ(stream->LockRegion(zero, zero, 0), E_NOTIMPL);
+        EXPECT_EQ(stream->UnlockRegion(zero, zero, 0), E_NOTIMPL);
+        IStream* clone = nullptr;
+        EXPECT_EQ(stream->Clone(&clone), E_NOTIMPL);
+        EXPECT_EQ(clone, nullptr);
+      },
+      kIdleSink);
+}
+
+TEST_F(SapiEngineTest, OutputStreamCommitAndRevertSucceed) {
+  withOutputStream(
+      [](ISpStreamFormat* stream) {
+        // The stream forwards as it writes; there is nothing to flush or roll
+        // back, so both transactional no-ops report success.
+        EXPECT_EQ(stream->Commit(STGC_DEFAULT), S_OK);
+        EXPECT_EQ(stream->Revert(), S_OK);
+      },
+      kIdleSink);
+}
+
+TEST_F(SapiEngineTest, OutputStreamStatReportsTheWrittenSize) {
+  withOutputStream(
+      [](ISpStreamFormat* stream) {
+        const std::array<std::byte, 5> pcm{std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4},
+                                           std::byte{5}};
+        ULONG written = 0;
+        ASSERT_EQ(stream->Write(pcm.data(), static_cast<ULONG>(pcm.size()), &written), S_OK);
+
+        STATSTG stat{};
+        stat.type = 0xBADU;            // overwritten by Stat
+        stat.cbSize.QuadPart = 0xBADU; // overwritten by Stat
+        EXPECT_EQ(stream->Stat(&stat, STATFLAG_NONAME), S_OK);
+        EXPECT_EQ(stat.type, static_cast<DWORD>(STGTY_STREAM));
+        EXPECT_EQ(stat.cbSize.QuadPart, pcm.size()); // bytes forwarded so far
+        EXPECT_EQ(stat.pwcsName, nullptr);           // STATFLAG_NONAME: no name
+      },
+      kAcceptingSink);
+}
+
+TEST_F(SapiEngineTest, OutputStreamStatRejectsANullTarget) {
+  withOutputStream(
+      [](ISpStreamFormat* stream) {
+        EXPECT_EQ(stream->Stat(nullptr, STATFLAG_NONAME), STG_E_INVALIDPOINTER);
+      },
+      kIdleSink);
+}
+
+TEST_F(SapiEngineTest, OutputStreamGetFormatToleratesNullOutParams) {
+  withOutputStream(
+      [](ISpStreamFormat* stream) {
+        // Both out-params optional: a caller may probe only one (or neither).
+        EXPECT_EQ(stream->GetFormat(nullptr, nullptr), S_OK);
+      },
+      kIdleSink);
+}
+
+/// The classic and OneCore voice categories both fail to instantiate, so no
+/// voices enumerate and selection finds nothing — driving openVoiceCategory's
+/// create-failure early return (the category factory returns a fault HRESULT).
+TEST_F(SapiEngineTest, ConstructionFailsWhenTheVoiceCategoryCannotBeCreated) {
+  vox::tts::testing::setTokenCategoryFactory([](ISpObjectTokenCategory** out) {
+    *out = nullptr;
+    return ErrorFail; // createTokenCategory fails -> openVoiceCategory returns null
+  });
+  EXPECT_THROW(SapiTtsEngine{}, EngineError);
+}
+
 /// Balances a successful CoInitializeEx with CoUninitialize on scope exit, even
 /// if the body throws.
 class ComScope {

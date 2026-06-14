@@ -72,7 +72,11 @@ std::string toUtf8(BSTR text) {
   }
   const int bytes = ::WideCharToMultiByte(CP_UTF8, 0, text, length, nullptr, 0, nullptr, nullptr);
   if (bytes <= 0) {
-    return {};
+    // Unreachable defensive guard: dwFlags is 0 (not WC_ERR_INVALID_CHARS), so for a
+    // non-empty buffer the API never fails — invalid UTF-16 is substituted with U+FFFD
+    // rather than rejected, always yielding a positive byte count. No mock seam can
+    // fault-inject a failure here, so this branch cannot be driven by a test.
+    return {}; // LCOV_EXCL_LINE
   }
   std::string out(static_cast<std::size_t>(bytes), '\0');
   const int written =
@@ -218,8 +222,10 @@ void extractLegacy(UiaElementData& data, IUIAutomationElement* element) {
 /// named helper that reads one property group and degrades a missing/unreadable one to "absent".
 UiaElementData extract(IUIAutomationElement* element) {
   UiaElementData data;
+  // Defensive: every caller (focus event, focusedElement, nodeByName) already
+  // null-checks its element before calling extract, so this guard is unreachable.
   if (element == nullptr) {
-    return data;
+    return data; // LCOV_EXCL_LINE
   }
   extractIdentity(data, element);
   extractStateFlags(data, element);

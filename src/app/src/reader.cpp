@@ -136,23 +136,29 @@ void Reader::onCommand(vox::input::Command command) {
   case NavigateDown:
     bargeIn(); // the focus-changed event will bring the new announcement
     break;
-  case ToggleSpeech: {
-    const bool wasEnabled = speechEnabled_.load(std::memory_order_acquire);
-    speechEnabled_.store(!wasEnabled, std::memory_order_release);
-    if (wasEnabled) {
-      bargeIn(); // muting: silence what is playing
-    }
+  case ToggleSpeech:
+    toggleSpeech();
     break;
-  }
-  case Quit: {
-    const std::scoped_lock lock(exitMutex_);
-    exitRequested_ = true;
-    exitCv_.notify_all();
+  case Quit:
+    requestExit();
     break;
-  }
   case None:
     break;
   }
+}
+
+void Reader::toggleSpeech() {
+  const bool wasEnabled = speechEnabled_.load(std::memory_order_acquire);
+  speechEnabled_.store(!wasEnabled, std::memory_order_release);
+  if (wasEnabled) {
+    bargeIn(); // muting: silence what is playing
+  }
+}
+
+void Reader::requestExit() {
+  const std::scoped_lock lock(exitMutex_);
+  exitRequested_ = true;
+  exitCv_.notify_all();
 }
 
 void Reader::onFocusChanged(const vox::model::AccessibleNode& node) {
@@ -196,12 +202,18 @@ void Reader::workerLoop() {
     }
     // stop() may have set running_ false after we dequeued but before this
     // blocking synthesis begins; cancel() alone can be lost if it lands before
-    // synthesize() starts (engines reset their cancel flag there).
+    // synthesize() starts (engines reset their cancel flag there). Hitting this
+    // needs stop() to flip running_ in the gap after waitForNextNode() dequeued
+    // — a TOCTOU race with no deterministic test seam (stop() also resets
+    // pending_ and joins), so exclude the guarded return.
     if (!isRunning()) {
-      return;
+      return; // LCOV_EXCL_LINE
     }
+    // Likewise a TOCTOU race: onFocusChanged() refuses to queue while muted, so a
+    // pending node here was queued enabled; reaching this needs toggleSpeech() to
+    // land in the gap before this check — no deterministic seam, so exclude it.
     if (!speechEnabled_.load(std::memory_order_acquire)) {
-      continue; // muted after this node was queued; drop it
+      continue; // LCOV_EXCL_LINE — muted after this node was queued; drop it
     }
     speakUtterance(*node);
   }

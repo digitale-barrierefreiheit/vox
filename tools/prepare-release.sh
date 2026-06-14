@@ -28,9 +28,7 @@ changelog="$root/CHANGELOG.md"
 # `|| true` so a no-match does not trip `set -e` here — the guard below reports it.
 cur="$(grep -oE 'VERSION[[:space:]]+[0-9]+\.[0-9]+\.[0-9]+' "$cmake" | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)"
 [[ -n "$cur" ]] || { echo "could not find project(VERSION X.Y.Z) in $cmake" >&2; exit 1; }
-IFS=. read -r major minor patch <<EOF
-$cur
-EOF
+IFS=. read -r major minor patch <<< "$cur"
 case "$bump" in
   major) major=$((major + 1)); minor=0; patch=0 ;;
   minor) minor=$((minor + 1)); patch=0 ;;
@@ -71,5 +69,6 @@ bash "$(dirname "$0")/changelog-section.sh" "$new" "$changelog" > "$notes"
 [[ -s "$notes" ]] || { echo "no release notes to publish — add changelog entries under '## [Unreleased]' before cutting a release" >&2; exit 1; }
 
 echo "$new"
-[[ -n "${GITHUB_OUTPUT:-}" ]] && echo "version=$new" >> "$GITHUB_OUTPUT"
-exit 0
+if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+  echo "version=$new" >> "$GITHUB_OUTPUT"
+fi

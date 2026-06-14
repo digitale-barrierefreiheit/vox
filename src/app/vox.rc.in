@@ -1,0 +1,52 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
+//
+// Win32 resource script for the `vox` executable. Generated from this template by
+// CMake (configure_file, @ONLY): the version comes from project(VERSION) and the
+// embedded LICENSE / NOTICE are read from the repo files at build time, so nothing
+// is duplicated (single source of truth, #103).
+
+#include <windows.h>
+
+#define IDI_VOX     1
+#define IDR_LICENSE 256
+#define IDR_NOTICE  257
+
+// Application icon. Explorer shows the lowest-id icon as the executable's icon.
+IDI_VOX ICON "@VOX_ICON_PATH@"
+
+// Embed the licence texts *by reference* — the resource compiler reads the real
+// repo files at build time, so the binary always carries the exact LICENSE/NOTICE.
+IDR_LICENSE RCDATA "@VOX_LICENSE_PATH@"
+IDR_NOTICE  RCDATA "@VOX_NOTICE_PATH@"
+
+VS_VERSION_INFO VERSIONINFO
+  FILEVERSION    @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+  PRODUCTVERSION @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+  FILEFLAGSMASK  VS_FFI_FILEFLAGSMASK
+  FILEFLAGS      0x0L
+  FILEOS         VOS__WINDOWS32
+  FILETYPE       VFT_APP
+  FILESUBTYPE    VFT2_UNKNOWN
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904B0"
+    BEGIN
+      VALUE "CompanyName",      "Digitale Barrierefreiheit e.V."
+      VALUE "FileDescription",  "Vox screen reader"
+      VALUE "FileVersion",      "@PROJECT_VERSION@"
+      VALUE "InternalName",     "vox"
+      VALUE "LegalCopyright",   "Copyright (C) 2026 Digitale Barrierefreiheit e.V. Licensed under Apache-2.0."
+      VALUE "OriginalFilename", "vox.exe"
+      VALUE "ProductName",      "Vox"
+      VALUE "ProductVersion",   "@PROJECT_VERSION@"
+      VALUE "Comments",         "Apache-2.0. https://github.com/digitale-barrierefreiheit/vox  (Latin 'vox' = voice.)"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    // 0x0409 = en-US, 1200 = Unicode (UTF-16).
+    VALUE "Translation", 0x409, 1200
+  END
+END

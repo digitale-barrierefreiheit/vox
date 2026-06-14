@@ -64,4 +64,16 @@ if(WIN32)
             "${PROJECT_SOURCE_DIR}/data/lexicon"
             "$<TARGET_FILE_DIR:vox>/lexicon"
     COMMENT "Copying lexicon files next to vox")
+
+  # Release install layout (#103): the executable, the lexicon data it loads at
+  # runtime (lexicon\<tag>.lex, #61), and the licence/notice/changelog files —
+  # all at the package root so the ZIP is a self-contained, runnable folder.
+  install(TARGETS vox RUNTIME DESTINATION ".")
+  install(DIRECTORY "${PROJECT_SOURCE_DIR}/data/lexicon" DESTINATION ".")
+  install(FILES
+            "${PROJECT_SOURCE_DIR}/LICENSE"
+            "${PROJECT_SOURCE_DIR}/NOTICE"
+            "${PROJECT_SOURCE_DIR}/THIRD-PARTY-NOTICES.md"
+            "${PROJECT_SOURCE_DIR}/CHANGELOG.md"
+          DESTINATION ".")
 endif()

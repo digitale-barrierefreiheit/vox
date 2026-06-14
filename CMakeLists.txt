@@ -82,6 +82,25 @@ if(VOX_BUILD_DOCS)
 endif()
 
 # ---------------------------------------------------------------------------
+# Packaging — the release ZIP (Windows x64). See #103 / RELEASING.md.
+# The release workflow builds Release and runs `cpack`; locally, `cpack` in the
+# build tree produces dist/vox-<version>-windows-x64.zip plus a .sha256 checksum.
+# ---------------------------------------------------------------------------
+if(WIN32)
+  set(CPACK_GENERATOR "ZIP")
+  set(CPACK_PACKAGE_NAME "vox")
+  set(CPACK_PACKAGE_VENDOR "Digitale Barrierefreiheit e.V.")
+  set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+  set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PROJECT_DESCRIPTION}")
+  set(CPACK_PACKAGE_HOMEPAGE_URL "${PROJECT_HOMEPAGE_URL}")
+  set(CPACK_PACKAGE_FILE_NAME "vox-${PROJECT_VERSION}-windows-x64")
+  set(CPACK_PACKAGE_DIRECTORY "${PROJECT_BINARY_DIR}/dist")
+  set(CPACK_PACKAGE_CHECKSUM "SHA256")
+  set(CPACK_VERBATIM_VARIABLES ON)
+  include(CPack)
+endif()
+
+# ---------------------------------------------------------------------------
 # Configuration summary
 # ---------------------------------------------------------------------------
 message(STATUS "Vox ${PROJECT_VERSION}")

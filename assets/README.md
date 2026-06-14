@@ -18,9 +18,17 @@
 
 ## Provenance & license
 
-The Vox logo was generated with [Recraft.AI](https://www.recraft.ai/) under a paid plan; its use
-is governed by Recraft's asset terms. **TODO (legal):** confirm the paid-plan terms permit
-commercial use and redistribution of the generated logo within this repository.
+The Vox logo was generated with [Recraft.AI](https://www.recraft.ai/) under a **paid
+subscription**. Under Recraft's paid-tier Terms of Service the subscriber **owns the generated
+Assets** — Recraft assigns its copyright in them to the subscriber — for commercial use, with a
+single restriction: **the Assets may not be used to train AI models**. On that basis the logo is
+used and redistributed here, including inside the release artifacts.
+
+- The one restriction to honour: never use the logo (or a derivative) as AI **training** data.
+- This file records the logo's **AI-generated** provenance — for honesty and to support
+  AI-content transparency expectations (e.g. the EU AI Act). Keep that disclosure.
+- A purely AI-generated image may carry thin or no copyright (no human authorship) in some
+  jurisdictions, so no strong exclusivity is asserted — consistent with the trademark note below.
 
 "Vox" is the Latin word for "voice". It is **not** a registered trademark, and no trademark claim
 is made.

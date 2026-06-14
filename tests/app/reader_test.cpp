@@ -14,6 +14,7 @@
 #include <condition_variable>
 #include <cstddef>
 #include <mutex>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -178,13 +179,23 @@ private:
   bool cancelled_{false};
 };
 
-/// A provider whose start() throws, to drive the Reader's start() rollback: the
-/// audio/worker it already brought up must be torn down and the exception must
-/// propagate, leaving the Reader cleanly re-startable.
+/// A dedicated exception (S112: not a generic one) for a provider that fails
+/// during the Reader's bring-up.
+class ProviderBringUpError : public std::runtime_error {
+public:
+  ProviderBringUpError() : std::runtime_error("provider bring-up boom") {}
+};
+
+/// A provider whose focusedElement() throws, to drive the Reader's start()
+/// rollback. focusedElement() is the *last* bring-up step (announceInitialFocus),
+/// so by the time it throws the audio sink, worker thread, and focus subscription
+/// are all up — exercising the fullest teardown the catch must perform before it
+/// rethrows. (Throwing here, not from start(), also keeps the override free of the
+/// by-value FocusChangedCallback the IProvider signature would force, S1238.)
 class ThrowingProvider : public FakeProvider {
 public:
-  void start(FocusChangedCallback /*onFocusChanged*/) override {
-    throw std::runtime_error("provider start boom");
+  std::optional<AccessibleNode> focusedElement() const override {
+    throw ProviderBringUpError{};
   }
 };
 
@@ -221,14 +232,15 @@ TEST(Reader, StartRollsBackAndRethrowsWhenBringUpThrows) {
   SyncAudioSink audio;
   Reader reader(provider, tts, audio, germanOutput());
 
-  // start() brings up the audio sink and the worker thread, then provider_.start()
-  // throws: the catch must tear all of that back down and rethrow.
-  EXPECT_THROW(reader.start(), std::runtime_error);
+  // Bring-up reaches announceInitialFocus(), where focusedElement() throws: the
+  // catch must tear down the audio sink, worker thread, and subscription, then
+  // rethrow.
+  EXPECT_THROW(reader.start(), ProviderBringUpError);
 
   // The rollback ran stop(), so started_ was reset — a retry actually tries again
   // (and throws again) rather than early-returning, and the worker is joined each
   // time. The test completing (no hang) confirms the teardown is clean.
-  EXPECT_THROW(reader.start(), std::runtime_error);
+  EXPECT_THROW(reader.start(), ProviderBringUpError);
   EXPECT_EQ(tts.synthesizeCount(), 0); // nothing was ever spoken
 }
 

@@ -555,6 +555,19 @@ TEST(WasapiRenderStep, ReturnsEarlyWhenDeviceBufferIsFull) {
   renderDeviceBuffer(client, renderClient, ring, Layout);
 }
 
+TEST(WasapiRenderStep, ReturnsEarlyWhenPaddingExceedsTheBuffer) {
+  NiceMock<MockAudioClient> client;
+  NiceMock<MockAudioRenderClient> renderClient;
+  PcmRing ring(64);
+  // A bogus padding larger than the buffer must not underflow frameCount - padding
+  // into a huge frame count; the step bails just as it does for a full buffer.
+  EXPECT_CALL(client, GetCurrentPadding(_))
+      .WillOnce(DoAll(SetArgPointee<0>(BufferFrames + 1U), Return(S_OK)));
+  EXPECT_CALL(renderClient, GetBuffer(_, _)).Times(0);
+  EXPECT_CALL(renderClient, ReleaseBuffer(_, _)).Times(0);
+  renderDeviceBuffer(client, renderClient, ring, Layout);
+}
+
 TEST(WasapiRenderStep, ReturnsEarlyWhenGetBufferFails) {
   NiceMock<MockAudioClient> client;
   NiceMock<MockAudioRenderClient> renderClient;

@@ -280,10 +280,13 @@ void renderDeviceBuffer(IAudioClient& client, IAudioRenderClient& renderClient, 
   if (FAILED(client.GetCurrentPadding(&padding))) {
     return;
   }
-  const UINT32 frames = layout.frameCount - padding;
-  if (frames == 0U) {
+  if (padding >= layout.frameCount) {
+    // A full buffer — or a bogus padding from a misbehaving device — leaves no
+    // frames to render; bail before the unsigned subtraction could underflow into
+    // an enormous frame count.
     return;
   }
+  const UINT32 frames = layout.frameCount - padding;
   BYTE* deviceBuffer = nullptr;
   if (FAILED(renderClient.GetBuffer(frames, &deviceBuffer))) {
     return;

@@ -67,7 +67,7 @@ awk -v new="$new" -v today="$today" -v repo="$repo" '
 
 # 4. Extract the new version's body for the PR description and the release notes.
 bash "$(dirname "$0")/changelog-section.sh" "$new" "$changelog" > "$notes"
-[[ -s "$notes" ]] || { echo "the [Unreleased] changelog section is empty — add release notes before cutting a release" >&2; exit 1; }
+[[ -s "$notes" ]] || { echo "no release notes to publish — add changelog entries under '## [Unreleased]' before cutting a release" >&2; exit 1; }
 
 echo "$new"
 [[ -n "${GITHUB_OUTPUT:-}" ]] && echo "version=$new" >> "$GITHUB_OUTPUT"

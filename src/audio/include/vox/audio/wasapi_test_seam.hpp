@@ -47,19 +47,51 @@ void setEnumeratorFactory(EnumeratorFactory factory);
 using RenderWaitFn = std::function<unsigned long()>;
 void setRenderWaitFn(RenderWaitFn waitFn);
 
+/// @brief Replaces the sink's `CoInitializeEx` with @p initFn, which returns the
+///        `HRESULT` (as `long`) the apartment guard then checks. Lets a test
+///        exercise the COM-initialization-failed branch — on the `start()`/`stop()`
+///        thread or, by failing a later call, on the render thread — without
+///        actually breaking COM for the process. The function is called once per
+///        apartment the sink creates. An empty function restores the real
+///        `CoInitializeEx`. Test-only, not thread-safe.
+///
+///        Contract: a call that reports success (a non-`FAILED` code other than
+///        `RPC_E_CHANGED_MODE`) MUST have actually called `CoInitializeEx` — the
+///        guard then owns the initialization and balances it with `CoUninitialize`
+///        on teardown, so faking success leaves COM unbalanced on the thread. To
+///        fault initialization instead, return a `FAILED` code or
+///        `RPC_E_CHANGED_MODE`: the guard throws and does not call
+///        `CoUninitialize`, so no real init is needed on that path.
+using ComInitFn = std::function<long()>;
+void setComInitFn(ComInitFn initFn);
+
+/// @brief When @p failFn returns `true`, the sink's `CreateEventW` is faulted (it
+///        yields a null handle, as the real call does on failure), driving the
+///        "cannot create the render event" branch deterministically. An empty
+///        function restores the real `CreateEventW`. Test-only, not thread-safe.
+using FailCreateEventFn = std::function<bool()>;
+void setFailCreateEventFn(FailCreateEventFn failFn);
+
 } // namespace testing
 
 namespace detail {
+
+/// @brief The device buffer's geometry: how many frames it holds and how many
+///        bytes each frame is. Bundled so renderDeviceBuffer takes one descriptor
+///        rather than two loosely-related scalars.
+struct DeviceBufferLayout {
+  unsigned int frameCount; ///< Total frames the device buffer holds.
+  std::size_t frameBytes;  ///< Bytes per frame (channels * bytes-per-sample).
+};
 
 /// @brief Renders one device buffer's worth of audio: queries padding, acquires
 ///        the WASAPI buffer, copies from @p ring, and releases it (silent on an
 ///        empty ring, zero-padded on a partial underrun). This is the render
 ///        thread's per-tick step, factored out so its silent / partial-underrun /
 ///        full-copy branches are unit-testable with mock COM and no real device
-///        (issue #68). @p bufferFrameCount and @p frameBytes describe the device
-///        buffer geometry.
+///        (issue #68). @p layout describes the device buffer geometry.
 void renderDeviceBuffer(IAudioClient& client, IAudioRenderClient& renderClient, PcmRing& ring,
-                        unsigned int bufferFrameCount, std::size_t frameBytes);
+                        DeviceBufferLayout layout);
 
 } // namespace detail
 

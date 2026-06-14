@@ -98,6 +98,8 @@ protected:
   void TearDown() override {
     vox::audio::testing::setEnumeratorFactory({});
     vox::audio::testing::setRenderWaitFn({});
+    vox::audio::testing::setComInitFn({});
+    vox::audio::testing::setFailCreateEventFn({});
   }
 
   /// Default behaviours for the whole chain — overridden per-test to inject one
@@ -428,6 +430,98 @@ TEST_F(WasapiAcquisitionTest, ThrowsWhenStartedOnAnStaThread) {
   ::CoUninitialize();
 }
 
+TEST_F(WasapiAcquisitionTest, ThrowsWhenComInitializationFails) {
+  // A genuine CoInitializeEx failure (not the tolerated RPC_E_CHANGED_MODE): the
+  // apartment guard must surface it as a DeviceError on start()'s own thread.
+  vox::audio::testing::setComInitFn([] { return ErrorFail; });
+  WasapiAudioSink sink(AudioFormat{22050, 16, 1});
+  EXPECT_THROW(sink.start(), DeviceError);
+}
+
+TEST_F(WasapiAcquisitionTest, RenderThreadSurvivesAComInitFailure) {
+  // The start()/stop() thread's apartment must succeed (call #1) so acquisition
+  // completes and the render thread launches; the render thread's apartment then
+  // fails (call #2), so renderLoop() throws and renderLoopGuarded()'s firewall
+  // catches it, signals stop, and the thread dies without terminating the process.
+  // Block on a promise the seam fulfils on the failing call — deterministic.
+  auto failed = std::make_shared<std::promise<void>>();
+  std::future<void> renderFailed = failed->get_future();
+  auto calls = std::make_shared<std::atomic<int>>(0);
+  vox::audio::testing::setComInitFn([failed, calls]() {
+    if (calls->fetch_add(1) == 0) {
+      // The start()/stop() thread's apartment really initializes COM, so the
+      // guard's matching CoUninitialize on teardown stays balanced.
+      return ::CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    }
+    failed->set_value();
+    return ErrorFail; // the render thread's apartment fails
+  });
+
+  WasapiAudioSink sink(AudioFormat{22050, 16, 1});
+  ASSERT_NO_THROW(sink.start());
+  ASSERT_EQ(renderFailed.wait_for(WaitTimeout), std::future_status::ready);
+  EXPECT_NO_THROW(sink.stop());
+}
+
+TEST_F(WasapiAcquisitionTest, ThrowsWhenTheRenderEventCannotBeCreated) {
+  // CreateEventW failing leaves a null handle; startEventDrivenClient must turn
+  // that into a DeviceError carrying the deterministic last-error code (the seam
+  // mirrors a real failure), rather than proceeding with no event to wait on.
+  vox::audio::testing::setFailCreateEventFn([]() { return true; });
+  WasapiAudioSink sink(AudioFormat{22050, 16, 1});
+  try {
+    sink.start();
+    ADD_FAILURE() << "start() should throw when the render event cannot be created";
+  } catch (const DeviceError& error) {
+    EXPECT_EQ(error.code(), static_cast<std::uint32_t>(ERROR_NOT_ENOUGH_MEMORY));
+  }
+}
+
+TEST_F(WasapiAcquisitionTest, SizesTheRingByBufferPeriodsWhenTheyDominate) {
+  // A device buffer far larger than ~RingSeconds of audio makes the
+  // by-buffer-periods floor win the std::max in ringCapacityBytes(); the sink must
+  // still start and stop cleanly with that capacity.
+  // 8192 frames: 4 periods * 8192 * 4 B/frame = 128 KiB exceeds 0.5 s of audio
+  // (96 KiB at 48 kHz stereo 16-bit), so the by-periods floor wins the std::max.
+  EXPECT_CALL(client_, GetBufferSize(_)).WillOnce(DoAll(SetArgPointee<0>(8192U), Return(S_OK)));
+  WasapiAudioSink sink(AudioFormat{22050, 16, 1});
+  EXPECT_NO_THROW(sink.start());
+  EXPECT_NO_THROW(sink.stop());
+}
+
+TEST_F(WasapiAcquisitionTest, RenderTickReturnsWhenStopIsSignaledDuringAWait) {
+  // Drive renderTick's "stopped during the wait" branch deterministically: the
+  // wait reports the event fired, but the stop flag is already set, so the tick
+  // returns before touching the device. The seam holds the render thread in its
+  // first wait until a releaser thread frees it — after stop() has set the flag —
+  // so the wait returns WAIT_OBJECT_0 with stopRequested_ already true.
+  auto entered = std::make_shared<std::promise<void>>();
+  std::future<void> renderEntered = entered->get_future();
+  auto firstWait = std::make_shared<std::atomic<bool>>(false);
+  auto release = std::make_shared<std::atomic<bool>>(false);
+  vox::audio::testing::setRenderWaitFn([entered, firstWait, release]() {
+    if (!firstWait->exchange(true)) {
+      entered->set_value(); // the render thread has reached its first wait
+      while (!release->load(std::memory_order_acquire)) {
+        std::this_thread::yield(); // hold here until the releaser frees it
+      }
+    }
+    return WAIT_OBJECT_0; // event "fired", but stopRequested_ is already set
+  });
+
+  WasapiAudioSink sink(AudioFormat{22050, 16, 1});
+  ASSERT_NO_THROW(sink.start());
+  ASSERT_EQ(renderEntered.wait_for(WaitTimeout), std::future_status::ready);
+  // stop() sets stopRequested_ before it joins; a separate thread then releases the
+  // held wait, so the tick observes the flag and returns through the branch under
+  // test. Releasing concurrently with stop() avoids a join-before-release deadlock.
+  std::jthread releaser([release] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    release->store(true, std::memory_order_release);
+  });
+  EXPECT_NO_THROW(sink.stop());
+}
+
 // Direct tests for the render thread's per-tick step. Driving it through the
 // real thread is non-deterministic (an auto-reset event the OS would normally
 // pulse), so the step is factored out (issue #68) and exercised here with mock
@@ -436,6 +530,8 @@ TEST_F(WasapiAcquisitionTest, ThrowsWhenStartedOnAnStaThread) {
 constexpr UINT32 BufferFrames = 8;
 constexpr std::size_t FrameBytes = 4; // 16-bit stereo
 constexpr std::size_t DeviceBytes = BufferFrames * FrameBytes;
+constexpr vox::audio::detail::DeviceBufferLayout Layout{.frameCount = BufferFrames,
+                                                        .frameBytes = FrameBytes};
 
 TEST(WasapiRenderStep, ReturnsEarlyWhenGetPaddingFails) {
   NiceMock<MockAudioClient> client;
@@ -444,7 +540,7 @@ TEST(WasapiRenderStep, ReturnsEarlyWhenGetPaddingFails) {
   EXPECT_CALL(client, GetCurrentPadding(_)).WillOnce(Return(ErrorFail));
   EXPECT_CALL(renderClient, GetBuffer(_, _)).Times(0);
   EXPECT_CALL(renderClient, ReleaseBuffer(_, _)).Times(0);
-  renderDeviceBuffer(client, renderClient, ring, BufferFrames, FrameBytes);
+  renderDeviceBuffer(client, renderClient, ring, Layout);
 }
 
 TEST(WasapiRenderStep, ReturnsEarlyWhenDeviceBufferIsFull) {
@@ -456,7 +552,20 @@ TEST(WasapiRenderStep, ReturnsEarlyWhenDeviceBufferIsFull) {
       .WillOnce(DoAll(SetArgPointee<0>(BufferFrames), Return(S_OK)));
   EXPECT_CALL(renderClient, GetBuffer(_, _)).Times(0);
   EXPECT_CALL(renderClient, ReleaseBuffer(_, _)).Times(0);
-  renderDeviceBuffer(client, renderClient, ring, BufferFrames, FrameBytes);
+  renderDeviceBuffer(client, renderClient, ring, Layout);
+}
+
+TEST(WasapiRenderStep, ReturnsEarlyWhenPaddingExceedsTheBuffer) {
+  NiceMock<MockAudioClient> client;
+  NiceMock<MockAudioRenderClient> renderClient;
+  PcmRing ring(64);
+  // A bogus padding larger than the buffer must not underflow frameCount - padding
+  // into a huge frame count; the step bails just as it does for a full buffer.
+  EXPECT_CALL(client, GetCurrentPadding(_))
+      .WillOnce(DoAll(SetArgPointee<0>(BufferFrames + 1U), Return(S_OK)));
+  EXPECT_CALL(renderClient, GetBuffer(_, _)).Times(0);
+  EXPECT_CALL(renderClient, ReleaseBuffer(_, _)).Times(0);
+  renderDeviceBuffer(client, renderClient, ring, Layout);
 }
 
 TEST(WasapiRenderStep, ReturnsEarlyWhenGetBufferFails) {
@@ -466,7 +575,7 @@ TEST(WasapiRenderStep, ReturnsEarlyWhenGetBufferFails) {
   EXPECT_CALL(client, GetCurrentPadding(_)).WillOnce(DoAll(SetArgPointee<0>(0U), Return(S_OK)));
   EXPECT_CALL(renderClient, GetBuffer(BufferFrames, _)).WillOnce(Return(ErrorFail));
   EXPECT_CALL(renderClient, ReleaseBuffer(_, _)).Times(0);
-  renderDeviceBuffer(client, renderClient, ring, BufferFrames, FrameBytes);
+  renderDeviceBuffer(client, renderClient, ring, Layout);
 }
 
 TEST(WasapiRenderStep, ReleasesSilentWhenRingIsEmpty) {
@@ -478,7 +587,7 @@ TEST(WasapiRenderStep, ReleasesSilentWhenRingIsEmpty) {
   EXPECT_CALL(renderClient, GetBuffer(BufferFrames, _))
       .WillOnce(DoAll(SetArgPointee<1>(deviceBuffer.data()), Return(S_OK)));
   EXPECT_CALL(renderClient, ReleaseBuffer(BufferFrames, AUDCLNT_BUFFERFLAGS_SILENT));
-  renderDeviceBuffer(client, renderClient, ring, BufferFrames, FrameBytes);
+  renderDeviceBuffer(client, renderClient, ring, Layout);
 }
 
 TEST(WasapiRenderStep, ZeroPadsAndReleasesOnPartialUnderrun) {
@@ -496,7 +605,7 @@ TEST(WasapiRenderStep, ZeroPadsAndReleasesOnPartialUnderrun) {
   EXPECT_CALL(renderClient, GetBuffer(BufferFrames, _))
       .WillOnce(DoAll(SetArgPointee<1>(deviceBuffer.data()), Return(S_OK)));
   EXPECT_CALL(renderClient, ReleaseBuffer(BufferFrames, 0));
-  renderDeviceBuffer(client, renderClient, ring, BufferFrames, FrameBytes);
+  renderDeviceBuffer(client, renderClient, ring, Layout);
 
   for (std::size_t i = 0; i < source.size(); ++i) {
     EXPECT_EQ(deviceBuffer[i], 0xAB) << "copied byte " << i;
@@ -519,7 +628,7 @@ TEST(WasapiRenderStep, CopiesFullBufferWhenRingHasEnough) {
   EXPECT_CALL(renderClient, GetBuffer(BufferFrames, _))
       .WillOnce(DoAll(SetArgPointee<1>(deviceBuffer.data()), Return(S_OK)));
   EXPECT_CALL(renderClient, ReleaseBuffer(BufferFrames, 0));
-  renderDeviceBuffer(client, renderClient, ring, BufferFrames, FrameBytes);
+  renderDeviceBuffer(client, renderClient, ring, Layout);
 
   for (const BYTE value : deviceBuffer) {
     EXPECT_EQ(value, 0xCD);

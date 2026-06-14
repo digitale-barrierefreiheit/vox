@@ -55,6 +55,13 @@ TEST(Lexicon, UnknownRoleAndMissingLookupsAreEmpty) {
   EXPECT_TRUE(lex.state(StateConcept::Checked).empty());
 }
 
+// The out-of-table-range guards in Lexicon::role()/state() are defensive against
+// an out-of-range Role/StateConcept (an upstream bug). They are unreachable with
+// any valid enumerator (the tables span them), and forging an out-of-range value
+// to exercise them trips clang-tidy's optin.core.EnumCastOutOfRange — so those two
+// returns are excluded from coverage in lexicon.cpp rather than tested by
+// violating the project's own lint.
+
 // The contract that an unknown role is never spoken is enforced in code, not
 // merely by de.lex omitting the key: a table that defines it changes nothing.
 TEST(Lexicon, UnknownRoleStaysEmptyEvenIfTableDefinesIt) {

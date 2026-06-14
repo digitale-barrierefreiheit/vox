@@ -97,11 +97,13 @@ template<typename MakeDependencies>
   } catch (const std::exception& error) {
     detail::reportFatalError(error.what());
     return 1;
-  } catch (...) {
-    // The process boundary: a non-std construction failure maps to exit 1.
-    detail::reportFatalError("unknown exception");
-    return 1;
-  }
+    // The process boundary: a non-std construction failure maps to exit 1. Tests
+    // cannot throw a non-std type (clang-tidy hicpp-exception-baseclass), so this
+    // arm is unreachable from the factory / App constructor seams.
+  } catch (...) {                                  // LCOV_EXCL_LINE
+    detail::reportFatalError("unknown exception"); // LCOV_EXCL_LINE
+    return 1;                                      // LCOV_EXCL_LINE
+  } // LCOV_EXCL_LINE
 }
 
 } // namespace vox::app

@@ -121,6 +121,43 @@ DWORD renderWait(HANDLE event) {
   return ::WaitForSingleObject(event, RenderWaitMs);
 }
 
+/// Test seam (issue #68): when installed, replaces CoInitializeEx so the apartment
+/// guard's failure branches are exercised without breaking COM for the process.
+/// Empty in production, where the real CoInitializeEx runs.
+std::function<long()>& comInitFn() {
+  static std::function<long()> fn;
+  return fn;
+}
+
+/// Initializes COM for this thread's apartment — via the test seam when one is
+/// installed, otherwise the real CoInitializeEx.
+HRESULT comInitialize() {
+  if (const auto& initFn = comInitFn()) {
+    return static_cast<HRESULT>(initFn());
+  }
+  return ::CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+}
+
+/// Test seam (issue #68): when it returns true, CreateEventW is faulted so the
+/// render-event creation-failure branch is exercised. Empty in production.
+std::function<bool()>& failCreateEventFn() {
+  static std::function<bool()> fn;
+  return fn;
+}
+
+/// Creates the auto-reset render event — a null handle (as the real call yields on
+/// failure) when the test seam asks to fault it, otherwise the real CreateEventW.
+HANDLE createRenderEvent() {
+  if (const auto& failFn = failCreateEventFn(); failFn && failFn()) {
+    // Mirror a real CreateEventW failure: set a deterministic last error so the
+    // caller's DeviceError carries a meaningful code rather than whatever a prior
+    // Win32 call happened to leave in this thread's last-error slot.
+    ::SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+    return nullptr;
+  }
+  return ::CreateEventW(nullptr, FALSE, FALSE, nullptr);
+}
+
 /// RAII for the render thread's MMCSS registration: requests "Pro Audio"
 /// real-time scheduling on construction (best-effort — a null handle means MMCSS
 /// was unavailable, and we still render) and reverts it on destruction. Keeping
@@ -152,7 +189,7 @@ private:
 class ComApartment {
 public:
   ComApartment() {
-    const HRESULT hr = ::CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    const HRESULT hr = comInitialize();
     if (hr == RPC_E_CHANGED_MODE) {
       // The thread is already an STA. WASAPI interfaces created here would be
       // STA-bound yet called from the MTA render thread without marshaling
@@ -183,20 +220,27 @@ private:
   bool initialized_{false};
 };
 
+/// The effective format tag for @p format: its `wFormatTag`, or — for a
+/// WAVE_FORMAT_EXTENSIBLE format — the underlying tag its SubFormat encodes. This
+/// unwrap is pulled out so detectSampleFormat reads as a flat tag/bits decision.
+WORD effectiveFormatTag(const WAVEFORMATEX& format) {
+  if (format.wFormatTag != WAVE_FORMAT_EXTENSIBLE) {
+    return format.wFormatTag;
+  }
+  // Only read the extensible fields if the struct is actually that large; a
+  // malformed mix format would otherwise be an out-of-bounds read.
+  if (format.cbSize < sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX)) {
+    throw DeviceError("WasapiAudioSink: malformed extensible mix format");
+  }
+  // The extensible SubFormat's Data1 carries the underlying tag (1 = PCM,
+  // 3 = IEEE float), so we avoid depending on the KSDATAFORMAT GUID symbols.
+  const auto& extensible = reinterpret_cast<const WAVEFORMATEXTENSIBLE&>(format);
+  return static_cast<WORD>(extensible.SubFormat.Data1);
+}
+
 /// Maps a device mix format to the sample encoding we must produce for it.
 SampleFormat detectSampleFormat(const WAVEFORMATEX& format) {
-  WORD tag = format.wFormatTag;
-  if (tag == WAVE_FORMAT_EXTENSIBLE) {
-    // Only read the extensible fields if the struct is actually that large; a
-    // malformed mix format would otherwise be an out-of-bounds read.
-    if (format.cbSize < sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX)) {
-      throw DeviceError("WasapiAudioSink: malformed extensible mix format");
-    }
-    // The extensible SubFormat's Data1 carries the underlying tag (1 = PCM,
-    // 3 = IEEE float), so we avoid depending on the KSDATAFORMAT GUID symbols.
-    const auto& extensible = reinterpret_cast<const WAVEFORMATEXTENSIBLE&>(format);
-    tag = static_cast<WORD>(extensible.SubFormat.Data1);
-  }
+  const WORD tag = effectiveFormatTag(format);
   if (tag == WAVE_FORMAT_IEEE_FLOAT && format.wBitsPerSample == 32U) {
     return SampleFormat::Float32;
   }
@@ -216,6 +260,14 @@ void setEnumeratorFactory(EnumeratorFactory factory) {
 void setRenderWaitFn(RenderWaitFn waitFn) {
   renderWaitFn() = std::move(waitFn);
 }
+
+void setComInitFn(ComInitFn initFn) {
+  comInitFn() = std::move(initFn);
+}
+
+void setFailCreateEventFn(FailCreateEventFn failFn) {
+  failCreateEventFn() = std::move(failFn);
+}
 } // namespace testing
 
 namespace detail {
@@ -223,20 +275,23 @@ namespace detail {
 // (silent / partial-underrun / full-copy) are unit-testable with mock COM and no
 // real device (issue #68). Declared in wasapi_test_seam.hpp.
 void renderDeviceBuffer(IAudioClient& client, IAudioRenderClient& renderClient, PcmRing& ring,
-                        UINT32 bufferFrameCount, std::size_t frameBytes) {
+                        DeviceBufferLayout layout) {
   UINT32 padding = 0;
   if (FAILED(client.GetCurrentPadding(&padding))) {
     return;
   }
-  const UINT32 frames = bufferFrameCount - padding;
-  if (frames == 0U) {
+  if (padding >= layout.frameCount) {
+    // A full buffer — or a bogus padding from a misbehaving device — leaves no
+    // frames to render; bail before the unsigned subtraction could underflow into
+    // an enormous frame count.
     return;
   }
+  const UINT32 frames = layout.frameCount - padding;
   BYTE* deviceBuffer = nullptr;
   if (FAILED(renderClient.GetBuffer(frames, &deviceBuffer))) {
     return;
   }
-  const std::size_t needed = static_cast<std::size_t>(frames) * frameBytes;
+  const std::size_t needed = static_cast<std::size_t>(frames) * layout.frameBytes;
   auto* bytes = reinterpret_cast<std::byte*>(deviceBuffer);
   const std::size_t got = ring.read(std::span<std::byte>(bytes, needed));
   if (got == 0U) {
@@ -278,17 +333,22 @@ public:
     } catch (...) {
       stop(); // release whatever was created, so a retry starts clean
       throw;
-    }
+      // The closing brace below is an unreachable scope-exit after the rethrow,
+      // which OpenCppCoverage reports uncovered by design; exclude just it.
+    } // LCOV_EXCL_LINE
 
     running_.store(true, std::memory_order_release);
+    // A std::jthread construction failure (std::system_error from OS thread-resource
+    // exhaustion) is not fault-injectable from the unit suite — there is no seam over
+    // the runtime's thread spawn — so this firewall catch stays uncovered by design.
     try {
       renderThread_ = std::jthread([this] { renderLoopGuarded(); });
-    } catch (...) {
-      // Translate a std::jthread failure (e.g. std::system_error) so start()
-      // honours its documented DeviceError contract; release the device.
-      stop();
-      throw DeviceError("WasapiAudioSink: failed to create the render thread");
-    }
+    } catch (...) { // LCOV_EXCL_LINE
+      // Translate the failure so start() honours its documented DeviceError
+      // contract; release the device first.
+      stop();                                                                   // LCOV_EXCL_LINE
+      throw DeviceError("WasapiAudioSink: failed to create the render thread"); // LCOV_EXCL_LINE
+    } // LCOV_EXCL_LINE
 
     if (const HRESULT hr = audioClient_->Start(); FAILED(hr)) {
       stop();
@@ -437,7 +497,7 @@ private:
                                             AUDCLNT_STREAMFLAGS_EVENTCALLBACK, 0, 0, &mixFormat,
                                             nullptr),
                    "WasapiAudioSink: IAudioClient::Initialize failed");
-    audioEvent_ = ::CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    audioEvent_ = createRenderEvent();
     if (audioEvent_ == nullptr) {
       throw DeviceError(::GetLastError(), "WasapiAudioSink: cannot create the render event");
     }
@@ -531,8 +591,9 @@ private:
   }
 
   void renderAvailable() {
-    detail::renderDeviceBuffer(*audioClient_.Get(), *renderClient_.Get(), *ring_, bufferFrameCount_,
-                               frameBytes_);
+    detail::renderDeviceBuffer(
+        *audioClient_.Get(), *renderClient_.Get(), *ring_,
+        detail::DeviceBufferLayout{.frameCount = bufferFrameCount_, .frameBytes = frameBytes_});
   }
 
   /// Resets the converter when a barge-in (a generation bump) began a new stream,

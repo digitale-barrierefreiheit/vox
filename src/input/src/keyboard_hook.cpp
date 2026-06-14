@@ -65,9 +65,12 @@ HookInstall installLowLevelHook(HookProc proc) {
 void pumpMessages() {
   MSG message{};
   while (::GetMessageW(&message, nullptr, 0, 0) > 0) {
-    ::TranslateMessage(&message);
-    ::DispatchMessageW(&message);
-  }
+    // OS-only: the loop body runs only for a real delivered message; the unit
+    // tests post WM_QUIT (so GetMessageW returns 0 and the body never runs).
+    // Exercised by the labelled keyboard itest.
+    ::TranslateMessage(&message); // LCOV_EXCL_LINE
+    ::DispatchMessageW(&message); // LCOV_EXCL_LINE
+  } // LCOV_EXCL_LINE
 }
 
 /// Reads the live modifier state at the moment a key event is processed. In a
@@ -150,11 +153,12 @@ public:
     lastError_ = 0;
     try {
       thread_ = std::jthread([this, &ready] { run(ready); });
-    } catch (...) {
-      // Translate a std::jthread failure (e.g. std::system_error) so start()
-      // only ever throws HookError, as documented.
-      throw HookError("KeyboardHook: failed to create the hook thread");
-    }
+      // Defensive firewall: std::jthread only throws when the OS refuses to spawn
+      // a thread (resource exhaustion), which no unit test can deterministically
+      // induce — translate it so start() only ever throws HookError, as documented.
+    } catch (...) {                                                      // LCOV_EXCL_LINE
+      throw HookError("KeyboardHook: failed to create the hook thread"); // LCOV_EXCL_LINE
+    } // LCOV_EXCL_LINE
     readyFuture.wait();
     if (!error_.empty()) {
       thread_.join();
@@ -174,7 +178,9 @@ public:
       // Called from the hook thread itself (e.g. a Quit handler triggering
       // shutdown): joining here would self-deadlock. The loop exits on the
       // posted WM_QUIT; a later stop() from another thread (the destructor) joins.
-      return;
+      // OS-only: reachable solely from a real hookProc->handler->stop() chain,
+      // which the deterministic seam tests cannot drive (no real key fires).
+      return; // LCOV_EXCL_LINE
     }
     thread_.join();
     running_ = false;
@@ -241,7 +247,9 @@ private:
                                     .flags = static_cast<std::uint32_t>(info->flags),
                                     .modifiers = currentModifiers()};
       if (detail::dispatchLowLevelKey(key, self->consumed_, self->map_, self->handler_)) {
-        return 1; // hide the key from the foreground app
+        // OS-only: the consume decision is unit-tested via dispatchLowLevelKey;
+        // this Win32 "hide the key" return only runs from the real callback.
+        return 1; // hide the key from the foreground app // LCOV_EXCL_LINE
       }
     }
     return ::CallNextHookEx(nullptr, code, wParam, lParam);

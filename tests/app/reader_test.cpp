@@ -117,6 +117,22 @@ public:
   SynthError() : std::runtime_error("synthesize boom") {}
 };
 
+/// A dedicated exception (S112: not a generic one) for a sink that fails to stop.
+class StopError : public std::runtime_error {
+public:
+  StopError() : std::runtime_error("stop boom") {}
+};
+
+/// An audio sink whose stop() throws, to prove the Reader's destructor firewall
+/// swallows a teardown failure rather than letting it escape (a dtor must never
+/// throw). stop() runs after the worker is joined, so the throw is safe.
+class StopThrowingSink : public SyncAudioSink {
+public:
+  void stop() override {
+    throw StopError{};
+  }
+};
+
 /// A TTS engine whose synthesize() throws, to prove the Reader's worker thread
 /// swallows a synthesis failure and keeps running. It signals the attempt so the
 /// test can wait deterministically.
@@ -360,6 +376,20 @@ TEST(Reader, WorkerSurvivesASynthesisFailure) {
   EXPECT_TRUE(
       tts.waitForAttempt(WaitTimeout)); // the worker reached synthesize and caught its throw
   reader.stop();                        // a swallowed failure leaves a joinable, healthy worker
+}
+
+TEST(Reader, DestructorSwallowsATeardownFailure) {
+  FakeProvider provider;
+  FakeTtsEngine tts;
+  StopThrowingSink audio; // audio_.stop() throws during teardown
+
+  // Destroying a started Reader runs ~Reader() -> stop() -> audio_.stop(), which
+  // throws. The dtor firewall must swallow it (a dtor must never throw), so the
+  // scope exits cleanly with no exception escaping.
+  EXPECT_NO_THROW({
+    Reader reader(provider, tts, audio, germanOutput());
+    reader.start(); // bring the worker up so the destructor's stop() reaches audio_.stop()
+  });
 }
 
 } // namespace

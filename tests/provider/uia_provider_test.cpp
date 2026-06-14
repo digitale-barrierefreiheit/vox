@@ -273,6 +273,20 @@ TEST_F(UiaProviderTest, ValueIsAbsentWhenTheValueReadFails) {
   EXPECT_FALSE(node->value.has_value());
 }
 
+// A successful value read of a null BSTR exercises toUtf8's null-input path: the
+// value is *present* (the read succeeded) but empty (null -> "").
+TEST_F(UiaProviderTest, ValueIsPresentButEmptyWhenTheValueBstrIsNull) {
+  ON_CALL(value_, get_CachedValue(_)).WillByDefault([](BSTR* out) {
+    *out = nullptr; // null BSTR with S_OK -> toUtf8 yields empty
+    return S_OK;
+  });
+  const UiaProvider provider;
+  const std::optional<AccessibleNode> node = provider.focusedElement();
+  ASSERT_TRUE(node.has_value());
+  ASSERT_TRUE(node->value.has_value());
+  EXPECT_TRUE(node->value->empty());
+}
+
 // Standard Win32 controls reach UIA through the MSAA bridge, which exposes state and value
 // as the legacy IAccessible *properties* rather than the modern patterns. With those patterns
 // absent, the provider reads both legacy properties: a read-only edit reports ReadOnly (from

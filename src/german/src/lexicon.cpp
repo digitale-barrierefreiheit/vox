@@ -112,7 +112,7 @@ std::string_view Lexicon::role(vox::model::Role role) const {
   }
   const auto index = static_cast<std::size_t>(std::to_underlying(role));
   if (index >= roleWords_.size()) {
-    return {};
+    return {}; // LCOV_EXCL_LINE — defensive out-of-range guard (see lexicon_test.cpp)
   }
   return roleWords_.at(index);
 }
@@ -120,7 +120,7 @@ std::string_view Lexicon::role(vox::model::Role role) const {
 std::string_view Lexicon::state(StateConcept stateConcept) const {
   const auto index = static_cast<std::size_t>(std::to_underlying(stateConcept));
   if (index >= stateWords_.size()) {
-    return {};
+    return {}; // LCOV_EXCL_LINE — defensive out-of-range guard (see lexicon_test.cpp)
   }
   return stateWords_.at(index);
 }

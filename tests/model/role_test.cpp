@@ -51,4 +51,10 @@ TEST(Role, UnknownIsTheDefaultSentinel) {
   EXPECT_EQ(static_cast<std::uint8_t>(Role::Unknown), 0U);
 }
 
+// The out-of-range fallback in toString() is a defensive guard against an upstream
+// mapping bug: it is unreachable with any valid Role (RoleNames covers them all),
+// and forging an out-of-range Role to exercise it trips clang-tidy's
+// optin.core.EnumCastOutOfRange — so that one return is excluded from coverage in
+// role.cpp rather than tested by violating the project's own lint.
+
 } // namespace

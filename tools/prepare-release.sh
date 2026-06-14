@@ -25,7 +25,8 @@ changelog="$root/CHANGELOG.md"
 
 # 1. Current version = the first X.Y.Z after a `VERSION` keyword (project(VERSION …);
 #    cmake_minimum_required's "VERSION 3.25" is two-component, so it never matches).
-cur="$(grep -oE 'VERSION[[:space:]]+[0-9]+\.[0-9]+\.[0-9]+' "$cmake" | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
+# `|| true` so a no-match does not trip `set -e` here — the guard below reports it.
+cur="$(grep -oE 'VERSION[[:space:]]+[0-9]+\.[0-9]+\.[0-9]+' "$cmake" | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)"
 [[ -n "$cur" ]] || { echo "could not find project(VERSION X.Y.Z) in $cmake" >&2; exit 1; }
 IFS=. read -r major minor patch <<EOF
 $cur

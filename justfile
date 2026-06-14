@@ -95,7 +95,7 @@ tidy-changed base='origin/dev': (tidy base)
 # 📊 Run the suite under OpenCppCoverage and write coverage.xml (Cobertura), as the SonarQube job does.
 [windows]
 coverage preset=test_preset: (build preset)
-    & "{{occ}}" --sources "{{root_native}}\src" --modules "{{root_native}}\build" --cover_children --export_type "cobertura:{{root_native}}\coverage.xml" -- ctest --preset {{preset}}
+    & "{{occ}}" --sources "{{root_native}}\src" --modules "{{root_native}}\build" --cover_children --excluded_line_regex ".*LCOV_EXCL_LINE.*" --export_type "cobertura:{{root_native}}\coverage.xml" -- ctest --preset {{preset}}
 
 # 📊 Coverage is measured on Windows (OpenCppCoverage) and in CI; not yet wired for this OS.
 [unix]

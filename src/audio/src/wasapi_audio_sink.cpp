@@ -103,6 +103,24 @@ constexpr std::size_t MinBufferPeriods = 4;
 /// How long the render thread waits on the audio event before re-checking stop.
 constexpr DWORD RenderWaitMs = 200;
 
+/// Test seam (issue #68): when installed, replaces the render thread's event wait
+/// and returns the wait result (e.g. WAIT_OBJECT_0 or WAIT_TIMEOUT), so the loop's
+/// timeout branch is exercised deterministically with no real wait. Empty in
+/// production, where the real WaitForSingleObject runs.
+std::function<DWORD()>& renderWaitFn() {
+  static std::function<DWORD()> fn;
+  return fn;
+}
+
+/// Waits for the audio event up to @ref RenderWaitMs — via the test seam when one
+/// is installed, otherwise the real WaitForSingleObject.
+DWORD renderWait(HANDLE event) {
+  if (const auto& waitFn = renderWaitFn()) {
+    return waitFn();
+  }
+  return ::WaitForSingleObject(event, RenderWaitMs);
+}
+
 /// RAII for the render thread's MMCSS registration: requests "Pro Audio"
 /// real-time scheduling on construction (best-effort — a null handle means MMCSS
 /// was unavailable, and we still render) and reverts it on destruction. Keeping
@@ -193,6 +211,10 @@ SampleFormat detectSampleFormat(const WAVEFORMATEX& format) {
 namespace testing {
 void setEnumeratorFactory(EnumeratorFactory factory) {
   enumeratorFactory() = std::move(factory);
+}
+
+void setRenderWaitFn(RenderWaitFn waitFn) {
+  renderWaitFn() = std::move(waitFn);
 }
 } // namespace testing
 
@@ -478,7 +500,7 @@ private:
   /// service a pending flush and render whatever the ring holds. Sets the stop
   /// flag itself when the stream wedges, so the loop is a bare stop-flag check.
   void renderTick() {
-    const DWORD waited = ::WaitForSingleObject(audioEvent_, RenderWaitMs);
+    const DWORD waited = renderWait(audioEvent_);
     if (stopRequested_.load(std::memory_order_acquire)) {
       return;
     }

@@ -39,6 +39,14 @@ using EnumeratorFactory = std::function<long(IMMDeviceEnumerator** out)>;
 ///        factory restores the real `CoCreateInstance`. Test-only, not thread-safe.
 void setEnumeratorFactory(EnumeratorFactory factory);
 
+/// @brief Replaces the render thread's event wait with @p waitFn, which returns
+///        the wait result (a `WaitForSingleObject` code, e.g. `WAIT_OBJECT_0` or
+///        `WAIT_TIMEOUT`). Lets a test drive the render loop's timeout branch
+///        deterministically — no real wait, no sleep. An empty function restores
+///        the real wait. Test-only, not thread-safe.
+using RenderWaitFn = std::function<unsigned long()>;
+void setRenderWaitFn(RenderWaitFn waitFn);
+
 } // namespace testing
 
 namespace detail {

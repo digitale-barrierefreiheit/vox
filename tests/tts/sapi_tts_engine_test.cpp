@@ -12,6 +12,7 @@
 #  include <cstddef>
 #  include <cstring>
 #  include <cwchar>
+#  include <new>
 #  include <span>
 #  include <stdexcept>
 #  include <string_view>
@@ -27,6 +28,41 @@
 #  include <vox/tts/voice_selection.hpp>
 
 #  include "sapi_com_mocks.hpp"
+
+// --- Out-of-memory injection -------------------------------------------------
+// WRL's MakeAllocator allocates with `operator new(size, nothrow)` only (see
+// <wrl/implements.h>: "override one operator only ... to enable different memory
+// allocation model"). So a single-shot, thread-local failure of *that* operator
+// makes the next Make<PcmSinkStream>() return a null ComPtr — exercising
+// makeOutputStream's allocation-failure branch — while every other allocation
+// (and its matching delete) behaves exactly as normal.
+namespace {
+bool& failNextNothrowNewFlag() {
+  static thread_local bool flag = false; // function-local static, not a mutable global
+  return flag;
+}
+
+void failNextNothrowNew() {
+  failNextNothrowNewFlag() = true;
+}
+} // namespace
+
+// Replaces only the nothrow operator new for this test binary. When not armed it
+// forwards to the default operator new, so the object is allocated — and later
+// freed by the default operator delete — exactly as usual.
+void* operator new(std::size_t size, const std::nothrow_t& /*tag*/) noexcept {
+  if (failNextNothrowNewFlag()) {
+    failNextNothrowNewFlag() = false;
+    return nullptr;
+  }
+  try {
+    return ::operator new(size);
+  } catch (const std::bad_alloc&) {
+    return nullptr;
+  }
+}
+
+// -----------------------------------------------------------------------------
 
 namespace {
 
@@ -303,6 +339,15 @@ TEST_F(SapiEngineTest, SynthesizeForwardsPcmToTheSink) {
 TEST_F(SapiEngineTest, SynthesizeThrowsWhenSpeakFails) {
   EXPECT_CALL(voice_, Speak(_, _, _)).WillOnce(Return(ErrorFail));
   SapiTtsEngine engine{};
+  EXPECT_THROW(engine.synthesize("hallo", [](std::span<const std::byte>) {}), EngineError);
+}
+
+TEST_F(SapiEngineTest, SynthesizeThrowsWhenTheOutputStreamCannotBeAllocated) {
+  SapiTtsEngine engine{};
+  EXPECT_CALL(voice_, Speak(_, _, _)).Times(0); // the throw precedes Speak
+  // The next nothrow allocation is Make<PcmSinkStream>'s; force it to fail so the
+  // engine sees a null output stream and throws its allocation-failure EngineError.
+  failNextNothrowNew();
   EXPECT_THROW(engine.synthesize("hallo", [](std::span<const std::byte>) {}), EngineError);
 }
 

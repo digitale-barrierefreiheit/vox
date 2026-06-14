@@ -51,7 +51,9 @@ void Reader::start() {
   } catch (...) {
     stop(); // release the worker/provider/audio we partially brought up
     throw;
-  }
+    // The closing brace below is an unreachable scope-exit after the rethrow, which
+    // OpenCppCoverage reports uncovered by design (issue #121); exclude just it.
+  } // LCOV_EXCL_LINE
 }
 
 void Reader::markRunning() {

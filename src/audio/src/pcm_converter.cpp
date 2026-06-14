@@ -95,18 +95,21 @@ void normalizeRow(std::span<float> row, double rowSum) {
   }
 }
 
-/// Rejects formats the converter cannot bridge, so the constructor body stays a
-/// flat sequence of steps. @p source must be 16-bit mono at a non-zero rate (the
-/// only thing the TTS engine emits) and the target must have a non-zero rate and
-/// channel count.
-void validateConversion(const AudioFormat& source, std::uint32_t targetRate,
-                        std::uint16_t targetChannels) {
+/// Validates the conversion and returns the source→target step (source samples
+/// advanced per output sample). The format checks run *before* the division, so
+/// step_ can be a member initializer that still never divides by a zero target
+/// rate — an unbridgeable format throws std::invalid_argument instead. @p source
+/// must be 16-bit mono at a non-zero rate (the only thing the TTS engine emits);
+/// the target must have a non-zero rate and channel count.
+double validatedStep(const AudioFormat& source, std::uint32_t targetRate,
+                     std::uint16_t targetChannels) {
   if (source.bitsPerSample != 16U || source.channels != 1U || source.sampleRate == 0U) {
     throw std::invalid_argument("PcmConverter: source must be 16-bit mono PCM at a non-zero rate");
   }
   if (targetRate == 0U || targetChannels == 0U) {
     throw std::invalid_argument("PcmConverter: target rate and channel count must be non-zero");
   }
+  return static_cast<double>(source.sampleRate) / static_cast<double>(targetRate);
 }
 
 } // namespace
@@ -114,11 +117,9 @@ void validateConversion(const AudioFormat& source, std::uint32_t targetRate,
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters) — rate/channels/format are distinct roles
 PcmConverter::PcmConverter(AudioFormat source, std::uint32_t targetRate,
                            std::uint16_t targetChannels, SampleFormat targetFormat)
-    : history_(Taps, 0.0F),
-      step_(static_cast<double>(source.sampleRate) / static_cast<double>(targetRate)),
+    : history_(Taps, 0.0F), step_(validatedStep(source, targetRate, targetChannels)),
       bypass_(source.sampleRate == targetRate), targetRate_(targetRate),
       targetChannels_(targetChannels), targetFormat_(targetFormat) {
-  validateConversion(source, targetRate, targetChannels);
   if (!bypass_) {
     buildKernel();
   }

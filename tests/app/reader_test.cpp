@@ -178,6 +178,16 @@ private:
   bool cancelled_{false};
 };
 
+/// A provider whose start() throws, to drive the Reader's start() rollback: the
+/// audio/worker it already brought up must be torn down and the exception must
+/// propagate, leaving the Reader cleanly re-startable.
+class ThrowingProvider : public FakeProvider {
+public:
+  void start(FocusChangedCallback /*onFocusChanged*/) override {
+    throw std::runtime_error("provider start boom");
+  }
+};
+
 OutputManager germanOutput() {
   return OutputManager(vox::german::Lexicon::parse(vox::german::DefaultGermanLexiconData));
 }
@@ -203,6 +213,23 @@ TEST(Reader, SpeaksInitialFocusInGerman) {
 
   EXPECT_EQ(tts.synthesizeCount(), 1);
   EXPECT_EQ(tts.lastText(), "Schaltfläche, OK");
+}
+
+TEST(Reader, StartRollsBackAndRethrowsWhenBringUpThrows) {
+  ThrowingProvider provider;
+  FakeTtsEngine tts;
+  SyncAudioSink audio;
+  Reader reader(provider, tts, audio, germanOutput());
+
+  // start() brings up the audio sink and the worker thread, then provider_.start()
+  // throws: the catch must tear all of that back down and rethrow.
+  EXPECT_THROW(reader.start(), std::runtime_error);
+
+  // The rollback ran stop(), so started_ was reset — a retry actually tries again
+  // (and throws again) rather than early-returning, and the worker is joined each
+  // time. The test completing (no hang) confirms the teardown is clean.
+  EXPECT_THROW(reader.start(), std::runtime_error);
+  EXPECT_EQ(tts.synthesizeCount(), 0); // nothing was ever spoken
 }
 
 TEST(Reader, SpeaksFocusChange) {

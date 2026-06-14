@@ -185,6 +185,10 @@ jobs:
         shell: bash
         run: |
           bash tools/changelog-section.sh "$VERSION" CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          if [[ ! -s "$RUNNER_TEMP/notes.md" ]]; then
+            echo "::error::no changelog section found for v$VERSION — refusing to publish a release with empty notes"
+            exit 1
+          fi
           {
             echo "## Vox v$VERSION";
             echo;

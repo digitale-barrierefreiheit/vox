@@ -9,9 +9,12 @@ versioned with [Semantic Versioning](https://semver.org). The version lives in
 `CMakeLists.txt` (`project(VERSION …)`) — the single source of truth that
 `vcpkg.json`, the executable's `VERSIONINFO`, and the package name all follow.
 
-Between releases the repo version is **0.0.0**, a development sentinel the release
-workflow refuses to publish; each release bumps it to the real number. Git tags are
-`v<version>` (e.g. `v0.0.1`); the version *string* everywhere else is unprefixed.
+The repo sits at **0.0.0** until the first release — a pre-release sentinel the
+publish stage refuses to release. Each release **bumps** the version (in
+`CMakeLists.txt` + `vcpkg.json`); afterwards `dev` and `main` stay at that released
+number (back-merge keeps them in sync) until the next release bumps it again. There
+is **no reset** back to 0.0.0. Git tags are `v<version>` (e.g. `v0.0.1`); the version
+*string* everywhere else is unprefixed.
 
 ## Cut a release
 

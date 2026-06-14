@@ -47,7 +47,7 @@ jobs:
         env:
           KEY: ${{ secrets.BACKMERGE_SSH_KEY }}
         run: |
-          if [ -z "$KEY" ]; then
+          if [[ -z "$KEY" ]]; then
             echo "::error::BACKMERGE_SSH_KEY is not set — cannot push the version bump to protected dev."
             exit 1
           fi
@@ -65,9 +65,11 @@ jobs:
           RELEASE_NOTES_FILE: ${{ runner.temp }}/release-notes.md
           # Keep the changelog links correct in forks / renames, default in CI.
           VOX_REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+          # Pass the (choice-constrained) input via env, not inline interpolation.
+          RELEASE_TYPE: ${{ inputs.release-type }}
         # The script writes `version=<new>` to $GITHUB_OUTPUT itself (so
         # steps.prep.outputs.version is set) — just run it.
-        run: bash tools/prepare-release.sh '${{ inputs.release-type }}'
+        run: bash tools/prepare-release.sh "$RELEASE_TYPE"
 
       - name: Commit and push to dev with the deploy key
         env:
@@ -81,7 +83,7 @@ jobs:
           # Pin GitHub's SSH host keys from its published metadata (authenticated
           # HTTPS), not ssh-keyscan. Same hardening as back-merge.yml.
           gh api meta --jq '.ssh_keys[] | "github.com " + .' > "$known_hosts"
-          [ -s "$known_hosts" ] || { echo "::error::could not fetch GitHub SSH host keys"; exit 1; }
+          [[ -s "$known_hosts" ]] || { echo "::error::could not fetch GitHub SSH host keys"; exit 1; }
           export GIT_SSH_COMMAND="ssh -i \"$key_file\" -o IdentitiesOnly=yes -o UserKnownHostsFile=\"$known_hosts\" -o StrictHostKeyChecking=yes"
           git remote set-url origin "git@github.com:${GITHUB_REPOSITORY}.git"
           git config user.name "vox release"
@@ -117,9 +119,12 @@ jobs:
       - name: Read version and check the tag
         id: decide
         run: |
-          version="$(grep -oE 'VERSION[[:space:]]+[0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
+          version="$(grep -oE 'VERSION[[:space:]]+[0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)"
+          if [[ -z "$version" ]]; then
+            echo "::error::could not read project(VERSION X.Y.Z) from CMakeLists.txt"; exit 1
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          if [ "$version" = "0.0.0" ]; then
+          if [[ "$version" == "0.0.0" ]]; then
             echo "publish=false" >> "$GITHUB_OUTPUT"
             echo "::notice::version is the 0.0.0 development sentinel — not publishing."
           elif git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then

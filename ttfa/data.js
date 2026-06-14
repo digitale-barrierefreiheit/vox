@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781473906311,
+  "lastUpdate": 1781476598860,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -381,6 +381,35 @@ window.BENCHMARK_DATA = {
           "url": "https://github.com/digitale-barrierefreiheit/vox/commit/cb74e06a5443644c16a861892288886d84445ea2"
         },
         "date": 1781473905596,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.9,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6dadf9387f9a93330a6f7d4c962a1269b9c23873",
+          "message": "refactor(ci): clear render.ts's CodeScene main-gate biomarkers (#110)\n\nrender.ts was the last file under CodeScene's 10.00 absolute (main) gate (9.39):\n\n- Complex Conditional: parseState's 3-term expectedJobs back-fill is extracted\n  into backfillExpectedJobs() with guard clauses, so the parse body carries no\n  multi-operator conditional.\n- Primitive Obsession: the render helpers threaded a `jobs: string[]` argument\n  that is always state.jobOrder; reading it from state removes the derivable\n  parameter and drops the module's primitive-argument ratio below 30%.\n\nCodeScene confirms render.ts 9.39 -> 10.00. tsc clean; 55/55 action tests pass;\ndist/ rebuilt and in sync.",
+          "timestamp": "2026-06-15T00:20:52+02:00",
+          "tree_id": "0c3f5eac413a79673c0401dd3d52b1f7a5d470de",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/6dadf9387f9a93330a6f7d4c962a1269b9c23873"
+        },
+        "date": 1781476598580,
         "tool": "customSmallerIsBetter",
         "benches": [
           {

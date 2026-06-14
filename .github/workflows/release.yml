@@ -1,0 +1,206 @@
+# Release automation (#103). Two stages, see RELEASING.md.
+#
+#   prepare  (manual workflow_dispatch on `dev`): bump project(VERSION) + vcpkg.json
+#            per the chosen part, promote the CHANGELOG [Unreleased] section, push
+#            the "release: v<version>" commit to protected `dev` using the write
+#            DEPLOY KEY (a DeployKey bypass actor on dev's ruleset — same mechanism
+#            as back-merge.yml, no PAT), then open the `dev -> main` release PR. A
+#            human merges that PR after the normal gate (never auto-merged).
+#
+#   gate + publish  (on push to `main`, i.e. AFTER the release PR is merged — NOT a
+#            pull_request event, so it never runs while the PR's checks validate):
+#            build the Release x64 ZIP, smoke-check it, and create the GitHub
+#            release (tag v<version>, marked pre-release for 0.x), attaching the ZIP
+#            and its SHA-256. Idempotent: skips if the tag already exists or the
+#            version is still the 0.0.0 development sentinel.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release-type:
+        description: Which semantic-version part to bump
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Serialize releases so a dispatch and a publish can never race on refs/tags.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare release (bump + changelog + PR)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Require the deploy-key secret
+        env:
+          KEY: ${{ secrets.BACKMERGE_SSH_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::error::BACKMERGE_SSH_KEY is not set — cannot push the version bump to protected dev."
+            exit 1
+          fi
+
+      - name: Check out dev (no persisted credentials)
+        uses: actions/checkout@v6
+        with:
+          ref: dev
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bump version and promote the changelog
+        id: prep
+        env:
+          RELEASE_NOTES_FILE: ${{ runner.temp }}/release-notes.md
+        run: |
+          version="$(bash tools/prepare-release.sh '${{ inputs.release-type }}')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and push to dev with the deploy key
+        env:
+          DEPLOY_KEY: ${{ secrets.BACKMERGE_SSH_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.prep.outputs.version }}
+        run: |
+          key_file="$RUNNER_TEMP/release_key"
+          known_hosts="$RUNNER_TEMP/known_hosts"
+          (umask 077; printf '%s\n' "$DEPLOY_KEY" > "$key_file")
+          # Pin GitHub's SSH host keys from its published metadata (authenticated
+          # HTTPS), not ssh-keyscan. Same hardening as back-merge.yml.
+          gh api meta --jq '.ssh_keys[] | "github.com " + .' > "$known_hosts"
+          [ -s "$known_hosts" ] || { echo "::error::could not fetch GitHub SSH host keys"; exit 1; }
+          export GIT_SSH_COMMAND="ssh -i \"$key_file\" -o IdentitiesOnly=yes -o UserKnownHostsFile=\"$known_hosts\" -o StrictHostKeyChecking=yes"
+          git remote set-url origin "git@github.com:${GITHUB_REPOSITORY}.git"
+          git config user.name "vox release"
+          git config user.email "actions@github.com"
+          git add CMakeLists.txt vcpkg.json CHANGELOG.md
+          git commit -m "release: v${VERSION}"
+          git push origin HEAD:dev
+
+      - name: Open the dev -> main release pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.prep.outputs.version }}
+        run: |
+          gh pr create --base main --head dev \
+            --title "Release v${VERSION}" \
+            --body-file "${RUNNER_TEMP}/release-notes.md"
+
+      - name: Remove the deploy key (always)
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release_key" "$RUNNER_TEMP/known_hosts"
+
+  gate:
+    name: Decide whether to publish
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.decide.outputs.version }}
+      publish: ${{ steps.decide.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Read version and check the tag
+        id: decide
+        run: |
+          version="$(grep -oE 'VERSION[[:space:]]+[0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$version" = "0.0.0" ]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::version is the 0.0.0 development sentinel — not publishing."
+          elif git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::tag v$version already exists — not publishing."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::will publish v$version."
+          fi
+
+  publish:
+    name: Build + publish the release
+    needs: gate
+    if: needs.gate.outputs.publish == 'true'
+    runs-on: windows-2025
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.gate.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: lukka/get-cmake@591817e96fcad43505fb4eae36172462abb3a42e # v4.3.3
+      - name: Set up the MSVC environment
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        with:
+          arch: x64
+      # run-vcpkg AFTER the MSVC env so its VCPKG_ROOT is not clobbered by the
+      # vcpkg that ships with Visual Studio (same note as ci.yml).
+      - uses: ./.github/actions/vcpkg-baseline
+      - name: Set up vcpkg (pinned to the manifest baseline)
+        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11.6
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_BASELINE }}
+
+      - name: Build Release (x64) and package the ZIP
+        shell: pwsh
+        run: |
+          cmake --preset x64-msvc
+          cmake --build --preset x64-msvc-release --target vox
+          Set-Location build/x64-msvc
+          cpack -C Release
+
+      - name: Smoke-check the artifact
+        shell: pwsh
+        run: |
+          $ver = "${env:VERSION}"
+          $zip = "build/x64-msvc/dist/vox-$ver-windows-x64.zip"
+          if (-not (Test-Path $zip)) { throw "missing artifact: $zip" }
+          if (-not (Test-Path "$zip.sha256")) { throw "missing checksum: $zip.sha256" }
+          $exe = "build/x64-msvc/src/app/Release/vox.exe"
+          $vi = (Get-Item $exe).VersionInfo
+          if ($vi.ProductName -ne 'Vox') { throw "unexpected ProductName '$($vi.ProductName)'" }
+          if ($vi.ProductVersion -ne $ver) { throw "version mismatch: exe '$($vi.ProductVersion)' != '$ver'" }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $z = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path $zip))
+          $names = @($z.Entries.FullName); $z.Dispose()
+          foreach ($need in @("vox-$ver-windows-x64/vox.exe", "vox-$ver-windows-x64/lexicon/de.lex")) {
+            if ($names -notcontains $need) { throw "ZIP is missing '$need'" }
+          }
+          Write-Host "smoke check passed for v$ver"
+
+      - name: Extract the changelog section
+        shell: bash
+        run: |
+          bash tools/changelog-section.sh "$VERSION" CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          {
+            echo "## Vox v$VERSION";
+            echo;
+            cat "$RUNNER_TEMP/notes.md";
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create the GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          prerelease=""
+          case "$VERSION" in 0.*) prerelease="--prerelease" ;; esac
+          gh release create "v$VERSION" \
+            "build/x64-msvc/dist/vox-$VERSION-windows-x64.zip" \
+            "build/x64-msvc/dist/vox-$VERSION-windows-x64.zip.sha256" \
+            --title "Vox v$VERSION" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            $prerelease

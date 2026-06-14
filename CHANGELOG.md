@@ -4,14 +4,15 @@ All notable changes to Vox are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Vox adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+The release workflow promotes the **[Unreleased]** section below to a dated,
+versioned section when a release is cut — so accumulate notes here, under the
+relevant `Added` / `Changed` / `Fixed` / `Removed` headings.
+
 ## [Unreleased]
 
-## [0.0.1] - 2026-06-14
-
-**Vox 0.0.1 — first preview.** Vox is a fast, lightweight, German-first screen
-reader for Windows. This first preview announces the control you move keyboard
-focus to — its type, name, state, and value — in natural German (for example,
-*"Schaltfläche, Speichern"*).
+**First preview.** Vox is a fast, lightweight, German-first screen reader for
+Windows. It announces the control you move keyboard focus to — its type, name,
+state, and value — in natural German (for example, *"Schaltfläche, Speichern"*).
 
 ### Added
 
@@ -34,5 +35,4 @@ An early preview, validated with a German user as *fast and natural for what it
 covers* — not yet a full daily-driver screen reader. It does not yet read text you
 type, selected text, tree views (e.g. mail folders), or terminal/console content.
 
-[Unreleased]: https://github.com/digitale-barrierefreiheit/vox/compare/v0.0.1...HEAD
-[0.0.1]: https://github.com/digitale-barrierefreiheit/vox/releases/tag/v0.0.1
+[Unreleased]: https://github.com/digitale-barrierefreiheit/vox/commits/dev

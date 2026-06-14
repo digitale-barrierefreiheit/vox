@@ -57,13 +57,12 @@ void setRenderWaitFn(RenderWaitFn waitFn);
 using ComInitFn = std::function<long()>;
 void setComInitFn(ComInitFn initFn);
 
-/// @brief Replaces the sink's `CreateEventW` with @p eventFn, which returns the
-///        event handle (or `nullptr` to fault the creation, as the real call does
-///        on failure). Lets a test drive the "cannot create the render event"
-///        branch deterministically. An empty function restores the real
-///        `CreateEventW`. Test-only, not thread-safe.
-using CreateEventFn = std::function<void*()>;
-void setCreateEventFn(CreateEventFn eventFn);
+/// @brief When @p failFn returns `true`, the sink's `CreateEventW` is faulted (it
+///        yields a null handle, as the real call does on failure), driving the
+///        "cannot create the render event" branch deterministically. An empty
+///        function restores the real `CreateEventW`. Test-only, not thread-safe.
+using FailCreateEventFn = std::function<bool()>;
+void setFailCreateEventFn(FailCreateEventFn failFn);
 
 } // namespace testing
 

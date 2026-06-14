@@ -101,15 +101,22 @@ void normalizeRow(std::span<float> row, double rowSum) {
 /// rate — an unbridgeable format throws std::invalid_argument instead. @p source
 /// must be 16-bit mono at a non-zero rate (the only thing the TTS engine emits);
 /// the target must have a non-zero rate and channel count.
+/// The only source shape the engine emits: 16-bit mono PCM at a non-zero rate.
+bool isSupportedSource(const AudioFormat& source) {
+  return source.bitsPerSample == 16U && source.channels == 1U && source.sampleRate != 0U;
+}
+
+/// A usable target: a non-zero rate and a non-zero channel count.
+bool isValidTarget(std::uint32_t targetRate, std::uint16_t targetChannels) {
+  return targetRate != 0U && targetChannels != 0U;
+}
+
 double validatedStep(const AudioFormat& source, std::uint32_t targetRate,
                      std::uint16_t targetChannels) {
-  const bool sourceIsMono16BitPcm =
-      source.bitsPerSample == 16U && source.channels == 1U && source.sampleRate != 0U;
-  if (!sourceIsMono16BitPcm) {
+  if (!isSupportedSource(source)) {
     throw std::invalid_argument("PcmConverter: source must be 16-bit mono PCM at a non-zero rate");
   }
-  const bool targetIsValid = targetRate != 0U && targetChannels != 0U;
-  if (!targetIsValid) {
+  if (!isValidTarget(targetRate, targetChannels)) {
     throw std::invalid_argument("PcmConverter: target rate and channel count must be non-zero");
   }
   return static_cast<double>(source.sampleRate) / static_cast<double>(targetRate);

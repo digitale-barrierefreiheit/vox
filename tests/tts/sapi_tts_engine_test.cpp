@@ -9,7 +9,9 @@
 #if defined(_WIN32)
 
 #  include <array>
+#  include <bit>
 #  include <cstddef>
+#  include <cstdint>
 #  include <cstring>
 #  include <cwchar>
 #  include <new>
@@ -528,7 +530,16 @@ const vox::tts::ITtsEngine::PcmSink kIdleSink = [](std::span<const std::byte>) {
 
 /// A sink that silently accepts PCM, for probes that first Write real bytes (to
 /// advance the stream position) before exercising Seek/Stat.
-const vox::tts::ITtsEngine::PcmSink kAcceptingSink = [](std::span<const std::byte>) {};
+const vox::tts::ITtsEngine::PcmSink kAcceptingSink = [](std::span<const std::byte>) {
+  // Intentionally empty: these probes only need the stream position to advance.
+};
+
+/// Reads a ULARGE_INTEGER's 64-bit value without touching `QuadPart` directly:
+/// the production Seek writes that union member, but Sonar cannot track the write
+/// across the COM call (cpp:S6232), so bit_cast the whole union to read its value.
+std::uint64_t quadValue(const ULARGE_INTEGER& value) {
+  return std::bit_cast<std::uint64_t>(value);
+}
 
 TEST_F(SapiEngineTest, OutputStreamReadIsNotImplemented) {
   withOutputStream(
@@ -555,18 +566,18 @@ TEST_F(SapiEngineTest, OutputStreamSeekTracksTheAppendOnlyPosition) {
         // SET: absolute offset from the start.
         move.QuadPart = 1;
         EXPECT_EQ(stream->Seek(move, STREAM_SEEK_SET, &where), S_OK);
-        EXPECT_EQ(where.QuadPart, 1U);
+        EXPECT_EQ(quadValue(where), 1U);
 
         // CUR: relative to the current position (now 1) — advance by 2.
         move.QuadPart = 2;
         EXPECT_EQ(stream->Seek(move, STREAM_SEEK_CUR, &where), S_OK);
-        EXPECT_EQ(where.QuadPart, 3U);
+        EXPECT_EQ(quadValue(where), 3U);
 
         // END: append-only stream reports no real end, so END uses the current
         // position as its base — a zero move leaves it unchanged.
         move.QuadPart = 0;
         EXPECT_EQ(stream->Seek(move, STREAM_SEEK_END, &where), S_OK);
-        EXPECT_EQ(where.QuadPart, 3U);
+        EXPECT_EQ(quadValue(where), 3U);
 
         // A null out-param is allowed (the seek still succeeds).
         move.QuadPart = 0;

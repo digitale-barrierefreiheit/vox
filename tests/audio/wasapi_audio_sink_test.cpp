@@ -99,7 +99,7 @@ protected:
     vox::audio::testing::setEnumeratorFactory({});
     vox::audio::testing::setRenderWaitFn({});
     vox::audio::testing::setComInitFn({});
-    vox::audio::testing::setCreateEventFn({});
+    vox::audio::testing::setFailCreateEventFn({});
   }
 
   /// Default behaviours for the whole chain — overridden per-test to inject one
@@ -447,7 +447,7 @@ TEST_F(WasapiAcquisitionTest, RenderThreadSurvivesAComInitFailure) {
   auto failed = std::make_shared<std::promise<void>>();
   std::future<void> renderFailed = failed->get_future();
   auto calls = std::make_shared<std::atomic<int>>(0);
-  vox::audio::testing::setComInitFn([failed, calls]() -> long {
+  vox::audio::testing::setComInitFn([failed, calls]() {
     if (calls->fetch_add(1) == 0) {
       // The start()/stop() thread's apartment really initializes COM, so the
       // guard's matching CoUninitialize on teardown stays balanced.
@@ -466,7 +466,7 @@ TEST_F(WasapiAcquisitionTest, RenderThreadSurvivesAComInitFailure) {
 TEST_F(WasapiAcquisitionTest, ThrowsWhenTheRenderEventCannotBeCreated) {
   // CreateEventW failing leaves a null handle; startEventDrivenClient must turn
   // that into a DeviceError rather than proceeding with no event to wait on.
-  vox::audio::testing::setCreateEventFn([]() -> void* { return nullptr; });
+  vox::audio::testing::setFailCreateEventFn([]() { return true; });
   WasapiAudioSink sink(AudioFormat{22050, 16, 1});
   EXPECT_THROW(sink.start(), DeviceError);
 }
@@ -493,7 +493,7 @@ TEST_F(WasapiAcquisitionTest, RenderTickReturnsWhenStopIsSignaledDuringAWait) {
   std::future<void> renderEntered = entered->get_future();
   auto firstWait = std::make_shared<std::atomic<bool>>(false);
   auto release = std::make_shared<std::atomic<bool>>(false);
-  vox::audio::testing::setRenderWaitFn([entered, firstWait, release]() -> unsigned long {
+  vox::audio::testing::setRenderWaitFn([entered, firstWait, release]() {
     if (!firstWait->exchange(true)) {
       entered->set_value(); // the render thread has reached its first wait
       while (!release->load(std::memory_order_acquire)) {

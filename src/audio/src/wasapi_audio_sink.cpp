@@ -138,18 +138,18 @@ HRESULT comInitialize() {
   return ::CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 }
 
-/// Test seam (issue #68): when installed, replaces CreateEventW so the render-event
-/// creation-failure branch is exercised. Empty in production.
-std::function<void*()>& createEventFn() {
-  static std::function<void*()> fn;
+/// Test seam (issue #68): when it returns true, CreateEventW is faulted so the
+/// render-event creation-failure branch is exercised. Empty in production.
+std::function<bool()>& failCreateEventFn() {
+  static std::function<bool()> fn;
   return fn;
 }
 
-/// Creates the auto-reset render event — via the test seam when one is installed,
-/// otherwise the real CreateEventW.
+/// Creates the auto-reset render event — a null handle (as the real call yields on
+/// failure) when the test seam asks to fault it, otherwise the real CreateEventW.
 HANDLE createRenderEvent() {
-  if (const auto& eventFn = createEventFn()) {
-    return static_cast<HANDLE>(eventFn());
+  if (const auto& failFn = failCreateEventFn(); failFn && failFn()) {
+    return nullptr;
   }
   return ::CreateEventW(nullptr, FALSE, FALSE, nullptr);
 }
@@ -261,8 +261,8 @@ void setComInitFn(ComInitFn initFn) {
   comInitFn() = std::move(initFn);
 }
 
-void setCreateEventFn(CreateEventFn eventFn) {
-  createEventFn() = std::move(eventFn);
+void setFailCreateEventFn(FailCreateEventFn failFn) {
+  failCreateEventFn() = std::move(failFn);
 }
 } // namespace testing
 

@@ -158,34 +158,38 @@ void Reader::bargeIn() {
   tts_.cancel();
 }
 
+std::optional<vox::model::AccessibleNode> Reader::waitForNextNode() {
+  std::unique_lock lock(mutex_);
+  cv_.wait(lock, [this] { return pending_.has_value() || !running_; });
+  if (!running_ || !pending_.has_value()) {
+    return std::nullopt; // stop requested, or a spurious wake-up
+  }
+  std::optional<vox::model::AccessibleNode> node = std::move(pending_);
+  pending_.reset();
+  return node;
+}
+
+bool Reader::isRunning() {
+  const std::scoped_lock lock(mutex_);
+  return running_;
+}
+
 void Reader::workerLoop() {
-  while (true) {
-    vox::model::AccessibleNode node;
-    {
-      std::unique_lock lock(mutex_);
-      cv_.wait(lock, [this] { return pending_.has_value() || !running_; });
-      if (!running_) {
-        return;
-      }
-      if (!pending_.has_value()) {
-        continue; // spurious wake-up
-      }
-      node = std::move(*pending_);
-      pending_.reset();
+  while (isRunning()) {
+    const std::optional<vox::model::AccessibleNode> node = waitForNextNode();
+    if (!node.has_value()) {
+      continue; // stop requested (loop condition re-checks) or a spurious wake-up
     }
-    {
-      // stop() may have set running_ false after we dequeued but before this
-      // blocking synthesis begins; cancel() alone can be lost if it lands before
-      // synthesize() starts (engines reset their cancel flag there).
-      const std::scoped_lock lock(mutex_);
-      if (!running_) {
-        return;
-      }
+    // stop() may have set running_ false after we dequeued but before this
+    // blocking synthesis begins; cancel() alone can be lost if it lands before
+    // synthesize() starts (engines reset their cancel flag there).
+    if (!isRunning()) {
+      return;
     }
     if (!speechEnabled_.load(std::memory_order_acquire)) {
       continue; // muted after this node was queued; drop it
     }
-    speakUtterance(node);
+    speakUtterance(*node);
   }
 }
 

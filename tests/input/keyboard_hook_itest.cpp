@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <thread>
 
@@ -82,38 +83,58 @@ bool sendTab() {
   return ::SendInput(count, inputs.data(), sizeof(INPUT)) == count;
 }
 
-TEST(KeyboardHookITest, InjectedTabReachesHandlerAsNavigateNext) {
-  AtomicCommandHandler handler;
-  KeyboardHook hook(handler);
-  try {
-    hook.start();
-  } catch (const std::runtime_error& error) {
-    if (inputHookRequired()) {
-      FAIL() << "VOX_REQUIRE_INPUT_HOOK is set but the hook could not start: " << error.what();
-    }
-    GTEST_SKIP() << "Keyboard hook unavailable on this desktop (" << error.what() << ").";
+/// Records the standard "the hook environment is unavailable" outcome and
+/// returns. On the provisioned CI job (VOX_REQUIRE_INPUT_HOOK) that is a
+/// failure with @p requiredMessage; everywhere else it is a skip describing
+/// @p obstacle. Centralizing the branch keeps each call site in the test flat.
+/// The caller must `return` immediately after, exactly as a bare FAIL()/SKIP()
+/// would have.
+void failIfRequiredOtherwiseSkip(std::string_view requiredMessage, std::string_view obstacle) {
+  if (inputHookRequired()) {
+    FAIL() << requiredMessage;
   }
+  GTEST_SKIP() << obstacle;
+}
 
-  if (!sendTab()) {
-    hook.stop();
-    if (inputHookRequired()) {
-      FAIL() << "VOX_REQUIRE_INPUT_HOOK is set but SendInput could not inject the key.";
-    }
-    GTEST_SKIP() << "SendInput could not inject a key on this desktop.";
-  }
-
-  // The hook callback runs on its own thread; poll briefly for the command.
+/// Polls briefly for the hook callback (which runs on its own thread) to deliver
+/// a command, then stops the hook. Returns true if a command arrived.
+bool awaitCommandThenStop(const AtomicCommandHandler& handler, KeyboardHook& hook) {
   for (int attempt = 0; attempt < 200 && handler.count() == 0; ++attempt) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
   hook.stop();
+  return handler.count() != 0;
+}
 
-  if (handler.count() == 0) {
-    if (inputHookRequired()) {
-      FAIL() << "VOX_REQUIRE_INPUT_HOOK is set but the injected key never arrived.";
-    }
-    GTEST_SKIP() << "Injected key did not reach the hook on this desktop.";
+TEST(KeyboardHookITest, InjectedTabReachesHandlerAsNavigateNext) {
+  AtomicCommandHandler handler;
+  KeyboardHook hook(handler);
+
+  try {
+    hook.start();
+  } catch (const std::runtime_error& error) {
+    const std::string required =
+        std::string("VOX_REQUIRE_INPUT_HOOK is set but the hook could not start: ") + error.what();
+    const std::string obstacle =
+        std::string("Keyboard hook unavailable on this desktop (") + error.what() + ").";
+    failIfRequiredOtherwiseSkip(required, obstacle);
+    return;
   }
+
+  if (!sendTab()) {
+    hook.stop();
+    failIfRequiredOtherwiseSkip("VOX_REQUIRE_INPUT_HOOK is set but SendInput could not inject "
+                                "the key.",
+                                "SendInput could not inject a key on this desktop.");
+    return;
+  }
+
+  if (!awaitCommandThenStop(handler, hook)) {
+    failIfRequiredOtherwiseSkip("VOX_REQUIRE_INPUT_HOOK is set but the injected key never arrived.",
+                                "Injected key did not reach the hook on this desktop.");
+    return;
+  }
+
   EXPECT_EQ(handler.last(), Command::NavigateNext);
 }
 

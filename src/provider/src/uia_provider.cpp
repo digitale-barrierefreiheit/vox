@@ -99,6 +99,100 @@ std::wstring fromUtf8(std::string_view utf8) {
   return wide;
 }
 
+// The control type and name: the two identity properties read straight off the element.
+void extractIdentity(UiaElementData& data, IUIAutomationElement* element) {
+  CONTROLTYPEID controlType = 0;
+  if (SUCCEEDED(element->get_CachedControlType(&controlType))) {
+    data.controlTypeId = controlType;
+  }
+  if (BSTR name = nullptr; SUCCEEDED(element->get_CachedName(&name)) && name != nullptr) {
+    data.name = toUtf8(name);
+    ::SysFreeString(name);
+  }
+}
+
+// The three boolean state properties (enabled, focus, focusable), each left at its default
+// when the read fails.
+void extractStateFlags(UiaElementData& data, IUIAutomationElement* element) {
+  BOOL flag = FALSE;
+  if (SUCCEEDED(element->get_CachedIsEnabled(&flag))) {
+    data.isEnabled = flag != FALSE;
+  }
+  if (SUCCEEDED(element->get_CachedHasKeyboardFocus(&flag))) {
+    data.hasKeyboardFocus = flag != FALSE;
+  }
+  if (SUCCEEDED(element->get_CachedIsKeyboardFocusable(&flag))) {
+    data.isKeyboardFocusable = flag != FALSE;
+  }
+}
+
+// TogglePattern's ToggleState, marked present only once it actually reads.
+void extractToggle(UiaElementData& data, IUIAutomationElement* element) {
+  if (ComPtr<IUIAutomationTogglePattern> toggle;
+      SUCCEEDED(element->GetCachedPatternAs(UIA_TogglePatternId, IID_PPV_ARGS(&toggle))) &&
+      toggle) {
+    ToggleState state = ToggleState_Off;
+    if (SUCCEEDED(toggle->get_CachedToggleState(&state))) {
+      data.hasToggle = true;
+      data.toggleState = state;
+    }
+  }
+}
+
+// ExpandCollapsePattern's state, marked present only once it actually reads.
+void extractExpandCollapse(UiaElementData& data, IUIAutomationElement* element) {
+  if (ComPtr<IUIAutomationExpandCollapsePattern> expand;
+      SUCCEEDED(element->GetCachedPatternAs(UIA_ExpandCollapsePatternId, IID_PPV_ARGS(&expand))) &&
+      expand) {
+    ExpandCollapseState state = ExpandCollapseState_Collapsed;
+    if (SUCCEEDED(expand->get_CachedExpandCollapseState(&state))) {
+      data.hasExpandCollapse = true;
+      data.expandCollapseState = state;
+    }
+  }
+}
+
+// SelectionItemPattern's IsSelected, marked present only once it actually reads.
+void extractSelectionItem(UiaElementData& data, IUIAutomationElement* element) {
+  if (ComPtr<IUIAutomationSelectionItemPattern> selection;
+      SUCCEEDED(
+          element->GetCachedPatternAs(UIA_SelectionItemPatternId, IID_PPV_ARGS(&selection))) &&
+      selection) {
+    BOOL selected = FALSE;
+    if (SUCCEEDED(selection->get_CachedIsSelected(&selected))) {
+      data.hasSelectionItem = true;
+      data.isSelected = selected != FALSE;
+    }
+  }
+}
+
+// ValuePattern's IsReadOnly and Value, each recorded independently so a failed read of one does
+// not suppress the other (see the per-field comments) and either can fall back to the legacy path.
+void extractValue(UiaElementData& data, IUIAutomationElement* element) {
+  ComPtr<IUIAutomationValuePattern> value;
+  if (FAILED(element->GetCachedPatternAs(UIA_ValuePatternId, IID_PPV_ARGS(&value))) ||
+      value.Get() == nullptr) {
+    return;
+  }
+  // Record read-only-ness only once IsReadOnly actually reads (independent of whether
+  // the value text reads), so a failed IsReadOnly read can fall back to the legacy state
+  // bits rather than being assumed not-read-only.
+  BOOL readOnly = FALSE;
+  if (SUCCEEDED(value->get_CachedIsReadOnly(&readOnly))) {
+    data.hasReadOnly = true;
+    data.isReadOnly = readOnly != FALSE;
+  }
+  // Mark the value *present* only once it actually reads, so a failed read
+  // stays "absent" instead of collapsing to a spurious empty value. A genuine
+  // empty BSTR (or null) is a real empty value and is kept.
+  BSTR text = nullptr;
+  if (SUCCEEDED(value->get_CachedValue(&text))) {
+    data.hasValue = true;
+    data.value = toUtf8(text); // toUtf8 treats null as ""
+    ::SysFreeString(text);
+  }
+}
+
 // Legacy fallback: standard Win32 controls reach UIA through the MSAA bridge and expose
 // state/value through the legacy IAccessible *properties* (read here as cached property
 // values), not the modern patterns. The pure mapper uses these only when the corresponding
@@ -120,88 +214,20 @@ void extractLegacy(UiaElementData& data, IUIAutomationElement* element) {
   ::VariantClear(&value);
 }
 
-/// Pulls the cached properties/patterns of @p element into a plain snapshot.
+/// Pulls the cached properties/patterns of @p element into a plain snapshot. Each step is a
+/// named helper that reads one property group and degrades a missing/unreadable one to "absent".
 UiaElementData extract(IUIAutomationElement* element) {
   UiaElementData data;
   if (element == nullptr) {
     return data;
   }
-
-  CONTROLTYPEID controlType = 0;
-  if (SUCCEEDED(element->get_CachedControlType(&controlType))) {
-    data.controlTypeId = controlType;
-  }
-
-  if (BSTR name = nullptr; SUCCEEDED(element->get_CachedName(&name)) && name != nullptr) {
-    data.name = toUtf8(name);
-    ::SysFreeString(name);
-  }
-
-  BOOL flag = FALSE;
-  if (SUCCEEDED(element->get_CachedIsEnabled(&flag))) {
-    data.isEnabled = flag != FALSE;
-  }
-  if (SUCCEEDED(element->get_CachedHasKeyboardFocus(&flag))) {
-    data.hasKeyboardFocus = flag != FALSE;
-  }
-  if (SUCCEEDED(element->get_CachedIsKeyboardFocusable(&flag))) {
-    data.isKeyboardFocusable = flag != FALSE;
-  }
-
-  if (ComPtr<IUIAutomationTogglePattern> toggle;
-      SUCCEEDED(element->GetCachedPatternAs(UIA_TogglePatternId, IID_PPV_ARGS(&toggle))) &&
-      toggle) {
-    ToggleState state = ToggleState_Off;
-    if (SUCCEEDED(toggle->get_CachedToggleState(&state))) {
-      data.hasToggle = true;
-      data.toggleState = state;
-    }
-  }
-
-  if (ComPtr<IUIAutomationExpandCollapsePattern> expand;
-      SUCCEEDED(element->GetCachedPatternAs(UIA_ExpandCollapsePatternId, IID_PPV_ARGS(&expand))) &&
-      expand) {
-    ExpandCollapseState state = ExpandCollapseState_Collapsed;
-    if (SUCCEEDED(expand->get_CachedExpandCollapseState(&state))) {
-      data.hasExpandCollapse = true;
-      data.expandCollapseState = state;
-    }
-  }
-
-  if (ComPtr<IUIAutomationSelectionItemPattern> selection;
-      SUCCEEDED(
-          element->GetCachedPatternAs(UIA_SelectionItemPatternId, IID_PPV_ARGS(&selection))) &&
-      selection) {
-    BOOL selected = FALSE;
-    if (SUCCEEDED(selection->get_CachedIsSelected(&selected))) {
-      data.hasSelectionItem = true;
-      data.isSelected = selected != FALSE;
-    }
-  }
-
-  if (ComPtr<IUIAutomationValuePattern> value;
-      SUCCEEDED(element->GetCachedPatternAs(UIA_ValuePatternId, IID_PPV_ARGS(&value))) && value) {
-    // Record read-only-ness only once IsReadOnly actually reads (independent of whether
-    // the value text reads), so a failed IsReadOnly read can fall back to the legacy state
-    // bits rather than being assumed not-read-only.
-    BOOL readOnly = FALSE;
-    if (SUCCEEDED(value->get_CachedIsReadOnly(&readOnly))) {
-      data.hasReadOnly = true;
-      data.isReadOnly = readOnly != FALSE;
-    }
-    // Mark the value *present* only once it actually reads, so a failed read
-    // stays "absent" instead of collapsing to a spurious empty value. A genuine
-    // empty BSTR (or null) is a real empty value and is kept.
-    BSTR text = nullptr;
-    if (SUCCEEDED(value->get_CachedValue(&text))) {
-      data.hasValue = true;
-      data.value = toUtf8(text); // toUtf8 treats null as ""
-      ::SysFreeString(text);
-    }
-  }
-
+  extractIdentity(data, element);
+  extractStateFlags(data, element);
+  extractToggle(data, element);
+  extractExpandCollapse(data, element);
+  extractSelectionItem(data, element);
+  extractValue(data, element);
   extractLegacy(data, element);
-
   return data;
 }
 

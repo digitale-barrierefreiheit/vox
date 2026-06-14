@@ -351,29 +351,10 @@ public:
     if (utf8Text.empty()) {
       return; // nothing to say
     }
-    const std::wstring wide = toWide(utf8Text);
-    if (wide.empty()) {
-      // Non-empty input that did not convert is invalid UTF-8 — surface it
-      // rather than silently producing no audio.
-      throw EngineError("SapiTtsEngine: input text is not valid UTF-8");
-    }
-
-    const WAVEFORMATEX format = makeWaveFormat();
-    const ComPtr<PcmSinkStream> output = Make<PcmSinkStream>(sink, cancelled_, format);
-    if (!output) {
-      throw EngineError("SapiTtsEngine: failed to create the output stream");
-    }
-
-    if (const HRESULT hr = voice_->SetOutput(output.Get(), FALSE); FAILED(hr)) {
-      throw EngineError(static_cast<std::uint32_t>(hr),
-                        "SapiTtsEngine: failed to set the SAPI output");
-    }
-    const HRESULT spoken = voice_->Speak(wide.c_str(), static_cast<DWORD>(SPF_IS_NOT_XML), nullptr);
-    voice_->SetOutput(nullptr, TRUE); // release our stream; restore the default sink
-
-    if (FAILED(spoken) && !cancelled_.load(std::memory_order_relaxed)) {
-      throw EngineError(static_cast<std::uint32_t>(spoken), "SapiTtsEngine: synthesis failed");
-    }
+    const std::wstring wide = toWideOrThrow(utf8Text);
+    const ComPtr<PcmSinkStream> output = makeOutputStream(sink);
+    const HRESULT spoken = speakTo(*output.Get(), wide);
+    reportSpeakResult(spoken);
   }
 
   void cancel() noexcept {
@@ -385,6 +366,49 @@ public:
   }
 
 private:
+  /// Converts @p utf8Text to UTF-16, throwing on invalid UTF-8. The caller has
+  /// already excluded the empty case, so an empty result here means the
+  /// non-empty input did not convert — surfaced rather than silently muted.
+  static std::wstring toWideOrThrow(std::string_view utf8Text) {
+    std::wstring wide = toWide(utf8Text);
+    if (wide.empty()) {
+      throw EngineError("SapiTtsEngine: input text is not valid UTF-8");
+    }
+    return wide;
+  }
+
+  /// Creates the PCM sink stream that forwards SAPI output to @p sink; throws if
+  /// it cannot be allocated.
+  ComPtr<PcmSinkStream> makeOutputStream(const ITtsEngine::PcmSink& sink) const {
+    const WAVEFORMATEX format = makeWaveFormat();
+    ComPtr<PcmSinkStream> output = Make<PcmSinkStream>(sink, cancelled_, format);
+    if (!output) {
+      throw EngineError("SapiTtsEngine: failed to create the output stream");
+    }
+    return output;
+  }
+
+  /// Routes the voice through @p output, speaks @p wide synchronously, then
+  /// restores the default sink. Returns the Speak() HRESULT; throws only if the
+  /// output cannot be attached.
+  HRESULT speakTo(PcmSinkStream& output, const std::wstring& wide) {
+    if (const HRESULT hr = voice_->SetOutput(&output, FALSE); FAILED(hr)) {
+      throw EngineError(static_cast<std::uint32_t>(hr),
+                        "SapiTtsEngine: failed to set the SAPI output");
+    }
+    const HRESULT spoken = voice_->Speak(wide.c_str(), static_cast<DWORD>(SPF_IS_NOT_XML), nullptr);
+    voice_->SetOutput(nullptr, TRUE); // release our stream; restore the default sink
+    return spoken;
+  }
+
+  /// Throws on a genuine synthesis failure, but treats a failure that followed a
+  /// cancel() as the expected, deliberate abort.
+  void reportSpeakResult(HRESULT spoken) const {
+    if (FAILED(spoken) && !cancelled_.load(std::memory_order_relaxed)) {
+      throw EngineError(static_cast<std::uint32_t>(spoken), "SapiTtsEngine: synthesis failed");
+    }
+  }
+
   void enumerateVoices() {
     // Classic SAPI5 voices (SPCAT_VOICES) plus the OneCore catalogue (#52):
     // voices installed through the modern language features (Windows Settings,

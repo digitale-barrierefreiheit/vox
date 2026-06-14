@@ -86,6 +86,20 @@ double kaiser(double u) {
   return besselI0(KaiserBeta * arg) * InvKaiserI0;
 }
 
+/// Rejects formats the converter cannot bridge, so the constructor body stays a
+/// flat sequence of steps. @p source must be 16-bit mono at a non-zero rate (the
+/// only thing the TTS engine emits) and the target must have a non-zero rate and
+/// channel count.
+void validateConversion(const AudioFormat& source, std::uint32_t targetRate,
+                        std::uint16_t targetChannels) {
+  if (source.bitsPerSample != 16U || source.channels != 1U || source.sampleRate == 0U) {
+    throw std::invalid_argument("PcmConverter: source must be 16-bit mono PCM at a non-zero rate");
+  }
+  if (targetRate == 0U || targetChannels == 0U) {
+    throw std::invalid_argument("PcmConverter: target rate and channel count must be non-zero");
+  }
+}
+
 } // namespace
 
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters) — rate/channels/format are distinct roles
@@ -93,12 +107,7 @@ PcmConverter::PcmConverter(AudioFormat source, std::uint32_t targetRate,
                            std::uint16_t targetChannels, SampleFormat targetFormat)
     : history_(Taps, 0.0F), targetRate_(targetRate), targetChannels_(targetChannels),
       targetFormat_(targetFormat) {
-  if (source.bitsPerSample != 16U || source.channels != 1U || source.sampleRate == 0U) {
-    throw std::invalid_argument("PcmConverter: source must be 16-bit mono PCM at a non-zero rate");
-  }
-  if (targetRate == 0U || targetChannels == 0U) {
-    throw std::invalid_argument("PcmConverter: target rate and channel count must be non-zero");
-  }
+  validateConversion(source, targetRate, targetChannels);
   step_ = static_cast<double>(source.sampleRate) / static_cast<double>(targetRate);
   bypass_ = source.sampleRate == targetRate;
   if (!bypass_) {

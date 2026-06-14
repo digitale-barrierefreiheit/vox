@@ -79,44 +79,74 @@ TEST(StateSet, Equality) {
   EXPECT_NE(a, b);
 }
 
-// Tri-state checkbox: off, on, and indeterminate are all distinguishable.
-TEST(StateSet, TriStateCheckbox) {
-  const StateSet off;
-  const StateSet on{Checked};
-  const StateSet mixed{Mixed};
+// Tri-state checkbox: off, on, and indeterminate are all distinguishable. The
+// three configurations are shared by the membership and distinctness tests.
+class TriStateCheckbox : public ::testing::Test {
+protected:
+  const StateSet off_;
+  const StateSet on_{Checked};
+  const StateSet mixed_{Mixed};
+};
 
-  EXPECT_FALSE(off.test(Checked));
-  EXPECT_FALSE(off.test(Mixed));
-
-  EXPECT_TRUE(on.test(Checked));
-  EXPECT_FALSE(on.test(Mixed));
-
-  EXPECT_FALSE(mixed.test(Checked));
-  EXPECT_TRUE(mixed.test(Mixed));
-
-  EXPECT_NE(off, on);
-  EXPECT_NE(on, mixed);
-  EXPECT_NE(off, mixed);
+TEST_F(TriStateCheckbox, OffHasNeitherCheckedNorMixed) {
+  EXPECT_FALSE(off_.test(Checked));
+  EXPECT_FALSE(off_.test(Mixed));
 }
 
-// Expandable + Expanded: not-expandable, collapsed, and expanded differ.
-TEST(StateSet, CollapsedVersusNotExpandable) {
-  const StateSet notExpandable;
-  StateSet collapsed;
-  collapsed.set(Expandable);
-  StateSet expanded;
-  expanded.set(Expandable).set(Expanded);
+TEST_F(TriStateCheckbox, OnHasCheckedButNotMixed) {
+  EXPECT_TRUE(on_.test(Checked));
+  EXPECT_FALSE(on_.test(Mixed));
+}
 
-  EXPECT_FALSE(notExpandable.test(Expandable));
+TEST_F(TriStateCheckbox, IndeterminateHasMixedButNotChecked) {
+  EXPECT_FALSE(mixed_.test(Checked));
+  EXPECT_TRUE(mixed_.test(Mixed));
+}
 
-  EXPECT_TRUE(collapsed.test(Expandable));
-  EXPECT_FALSE(collapsed.test(Expanded));
+TEST_F(TriStateCheckbox, AllThreeConfigurationsDiffer) {
+  EXPECT_NE(off_, on_);
+  EXPECT_NE(on_, mixed_);
+  EXPECT_NE(off_, mixed_);
+}
 
-  EXPECT_TRUE(expanded.test(Expandable));
-  EXPECT_TRUE(expanded.test(Expanded));
+// Expandable + Expanded: not-expandable, collapsed, and expanded differ. The
+// three configurations are shared by the membership and distinctness tests.
+class ExpandableStates : public ::testing::Test {
+protected:
+  static StateSet collapsed() {
+    StateSet states;
+    states.set(Expandable);
+    return states;
+  }
 
-  EXPECT_NE(notExpandable, collapsed);
-  EXPECT_NE(collapsed, expanded);
+  static StateSet expanded() {
+    StateSet states;
+    states.set(Expandable).set(Expanded);
+    return states;
+  }
+
+  const StateSet notExpandable_;
+  const StateSet collapsed_{collapsed()};
+  const StateSet expanded_{expanded()};
+};
+
+TEST_F(ExpandableStates, NotExpandableHasNoExpandable) {
+  EXPECT_FALSE(notExpandable_.test(Expandable));
+}
+
+TEST_F(ExpandableStates, CollapsedIsExpandableButNotExpanded) {
+  EXPECT_TRUE(collapsed_.test(Expandable));
+  EXPECT_FALSE(collapsed_.test(Expanded));
+}
+
+TEST_F(ExpandableStates, ExpandedIsBothExpandableAndExpanded) {
+  EXPECT_TRUE(expanded_.test(Expandable));
+  EXPECT_TRUE(expanded_.test(Expanded));
+}
+
+TEST_F(ExpandableStates, AdjacentConfigurationsDiffer) {
+  EXPECT_NE(notExpandable_, collapsed_);
+  EXPECT_NE(collapsed_, expanded_);
 }
 
 TEST(StateSet, ToStringEmptyIsNone) {

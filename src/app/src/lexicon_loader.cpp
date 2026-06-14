@@ -119,17 +119,34 @@ bool loadFromFile(const std::filesystem::path& file, std::string_view expectedTa
   return true;
 }
 
+bool isAsciiLetter(char letter) {
+  return (letter >= 'a' && letter <= 'z') || (letter >= 'A' && letter <= 'Z');
+}
+
+bool isAsciiDigit(char letter) {
+  return letter >= '0' && letter <= '9';
+}
+
+/// True if @p subtag has a length allowed for its position: a primary subtag is
+/// 2–8 long, a later subtag 1–8. The non-empty floor also rejects the empty
+/// subtags that leading/trailing/doubled hyphens would produce.
+bool hasValidSubtagLength(std::string_view subtag, bool primary) {
+  return subtag.size() >= (primary ? 2U : 1U) && subtag.size() <= 8U;
+}
+
+/// True if every character of @p subtag is allowed for its position: letters
+/// only for a primary subtag, letters or digits for a later one.
+bool hasValidSubtagCharacters(std::string_view subtag, bool primary) {
+  return std::ranges::all_of(subtag, [primary](char letter) {
+    return isAsciiLetter(letter) || (!primary && isAsciiDigit(letter));
+  });
+}
+
 /// True if @p subtag is well formed for its position in a BCP-47 tag: the
 /// primary subtag is 2–8 letters, any later subtag is 1–8 alphanumerics. The
 /// non-empty length requirement also rejects leading/trailing/doubled hyphens.
 bool isValidSubtag(std::string_view subtag, bool primary) {
-  if (subtag.size() < (primary ? 2U : 1U) || subtag.size() > 8U) {
-    return false;
-  }
-  return std::ranges::all_of(subtag, [primary](char letter) {
-    const bool alpha = (letter >= 'a' && letter <= 'z') || (letter >= 'A' && letter <= 'Z');
-    return alpha || (!primary && letter >= '0' && letter <= '9');
-  });
+  return hasValidSubtagLength(subtag, primary) && hasValidSubtagCharacters(subtag, primary);
 }
 
 /// @p requestedTag if it is a usable language tag, empty otherwise (none was

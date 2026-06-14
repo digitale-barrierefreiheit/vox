@@ -189,10 +189,22 @@ export const codeCell = (s: string): string => {
   return `${fence}${pad}${safe}${pad}${fence}`;
 };
 
-/** The one-line headline. ✅ is reserved for a fully-reported, all-passed run: every expected
- *  job has reported and none failed. ❌ the moment any job fails or comes back without results.
- *  ⏳ while still waiting on expected jobs — so a partial run is never shown as all-green. */
-function renderStatusLine(state: MatrixState, totals: { p: number; f: number; s: number }): string {
+type Totals = { p: number; f: number; s: number };
+
+/** The job sets and X/Y denominator the headline is built from. `failed` is any job that
+ *  failed or came back without results; `pending` is every *expected* job yet to report
+ *  (set-based, so an unexpected job can't stand in for a missing one); `done`/`total`/`noun`
+ *  describe the reported-vs-expected progress (falling back to the live count when unseeded). */
+interface StatusFacts {
+  failed: string[];
+  pending: string[];
+  reported: number;
+  done: number;
+  total: number;
+  noun: string;
+}
+
+function statusFacts(state: MatrixState): StatusFacts {
   const reported = state.jobOrder.length;
   const failed = state.jobOrder.filter((j) => state.jobs[j].f > 0 || state.jobs[j].u);
   // The gate is set-based: every *expected* job must have reported. A count alone would pass
@@ -206,18 +218,37 @@ function renderStatusLine(state: MatrixState, totals: { p: number; f: number; s:
   // When seeded, the X/Y counts the *expected* set (done/total), so an unexpected or
   // mislabelled job column doesn't make the header read like "0/5 jobs reported".
   const noun = seeded ? 'expected jobs' : 'jobs';
+  return { failed, pending, reported, done, total, noun };
+}
 
-  if (failed.length > 0) {
-    const noResults = failed.filter((j) => state.jobs[j].u);
-    const parts: string[] = [];
-    if (totals.f > 0) parts.push(`**${totals.f} failed**`);
-    if (noResults.length > 0) parts.push(`**${noResults.length} job(s) without results** (${noResults.map(cell).join(', ')})`);
-    return `❌ ${parts.join(', ')}, ${totals.p} passed, ${totals.s} skipped — ${done}/${total} ${noun} reported`;
-  }
-  if (reported === 0) return '⏳ Tests running… results appear as each job finishes.';
-  if (pending.length > 0)
-    return `⏳ ${totals.p} passed, ${totals.s} skipped so far — ${done}/${total} ${noun} reported (waiting for ${pending.map(cell).join(', ')})`;
-  return `✅ **All ${totals.p} passed** (${totals.s} skipped) — ${total} ${noun} reported`;
+/** ❌: list the failure(s) — count of failed tests and/or jobs that published no results. */
+function failureLine(state: MatrixState, totals: Totals, facts: StatusFacts): string {
+  const noResults = facts.failed.filter((j) => state.jobs[j].u);
+  const parts: string[] = [];
+  if (totals.f > 0) parts.push(`**${totals.f} failed**`);
+  if (noResults.length > 0) parts.push(`**${noResults.length} job(s) without results** (${noResults.map(cell).join(', ')})`);
+  return `❌ ${parts.join(', ')}, ${totals.p} passed, ${totals.s} skipped — ${facts.done}/${facts.total} ${facts.noun} reported`;
+}
+
+/** ⏳: passed/skipped so far, with the still-awaited jobs named. */
+function pendingLine(totals: Totals, facts: StatusFacts): string {
+  return `⏳ ${totals.p} passed, ${totals.s} skipped so far — ${facts.done}/${facts.total} ${facts.noun} reported (waiting for ${facts.pending.map(cell).join(', ')})`;
+}
+
+/** ✅: a fully-reported, all-passed run. */
+function successLine(totals: Totals, facts: StatusFacts): string {
+  return `✅ **All ${totals.p} passed** (${totals.s} skipped) — ${facts.total} ${facts.noun} reported`;
+}
+
+/** The one-line headline. ✅ is reserved for a fully-reported, all-passed run: every expected
+ *  job has reported and none failed. ❌ the moment any job fails or comes back without results.
+ *  ⏳ while still waiting on expected jobs — so a partial run is never shown as all-green. */
+function renderStatusLine(state: MatrixState, totals: Totals): string {
+  const facts = statusFacts(state);
+  if (facts.failed.length > 0) return failureLine(state, totals, facts);
+  if (facts.reported === 0) return '⏳ Tests running… results appear as each job finishes.';
+  if (facts.pending.length > 0) return pendingLine(totals, facts);
+  return successLine(totals, facts);
 }
 
 /** Render the whole comment body (marker + tables + embedded state). */

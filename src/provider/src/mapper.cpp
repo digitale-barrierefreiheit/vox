@@ -3,6 +3,10 @@
 
 /// @file
 /// @brief Implementation of vox::provider::mapElement.
+#include <algorithm>
+#include <array>
+#include <utility>
+
 #include <vox/model/accessible_node.hpp>
 #include <vox/model/role.hpp>
 #include <vox/model/state.hpp>
@@ -18,30 +22,25 @@ using vox::model::Role;
 using vox::model::StateSet;
 using enum vox::model::State;
 
+// UIA CONTROLTYPEID -> vox Role. The IDs are non-contiguous, so a flat lookup
+// table (scanned linearly) is clearer than a switch and keeps mapRole trivial.
+// Any control type not listed maps to Role::Unknown.
+constexpr std::array<std::pair<int, Role>, 9> ControlTypeRoles{{
+    {UiaButtonControlTypeId, Role::Button},
+    {UiaCheckBoxControlTypeId, Role::Checkbox},
+    {UiaRadioButtonControlTypeId, Role::RadioButton},
+    {UiaEditControlTypeId, Role::Edit},
+    {UiaComboBoxControlTypeId, Role::Combobox},
+    {UiaListItemControlTypeId, Role::ListItem},
+    {UiaMenuItemControlTypeId, Role::MenuItem},
+    {UiaHyperlinkControlTypeId, Role::Link},
+    {UiaTextControlTypeId, Role::StaticText},
+}};
+
 Role mapRole(int controlTypeId) {
-  using enum Role;
-  switch (controlTypeId) {
-  case UiaButtonControlTypeId:
-    return Button;
-  case UiaCheckBoxControlTypeId:
-    return Checkbox;
-  case UiaRadioButtonControlTypeId:
-    return RadioButton;
-  case UiaEditControlTypeId:
-    return Edit;
-  case UiaComboBoxControlTypeId:
-    return Combobox;
-  case UiaListItemControlTypeId:
-    return ListItem;
-  case UiaMenuItemControlTypeId:
-    return MenuItem;
-  case UiaHyperlinkControlTypeId:
-    return Link;
-  case UiaTextControlTypeId:
-    return StaticText;
-  default:
-    return Unknown;
-  }
+  const auto match =
+      std::ranges::find(ControlTypeRoles, controlTypeId, &std::pair<int, Role>::first);
+  return match != ControlTypeRoles.end() ? match->second : Role::Unknown;
 }
 
 // Checked/Mixed from the modern Toggle pattern, else the legacy MSAA state bits

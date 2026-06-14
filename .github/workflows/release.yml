@@ -63,6 +63,8 @@ jobs:
         id: prep
         env:
           RELEASE_NOTES_FILE: ${{ runner.temp }}/release-notes.md
+          # Keep the changelog links correct in forks / renames, default in CI.
+          VOX_REPO_URL: ${{ github.server_url }}/${{ github.repository }}
         run: |
           version="$(bash tools/prepare-release.sh '${{ inputs.release-type }}')"
           echo "version=$version" >> "$GITHUB_OUTPUT"

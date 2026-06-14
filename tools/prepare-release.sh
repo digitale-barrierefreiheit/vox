@@ -17,7 +17,7 @@ set -euo pipefail
 bump="${1:?usage: prepare-release.sh <patch|minor|major>}"
 root="${VOX_ROOT:-"$(cd "$(dirname "$0")/.." && pwd)"}"
 notes="${RELEASE_NOTES_FILE:-"$root/release-notes.md"}"
-repo="https://github.com/digitale-barrierefreiheit/vox"
+repo="${VOX_REPO_URL:-https://github.com/digitale-barrierefreiheit/vox}"
 
 cmake="$root/CMakeLists.txt"
 vcpkg="$root/vcpkg.json"
@@ -39,17 +39,23 @@ new="$major.$minor.$patch"
 today="$(date -u +%Y-%m-%d)"
 
 # 2. Write the new version — portable in-place edits via awk to a temp file (no
-#    `sed -i`, whose flags and the `a`/`0,/…/` features differ on BSD/macOS sed).
-#    Only the first `<spaces>VERSION X.Y.Z` (the project() line; cmake_minimum's
-#    two-component "VERSION 3.25" never matches) and vcpkg.json's "version" change.
+#    `sed -i`, whose flags and `a`/`0,/…/` features differ on BSD/macOS sed). Each
+#    awk fails via its END rule if the pattern never matched (same regex the version
+#    read used; cmake_minimum's two-component "VERSION 3.25" never matches), so a
+#    format change can't silently leave a file unbumped — which would make an
+#    inconsistent release commit.
 awk -v new="$new" '
-  !done && /^[[:space:]]*VERSION[[:space:]]+[0-9]+\.[0-9]+\.[0-9]+/ { sub(/[0-9]+\.[0-9]+\.[0-9]+/, new); done = 1 }
+  !done && /VERSION[[:space:]]+[0-9]+\.[0-9]+\.[0-9]+/ { sub(/[0-9]+\.[0-9]+\.[0-9]+/, new); done = 1 }
   { print }
-' "$cmake" > "$cmake.tmp" && mv "$cmake.tmp" "$cmake"
+  END { if (!done) exit 1 }
+' "$cmake" > "$cmake.tmp" || { rm -f "$cmake.tmp"; echo "no project(VERSION X.Y.Z) line found in $cmake" >&2; exit 1; }
+mv "$cmake.tmp" "$cmake"
 awk -v new="$new" '
   !done && /"version"[[:space:]]*:[[:space:]]*"[0-9]+\.[0-9]+\.[0-9]+"/ { sub(/[0-9]+\.[0-9]+\.[0-9]+/, new); done = 1 }
   { print }
-' "$vcpkg" > "$vcpkg.tmp" && mv "$vcpkg.tmp" "$vcpkg"
+  END { if (!done) exit 1 }
+' "$vcpkg" > "$vcpkg.tmp" || { rm -f "$vcpkg.tmp"; echo "no \"version\" field found in $vcpkg" >&2; exit 1; }
+mv "$vcpkg.tmp" "$vcpkg"
 
 # 3. Promote the changelog (one portable awk pass): insert "## [<new>] - <today>"
 #    right after the "## [Unreleased]" heading — so the accumulated notes fall under
@@ -62,7 +68,9 @@ awk -v new="$new" -v today="$today" -v repo="$repo" '
     next
   }
   { print }
-' "$changelog" > "$changelog.tmp" && mv "$changelog.tmp" "$changelog"
+  END { if (!promoted) exit 1 }
+' "$changelog" > "$changelog.tmp" || { rm -f "$changelog.tmp"; echo "no '## [Unreleased]' heading found in $changelog" >&2; exit 1; }
+mv "$changelog.tmp" "$changelog"
 
 # 4. Extract the new version's body for the PR description and the release notes.
 bash "$(dirname "$0")/changelog-section.sh" "$new" "$changelog" > "$notes"

@@ -56,6 +56,9 @@ if(WIN32)
   configure_file("${CMAKE_CURRENT_SOURCE_DIR}/vox.rc.in"
                  "${CMAKE_CURRENT_BINARY_DIR}/vox.rc" @ONLY)
   target_sources(vox PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/vox.rc")
+  # vox.rc embeds these by reference, so recompile the .res when they change.
+  set_source_files_properties("${CMAKE_CURRENT_BINARY_DIR}/vox.rc" PROPERTIES
+    OBJECT_DEPENDS "${VOX_ICON_PATH};${VOX_LICENSE_PATH};${VOX_NOTICE_PATH}")
 
   # Ship the per-language lexicon files next to the executable, where the
   # loader looks for them (lexicon\<tag>.lex, #61).

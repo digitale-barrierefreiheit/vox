@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781476598860,
+  "lastUpdate": 1781478767915,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -415,6 +415,35 @@ window.BENCHMARK_DATA = {
           {
             "name": "ttfaPipeline p50",
             "value": 0.9,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "3178edfb94ecedcb713abb035953ee0c4ab9c199",
+          "message": "build(release): bootstrap main for automated releases (v0.0.1 prep, no version bump) (#107)\n\nFirst drop of milestone 1 onto main and installs the release automation, with no\nversion bump — the repo stays at the 0.0.0 development sentinel.\n\nrelease.yml is dispatch-triggered, which GitHub only enables once the workflow\nexists on the default branch (main); this bootstrap puts it there so every future\nrelease is a one-click dispatch. The push:main trigger fires on this merge, but the\ngate job reads 0.0.0, recognises the sentinel, and skips publish — a ~10s no-op\n(back-merge likewise no-ops). Nothing is built, tagged, or released here.\n\nQuality posture brought to main:\n- CodeScene Code Health 10.00 across all files (the main gate's absolute bar).\n- 100% line coverage; SonarCloud quality gate clean (0 issues, 0 duplication).\n- Full CI matrix green: windows x64/x86/de-DE, clang-tidy, ASAN, TSAN, benchmarks.\n\nWhat v0.0.1 will contain (cut next via Release -> patch):\n- Announces the focused control as one German utterance (role, name, state, value).\n- German-first voice selection incl. OneCore voices; never silent.\n- Instant barge-in; keyboard-driven; configurable via VOX_LANGUAGE\n  (VOX_VOICE / VOX_LEXICON overrides).\n- Early preview: does not yet read typed text, selections, tree views, or console.\n\n39 commits, 218 files. dev -> main via merge commit (never squash dev).",
+          "timestamp": "2026-06-15T00:53:39+02:00",
+          "tree_id": "0c3f5eac413a79673c0401dd3d52b1f7a5d470de",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/3178edfb94ecedcb713abb035953ee0c4ab9c199"
+        },
+        "date": 1781478767603,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.6,
             "unit": "us"
           }
         ]

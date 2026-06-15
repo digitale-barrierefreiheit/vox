@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781491679551,
+  "lastUpdate": 1781493860273,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -502,6 +502,35 @@ window.BENCHMARK_DATA = {
           {
             "name": "ttfaPipeline p50",
             "value": 0.9,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6e78aa92fe01378706d4f50c0910707f9539524d",
+          "message": "ci(sonar): pin Python 3.12 for the tooling coverage step (Copilot + Sonar) (#114)\n\nReview findings on the v0.0.1 release PR:\n\n- Add actions/setup-python@v6 pinned to 3.12 before the hash-locked install, so a\n  runner-image update can't swap the interpreter/ABI out from under it. (Copilot)\n- Pin coverage[toml] in requirements.in to match the lockfile; pip-compile is now\n  reproducible (byte-identical regenerated lock). (Copilot)\n- Set sonar.python.version=3.12 for a precise analysis. (Sonar)",
+          "timestamp": "2026-06-15T05:06:37+02:00",
+          "tree_id": "24612a5d2ecd6c5ad7364798ba252f0481ebad22",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/6e78aa92fe01378706d4f50c0910707f9539524d"
+        },
+        "date": 1781493859987,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.6,
             "unit": "us"
           }
         ]

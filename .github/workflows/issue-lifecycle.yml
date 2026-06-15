@@ -116,7 +116,7 @@ jobs:
             // cannot trigger a mass release. A merged fork PR can still update
             // its own linked issue via the per-issue path; only the bulk sweep
             // and branch deletion are same-repo-only.
-            const sameRepo = pr.head.repo && pr.head.repo.full_name === pr.base.repo.full_name;
+            const sameRepo = Boolean(pr.head.repo && pr.head.repo.full_name === pr.base.repo.full_name);
 
             // A dev->main merge brings ALL of dev into main, so every "Resolved"
             // issue is released by it. The release PR's head is `dev` with no

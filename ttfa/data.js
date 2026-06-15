@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781496137931,
+  "lastUpdate": 1781498473679,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -560,6 +560,35 @@ window.BENCHMARK_DATA = {
           {
             "name": "ttfaPipeline p50",
             "value": 0.6,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "433f1b719f9bc485e6c06cdb434d5b9b49d088bb",
+          "message": "test(tools): fully stub the run-clang-format entry-guard test (Copilot) (#116)\n\nPatch subprocess.run to raise FileNotFoundError directly (like\ntest_main_clang_format_missing) so the entry-guard test never spawns a real\nprocess. Combined with the rglob stub it's fully hermetic, still covering the\n__main__ guard and the not-found branch (exit 2). 14 tests pass, both tools 100%.",
+          "timestamp": "2026-06-15T06:23:48+02:00",
+          "tree_id": "abd61737ae3e8dc8e76d18a58291dc8431f0115b",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/433f1b719f9bc485e6c06cdb434d5b9b49d088bb"
+        },
+        "date": 1781498472766,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.7,
             "unit": "us"
           }
         ]

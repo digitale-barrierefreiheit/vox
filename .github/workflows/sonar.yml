@@ -55,6 +55,13 @@ jobs:
           npm ci --ignore-scripts
           npm run coverage
           sed -i 's#\\#/#g; s#^SF:src/#SF:.github/actions/test-matrix/src/#' coverage/lcov.info
+      # Pin Python to the version the lockfile was resolved against (the requirements.txt
+      # header), so a runner-image update can't swap the interpreter/ABI out from under the
+      # hash-locked install (a new CPython would have no matching wheel hash). Also matches
+      # sonar.python.version for a precise analysis.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
       # The tools/ CI scripts are covered by a pytest suite; run it under coverage.py
       # (relative_files -> repo-root-relative paths) and write the report Sonar reads. A
       # test failure fails the job, so this also gates the tooling on every PR.

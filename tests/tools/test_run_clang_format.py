@@ -75,13 +75,14 @@ def test_main_clang_format_missing(tmp_path, monkeypatch, capsys):
 
 def test_entry_guard_runs_as_main(monkeypatch):
     # Execute the script as __main__ so the `raise SystemExit(main())` guard runs.
-    # Stub the directory walk (discovery is tested above) and point at a non-existent
-    # formatter so this stays fast and hermetic: FileNotFoundError -> exit 2.
+    # Stub discovery and subprocess so the test never walks the tree or spawns a real
+    # process: a faulted subprocess.run -> FileNotFoundError -> exit 2.
+    def _missing(cmd, cwd=None, check=False):
+        raise FileNotFoundError
+
     monkeypatch.setattr(Path, "rglob", lambda self, pattern: iter([Path("x.cpp")]))
-    monkeypatch.setattr(
-        "sys.argv",
-        ["run-clang-format.py", "--check", "--clang-format", "/nonexistent/clang-format-xyz"],
-    )
+    monkeypatch.setattr("subprocess.run", _missing)
+    monkeypatch.setattr("sys.argv", ["run-clang-format.py", "--check"])
     with pytest.raises(SystemExit) as exc:
         runpy.run_path(str(TOOLS_DIR / "run-clang-format.py"), run_name="__main__")
     assert exc.value.code == 2

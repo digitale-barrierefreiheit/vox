@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781478767915,
+  "lastUpdate": 1781490510793,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -439,6 +439,35 @@ window.BENCHMARK_DATA = {
           "url": "https://github.com/digitale-barrierefreiheit/vox/commit/3178edfb94ecedcb713abb035953ee0c4ab9c199"
         },
         "date": 1781478767603,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.6,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "28125a6c2b92e7b236bd7cc8dfe5740ef2a9179e",
+          "message": "ci(sonar): pre-release hardening — job-scoped permissions, branch gate fix, tools/ coverage (#112)\n\nThree SonarCloud / GitHub Actions issues surfaced on the main branch, fixed\nahead of the v0.0.1 release:\n\n- Workflow permissions scoped to jobs (Sonar githubactions:S8233/S8264):\n  copilot-approval-gate.yml and issue-lifecycle.yml now grant `{}` at the\n  workflow level and request least-privilege scopes per job.\n- Branch quality-gate failure: the \"Sonar way\" gate only evaluates new-code\n  conditions, so a long-lived branch's gate status is NONE — which the action\n  treated as failure. The gate check now runs on pull_request events only; the\n  scan still runs on branch pushes to keep the dashboard current.\n- Coverage 96.9% -> 99.8%: the gap was the untested Python CI scripts\n  (tools/check-license-headers.py, tools/run-clang-format.py), not product code.\n  Added a pytest suite (tests/tools, both tools 100% incl. the __main__ guards),\n  run under coverage.py with relative_files and wired via\n  sonar.python.coverage.reportPaths. The deps are hash-locked\n  (tests/tools/requirements.txt, installed --require-hashes) per Sonar S8544.\n  The only remaining uncovered line is main.cpp's one-line entry point (by\n  design).",
+          "timestamp": "2026-06-15T04:07:15+02:00",
+          "tree_id": "d07ddd12957d2aa92a5294c98527578fb74591fb",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/28125a6c2b92e7b236bd7cc8dfe5740ef2a9179e"
+        },
+        "date": 1781490509918,
         "tool": "customSmallerIsBetter",
         "benches": [
           {

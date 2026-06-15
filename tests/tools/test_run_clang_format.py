@@ -74,8 +74,10 @@ def test_main_clang_format_missing(tmp_path, monkeypatch, capsys):
 
 
 def test_entry_guard_runs_as_main(monkeypatch):
-    # Execute as __main__ with a non-existent formatter: bounded (scans only
-    # src/tests/tools), no files touched -> FileNotFoundError -> exit 2.
+    # Execute the script as __main__ so the `raise SystemExit(main())` guard runs.
+    # Stub the directory walk (discovery is tested above) and point at a non-existent
+    # formatter so this stays fast and hermetic: FileNotFoundError -> exit 2.
+    monkeypatch.setattr(Path, "rglob", lambda self, pattern: iter([Path("x.cpp")]))
     monkeypatch.setattr(
         "sys.argv",
         ["run-clang-format.py", "--check", "--clang-format", "/nonexistent/clang-format-xyz"],

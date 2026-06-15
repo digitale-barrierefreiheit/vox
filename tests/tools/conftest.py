@@ -22,7 +22,8 @@ def load_script(filename: str) -> ModuleType:
     path = TOOLS_DIR / filename
     module_name = filename.removesuffix(".py").replace("-", "_")
     spec = importlib.util.spec_from_file_location(module_name, path)
-    assert spec is not None and spec.loader is not None
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load tools script: {path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module

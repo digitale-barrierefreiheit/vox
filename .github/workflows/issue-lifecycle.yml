@@ -2,7 +2,7 @@
 #
 #   feature branch created  -> issue gets "In Progress"
 #   PR merged into dev       -> "In Progress" -> "Resolved"; delete the feature branch
-#   PR merged into main      -> "Resolved" -> "Released"; close the issue
+#   dev PR merged into main  -> all "Resolved" issues -> "Released" + closed
 #
 # Branch convention: <type>/<issue-number>-<slug> (e.g. fix/8-...). The issue
 # number is also read from the PR's "Closes #N" references.
@@ -108,7 +108,22 @@ jobs:
               }
             };
 
-            for (const issue_number of issues) {
+            // A dev->main merge brings ALL of dev into main, so every open
+            // "Resolved" issue is released by it. The release PR's head is
+            // `dev` and carries no per-issue "Closes", so acting on only its
+            // linked issues would transition nothing. Gather every open
+            // "Resolved" issue instead; a direct hotfix to main (head != dev)
+            // still releases only its own linked issues.
+            let targets = issues;
+            if (base === 'main' && pr.head.ref === 'dev') {
+              const resolved = (await github.paginate(github.rest.issues.listForRepo, {
+                ...context.repo, state: 'open', labels: 'Resolved', per_page: 100,
+              })).filter((i) => !i.pull_request);
+              targets = new Set([...issues, ...resolved.map((i) => i.number)]);
+              core.info(`Release: ${targets.size} Resolved issue(s) to close.`);
+            }
+
+            for (const issue_number of targets) {
               if (base === 'dev') {
                 await remove(issue_number, ['In Progress']);
                 await github.rest.issues.addLabels({ ...context.repo, issue_number, labels: ['Resolved'] });

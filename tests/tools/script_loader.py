@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
-"""Shared helpers for the tools/ script tests.
+"""Loader for the hyphenated tools/*.py scripts under test.
 
 The scripts under tools/ have hyphenated names, so they cannot be imported as
 modules the normal way. We load them by path via importlib; coverage still
 attributes the executed lines to the real files because each module's __file__
-points back at tools/<name>.py.
+points back at tools/<name>.py. This lives in a plain support module (not
+conftest.py, which pytest imports specially) so the test files import ordinary
+code.
 """
 from __future__ import annotations
 

@@ -7,7 +7,7 @@ import runpy
 from pathlib import Path
 
 import pytest
-from conftest import TOOLS_DIR, load_script
+from script_loader import TOOLS_DIR, load_script
 
 rcf = load_script("run-clang-format.py")
 

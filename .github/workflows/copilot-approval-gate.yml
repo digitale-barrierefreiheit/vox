@@ -39,15 +39,17 @@ on:
   issue_comment:
     types: [created]
 
-permissions:
-  contents: read
-  pull-requests: write
+# Least privilege: grant nothing at the workflow level; each job below requests
+# only the scopes it actually uses (Sonar githubactions:S8233 / S8264).
+permissions: {}
 
 jobs:
   prompt:
     name: Post the review prompt
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: write # post the review-prompt comment
     steps:
       - name: Comment with the strict review prompt
         env:
@@ -87,6 +89,8 @@ jobs:
       github.event.review.user.login == (vars.COPILOT_REVIEWER_LOGIN || 'copilot-pull-request-reviewer[bot]') &&
       startsWith(github.event.review.body, 'OK, I APPROVE')
     runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: write # approve the PR
     steps:
       - name: Approve the pull request
         env:
@@ -106,6 +110,9 @@ jobs:
       github.event.issue.pull_request &&
       startsWith(github.event.comment.body, 'I approve it!')
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read # read CODEOWNERS to verify the commenter
+      pull-requests: write # approve the PR on the code owner's behalf
     steps:
       - name: Approve when the commenter is a code owner
         uses: actions/github-script@v9

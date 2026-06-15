@@ -11,7 +11,7 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE AND DEFINED ENV{VCPKG_ROOT})
 endif()
 
 project(vox
-  VERSION 0.0.0
+  VERSION 0.0.1
   DESCRIPTION "A high-efficiency, low-latency screen reader (Windows-first)."
   HOMEPAGE_URL "https://github.com/digitale-barrierefreiheit/vox"
   LANGUAGES CXX)

@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "vox",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Vox — a high-efficiency, low-latency screen reader (Windows-first).",
   "homepage": "https://github.com/digitale-barrierefreiheit/vox",
   "license": "Apache-2.0",

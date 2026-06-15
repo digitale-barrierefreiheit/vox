@@ -10,6 +10,8 @@ relevant `Added` / `Changed` / `Fixed` / `Removed` headings.
 
 ## [Unreleased]
 
+## [0.0.1] - 2026-06-15
+
 **First preview.** Vox is a fast, lightweight, German-first screen reader for
 Windows. It announces the control you move keyboard focus to — its type, name,
 state, and value — in natural German (for example, *"Schaltfläche, Speichern"*).
@@ -35,4 +37,5 @@ An early preview, validated with a German user as *fast and natural for what it
 covers* — not yet a full daily-driver screen reader. It does not yet read text you
 type, selected text, tree views (e.g. mail folders), or terminal/console content.
 
-[Unreleased]: https://github.com/digitale-barrierefreiheit/vox/commits/dev
+[Unreleased]: https://github.com/digitale-barrierefreiheit/vox/compare/v0.0.1...dev
+[0.0.1]: https://github.com/digitale-barrierefreiheit/vox/releases/tag/v0.0.1

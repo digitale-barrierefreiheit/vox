@@ -77,6 +77,11 @@ compile_commands.json
 # Coverage report (OpenCppCoverage / `just coverage`, anchored to the repo root)
 # ---------------------------------------------------------------------------
 /coverage.xml
+# Python tooling coverage (pytest over tests/tools, consumed by the Sonar job)
+/coverage-python.xml
+.coverage
+__pycache__/
+.pytest_cache/
 
 # ---------------------------------------------------------------------------
 # CI test results (JUnit from `just test`, consumed by the test-matrix action)

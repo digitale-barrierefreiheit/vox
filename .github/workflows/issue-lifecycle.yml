@@ -1,3 +1,4 @@
+# SPDX note: workflow YAML is not part of the SPDX-header check set.
 # Automates issue status labels across the gitflow and tidies merged branches.
 #
 #   feature branch created  -> issue gets "In Progress"
@@ -108,8 +109,11 @@ jobs:
               }
             };
 
-            // Same-repo guard (reused for branch deletion below): a fork PR
-            // must never drive these mutations on the base repo's issues.
+            // Same-repo guard: gates the dev->main bulk release (below) and the
+            // branch deletion to the repo's own branches, so a fork's `dev`
+            // cannot trigger a mass release. A merged fork PR can still update
+            // its own linked issue via the per-issue path; only the bulk sweep
+            // and branch deletion are same-repo-only.
             const sameRepo = pr.head.repo && pr.head.repo.full_name === pr.base.repo.full_name;
 
             // A dev->main merge brings ALL of dev into main, so every "Resolved"

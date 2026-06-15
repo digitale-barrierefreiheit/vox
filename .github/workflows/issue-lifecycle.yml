@@ -108,19 +108,25 @@ jobs:
               }
             };
 
-            // A dev->main merge brings ALL of dev into main, so every open
-            // "Resolved" issue is released by it. The release PR's head is
-            // `dev` and carries no per-issue "Closes", so acting on only its
-            // linked issues would transition nothing. Gather every open
-            // "Resolved" issue instead; a direct hotfix to main (head != dev)
+            // Same-repo guard (reused for branch deletion below): a fork PR
+            // must never drive these mutations on the base repo's issues.
+            const sameRepo = pr.head.repo && pr.head.repo.full_name === pr.base.repo.full_name;
+
+            // A dev->main merge brings ALL of dev into main, so every "Resolved"
+            // issue is released by it. The release PR's head is `dev` with no
+            // per-issue "Closes", so acting on only its linked issues would
+            // transition nothing -- gather every "Resolved" issue instead (open
+            // AND closed, so a manually-closed one still drops "Resolved" for
+            // "Released"). Restricted to the repo's own `dev` so a fork branch
+            // named `dev` can't trigger it; a direct hotfix to main (head != dev)
             // still releases only its own linked issues.
             let targets = issues;
-            if (base === 'main' && pr.head.ref === 'dev') {
+            if (base === 'main' && pr.head.ref === 'dev' && sameRepo) {
               const resolved = (await github.paginate(github.rest.issues.listForRepo, {
-                ...context.repo, state: 'open', labels: 'Resolved', per_page: 100,
+                ...context.repo, state: 'all', labels: 'Resolved', per_page: 100,
               })).filter((i) => !i.pull_request);
               targets = new Set([...issues, ...resolved.map((i) => i.number)]);
-              core.info(`Release: ${targets.size} Resolved issue(s) to close.`);
+              core.info(`Release: ${targets.size} Resolved issue(s).`);
             }
 
             for (const issue_number of targets) {
@@ -135,7 +141,6 @@ jobs:
             }
 
             // Delete the merged feature branch (same-repo only; never dev/main).
-            const sameRepo = pr.head.repo && pr.head.repo.full_name === pr.base.repo.full_name;
             if (sameRepo && pr.head.ref !== 'dev' && pr.head.ref !== 'main') {
               try {
                 await github.rest.git.deleteRef({ ...context.repo, ref: `heads/${pr.head.ref}` });

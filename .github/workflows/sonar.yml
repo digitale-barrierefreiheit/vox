@@ -55,11 +55,27 @@ jobs:
           npm ci --ignore-scripts
           npm run coverage
           sed -i 's#\\#/#g; s#^SF:src/#SF:.github/actions/test-matrix/src/#' coverage/lcov.info
+      # The tools/ CI scripts are covered by a pytest suite; run it under coverage.py
+      # (relative_files -> repo-root-relative paths) and write the report Sonar reads. A
+      # test failure fails the job, so this also gates the tooling on every PR.
+      - name: Python tooling coverage (for Sonar)
+        shell: bash
+        run: |
+          python -m pip install --quiet --require-hashes -r tests/tools/requirements.txt
+          python -m pytest tests/tools \
+            --cov=tools --cov-config=tests/tools/.coveragerc \
+            --cov-report=xml:coverage-python.xml -q
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@713881670b6b3676cda39549040e2d88c70d582e # v8.2.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      # Gate only on pull requests — that is where the "Sonar way" conditions apply
+      # (they measure NEW code, i.e. the PR diff). On a push to a long-lived branch
+      # (main/dev) there is no new-code period, so the branch gate status is NONE and
+      # the action treats that as a failure. The scan above still runs on those
+      # pushes, keeping the branch dashboard (overall coverage, issues) up to date.
       - name: SonarQube Quality Gate Check
+        if: github.event_name == 'pull_request'
         uses: SonarSource/sonarqube-quality-gate-action@cf038b0e0cdecfa9e56c198bbb7d21d751d62c3b # v1.2.0
         timeout-minutes: 10
         env:

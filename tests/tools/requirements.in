@@ -1,0 +1,6 @@
+# Test dependencies for the tools/ pytest suite (run by the Sonar job).
+# Compile to the hash-locked requirements.txt with:
+#   pip-compile --generate-hashes --output-file=requirements.txt requirements.in
+pytest==9.1.0
+pytest-cov==7.1.0
+coverage==7.14.1

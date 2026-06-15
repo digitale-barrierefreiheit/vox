@@ -1,0 +1,5 @@
+# Coverage config for the tools/ script tests. relative_files makes the report
+# carry repo-root-relative paths (tools/<name>.py) so SonarCloud maps the
+# coverage onto the files it analyzes, regardless of the CI checkout location.
+[run]
+relative_files = True

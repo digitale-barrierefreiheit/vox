@@ -21,16 +21,17 @@ on:
   pull_request_target:
     types: [closed]
 
-permissions:
-  issues: write
-  contents: write # delete merged feature branches
-  pull-requests: read
+# Least privilege: grant nothing at the workflow level; each job below requests
+# only the scopes it actually uses (Sonar githubactions:S8233 / S8264).
+permissions: {}
 
 jobs:
   start:
     name: Mark In Progress on branch creation
     if: ${{ github.event_name == 'create' && github.event.ref_type == 'branch' }}
     runs-on: ubuntu-24.04
+    permissions:
+      issues: write # read the issue and set its "In Progress" label
     steps:
       - uses: actions/github-script@v9
         with:
@@ -64,6 +65,10 @@ jobs:
     name: Update labels on merge
     if: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.merged == true }}
     runs-on: ubuntu-24.04
+    permissions:
+      issues: write # update labels and close the issue
+      contents: write # delete the merged feature branch
+      pull-requests: read # read the PR's "Closes #N" references
     steps:
       - uses: actions/github-script@v9
         with:

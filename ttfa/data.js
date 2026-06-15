@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781490510793,
+  "lastUpdate": 1781491679551,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -473,6 +473,35 @@ window.BENCHMARK_DATA = {
           {
             "name": "ttfaPipeline p50",
             "value": 0.6,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "actions@github.com",
+            "name": "vox release",
+            "username": "actions-user"
+          },
+          "committer": {
+            "email": "actions@github.com",
+            "name": "vox release",
+            "username": "actions-user"
+          },
+          "distinct": true,
+          "id": "5c3ba3e80979e8a657c7697924fc39111fcfa53c",
+          "message": "release: v0.0.1",
+          "timestamp": "2026-06-15T02:32:46Z",
+          "tree_id": "c8d3d3f3ddfb519901a8cfa380eca39eab1a46e7",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/5c3ba3e80979e8a657c7697924fc39111fcfa53c"
+        },
+        "date": 1781491678679,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.9,
             "unit": "us"
           }
         ]

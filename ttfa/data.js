@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781525852392,
+  "lastUpdate": 1781542078498,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -618,6 +618,35 @@ window.BENCHMARK_DATA = {
           {
             "name": "ttfaPipeline p50",
             "value": 0.5,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "18f41323ad1e98fabd8da3b4689f6e4ce1d6c465",
+          "message": "ci(sonar): classify test files via sonar.test.inclusions (#117)\n\nDeclare the test set by pattern (sonar.test.inclusions = tests/**, **/*.test.ts)\ninstead of enumerating sources, so test code is no longer analyzed as production\nand SonarPython's \"sonar.tests is not configured\" warning is cleared.\n\nsonar.sources stays at '.' (workflow YAML and every .github/actions/*/src remain\nin scope, no hardcoded names); pattern test-inclusions are auto-subtracted from\nthe source set (no \"file indexed twice\"). The now-redundant sonar.coverage.exclusions\nis removed and its two references (.github/workflows/sonar.yml and architecture\n8.6.2) updated to the test-partition mechanism. sonar.cpd.exclusions=tests/** stays,\nsince duplication is still computed on test-classified files.\n\nVerified on the PR: the SonarPython warning is gone, coverage held at 99.8%,\nquality gate OK, 0 new/total violations.",
+          "timestamp": "2026-06-15T18:26:37+02:00",
+          "tree_id": "70cd988d88a6c9cffe296f00abf4fc5029ac324d",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/18f41323ad1e98fabd8da3b4689f6e4ce1d6c465"
+        },
+        "date": 1781542078149,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.6,
             "unit": "us"
           }
         ]

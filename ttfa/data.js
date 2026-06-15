@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781493860273,
+  "lastUpdate": 1781496137931,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -526,6 +526,35 @@ window.BENCHMARK_DATA = {
           "url": "https://github.com/digitale-barrierefreiheit/vox/commit/6e78aa92fe01378706d4f50c0910707f9539524d"
         },
         "date": 1781493859987,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.6,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6341aff549f2876e7b8a96d81a0ae5ca0f8b01f8",
+          "message": "test(tools): load scripts from a support module, not conftest (Copilot) (#115)\n\nCopilot flagged importing load_script/TOOLS_DIR from conftest.py (pytest imports\nconftest specially). Move the helpers into a plain support module\n(tests/tools/script_loader.py) and import from there; conftest.py is removed\n(it held only those helpers). 14 tests pass, both tools 100%.",
+          "timestamp": "2026-06-15T05:44:21+02:00",
+          "tree_id": "74b22564e118b281c4d8ee57ef3c22136e2fd4e2",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/6341aff549f2876e7b8a96d81a0ae5ca0f8b01f8"
+        },
+        "date": 1781496137146,
         "tool": "customSmallerIsBetter",
         "benches": [
           {

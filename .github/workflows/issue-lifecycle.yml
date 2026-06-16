@@ -1,8 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
 # Automates issue status labels across the gitflow and tidies merged branches.
 #
 #   feature branch created  -> issue gets "In Progress"
 #   PR merged into dev       -> "In Progress" -> "Resolved"; delete the feature branch
-#   PR merged into main      -> "Resolved" -> "Released"; close the issue
+#   dev PR merged into main  -> all "Resolved" issues -> "Released" + closed
+#   hotfix PR merged to main -> its linked issues -> "Released" + closed
 #
 # Branch convention: <type>/<issue-number>-<slug> (e.g. fix/8-...). The issue
 # number is also read from the PR's "Closes #N" references.
@@ -108,7 +111,33 @@ jobs:
               }
             };
 
-            for (const issue_number of issues) {
+            // Same-repo guard: gates the dev->main bulk release (below) and the
+            // branch deletion to the repo's own branches, so a fork's `dev`
+            // cannot trigger a mass release. A merged fork PR can still update
+            // its own linked issue via the per-issue path; only the bulk sweep
+            // and branch deletion are same-repo-only.
+            const sameRepo = Boolean(pr.head.repo && pr.head.repo.full_name === pr.base.repo.full_name);
+
+            // A dev->main merge brings ALL of dev into main, so every "Resolved"
+            // issue is released by it. The release PR's head is `dev` with no
+            // per-issue "Closes", so acting on its linked issues would transition
+            // nothing -- release exactly the "Resolved" set instead (open AND
+            // closed, so a manually-closed one still drops "Resolved" for
+            // "Released"). We deliberately do NOT union the PR's linked issues:
+            // a stray `Closes #N` in the release notes must not release a
+            // non-Resolved issue. Restricted to the repo's own `dev` so a fork
+            // branch named `dev` can't trigger it; a direct hotfix to main
+            // (head != dev) still releases only its own linked issues.
+            let targets = issues;
+            if (base === 'main' && pr.head.ref === 'dev' && sameRepo) {
+              const resolved = (await github.paginate(github.rest.issues.listForRepo, {
+                ...context.repo, state: 'all', labels: 'Resolved', per_page: 100,
+              })).filter((i) => !i.pull_request);
+              targets = new Set(resolved.map((i) => i.number));
+              core.info(`Release: ${resolved.length} Resolved issue(s).`);
+            }
+
+            for (const issue_number of targets) {
               if (base === 'dev') {
                 await remove(issue_number, ['In Progress']);
                 await github.rest.issues.addLabels({ ...context.repo, issue_number, labels: ['Resolved'] });
@@ -120,7 +149,6 @@ jobs:
             }
 
             // Delete the merged feature branch (same-repo only; never dev/main).
-            const sameRepo = pr.head.repo && pr.head.repo.full_name === pr.base.repo.full_name;
             if (sameRepo && pr.head.ref !== 'dev' && pr.head.ref !== 'main') {
               try {
                 await github.rest.git.deleteRef({ ...context.repo, ref: `heads/${pr.head.ref}` });

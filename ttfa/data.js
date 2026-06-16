@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781542078498,
+  "lastUpdate": 1781572500121,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -647,6 +647,35 @@ window.BENCHMARK_DATA = {
           {
             "name": "ttfaPipeline p50",
             "value": 0.6,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "23104f1dc7faa9e96f6d1c437a3c9381a9b5f916",
+          "message": "ci(issue-lifecycle): release all Resolved issues on a dev->main merge (#118)\n\nOn a dev->main merge, transition every Resolved issue (open or closed) to\nReleased + closed -- the release PR's head is `dev` with no per-issue Closes, so\nthe old code transitioned nothing (the v0.0.1 release left 9 issues stuck open +\nResolved).\n\n- Releases exactly the Resolved-labelled set; a stray \"Closes #N\" in the release\n  notes never closes a non-Resolved issue.\n- Gated to the repo's own `dev` head (sameRepo) so a fork branch named `dev`\n  cannot trigger it; a direct hotfix to main releases only its linked issue; the\n  dev path is unchanged.\n- state: 'all' so a manually-closed-but-Resolved issue is still relabelled.\n- Adds the Apache-2.0 SPDX header (AGENTS.md).",
+          "timestamp": "2026-06-16T02:58:53+02:00",
+          "tree_id": "b89056feed946018ad1c4349c5599b8e21ce2165",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/23104f1dc7faa9e96f6d1c437a3c9381a9b5f916"
+        },
+        "date": 1781572499308,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.7,
             "unit": "us"
           }
         ]

@@ -120,19 +120,21 @@ jobs:
 
             // A dev->main merge brings ALL of dev into main, so every "Resolved"
             // issue is released by it. The release PR's head is `dev` with no
-            // per-issue "Closes", so acting on only its linked issues would
-            // transition nothing -- gather every "Resolved" issue instead (open
-            // AND closed, so a manually-closed one still drops "Resolved" for
-            // "Released"). Restricted to the repo's own `dev` so a fork branch
-            // named `dev` can't trigger it; a direct hotfix to main (head != dev)
-            // still releases only its own linked issues.
+            // per-issue "Closes", so acting on its linked issues would transition
+            // nothing -- release exactly the "Resolved" set instead (open AND
+            // closed, so a manually-closed one still drops "Resolved" for
+            // "Released"). We deliberately do NOT union the PR's linked issues:
+            // a stray `Closes #N` in the release notes must not release a
+            // non-Resolved issue. Restricted to the repo's own `dev` so a fork
+            // branch named `dev` can't trigger it; a direct hotfix to main
+            // (head != dev) still releases only its own linked issues.
             let targets = issues;
             if (base === 'main' && pr.head.ref === 'dev' && sameRepo) {
               const resolved = (await github.paginate(github.rest.issues.listForRepo, {
                 ...context.repo, state: 'all', labels: 'Resolved', per_page: 100,
               })).filter((i) => !i.pull_request);
-              targets = new Set([...issues, ...resolved.map((i) => i.number)]);
-              core.info(`Release: ${resolved.length} Resolved, ${targets.size} total to release.`);
+              targets = new Set(resolved.map((i) => i.number));
+              core.info(`Release: ${resolved.length} Resolved issue(s).`);
             }
 
             for (const issue_number of targets) {

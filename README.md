@@ -29,6 +29,7 @@ short.
 - **Goals & contributor guidelines:** [`AGENTS.md`](AGENTS.md)
 - **Architecture (arc42):** [`doc/architecture/architecture.md`](doc/architecture/architecture.md)
 - **Requirements:** [`doc/requirements/`](doc/requirements/)
+- **Cost ledger:** [`doc/cost-ledger.md`](doc/cost-ledger.md)
 - **Planning / open topics:** [GitHub issues](https://github.com/digitale-barrierefreiheit/vox/issues)
 - **Contributing:** [`CONTRIBUTING.md`](CONTRIBUTING.md)
 

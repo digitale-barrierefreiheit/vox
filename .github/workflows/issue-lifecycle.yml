@@ -3,7 +3,8 @@
 # Automates issue status labels across the gitflow and tidies merged branches.
 #
 #   feature branch created  -> issue gets "In Progress"
-#   PR merged into dev       -> "In Progress" -> "Resolved"; delete the feature branch
+#   PR merged into dev       -> "In Progress" -> "Resolved"; delete the feature branch;
+#                               record the opt-in "Effort:" on linked issues (#76 cost ledger)
 #   dev PR merged into main  -> all "Resolved" issues -> "Released" + closed
 #   hotfix PR merged to main -> its linked issues -> "Released" + closed
 #
@@ -145,6 +146,31 @@ jobs:
                 await remove(issue_number, ['In Progress', 'Resolved']);
                 await github.rest.issues.addLabels({ ...context.repo, issue_number, labels: ['Released'] });
                 await github.rest.issues.update({ ...context.repo, issue_number, state: 'closed' });
+              }
+            }
+
+            // Cost ledger (#76): record the opt-in developer-time effort on each linked
+            // issue at feature->dev merge. The PR body is the squash-proof source of truth
+            // (an `Effort:` line that is not HTML-commented out); effort.yml suggests it.
+            if (base === 'dev') {
+              const active = (pr.body || '').split(/\r?\n/).find(
+                (l) => /^\s*Effort:/i.test(l) && !l.includes('<!--'));
+              const match = active && active.match(/(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?/i);
+              const minutes = match ? (Number(match[1]) || 0) * 60 + (Number(match[2]) || 0) : 0;
+              if (minutes > 0) {
+                const hours = Math.floor(minutes / 60);
+                const dur = [hours ? `${hours}h` : '', minutes % 60 ? `${minutes % 60}m` : ''].filter(Boolean).join(' ');
+                for (const issue_number of issues) {
+                  try {
+                    await github.rest.issues.createComment({
+                      ...context.repo, issue_number,
+                      body: `<!-- vox-effort-record -->\nEffort: ${dur} (PR #${pr.number})`,
+                    });
+                  } catch (error) {
+                    core.info(`Effort record on #${issue_number} failed: ${error.message}`);
+                  }
+                }
+                core.info(`Recorded effort ${dur} on ${issues.size} issue(s).`);
               }
             }
 

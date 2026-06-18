@@ -22,6 +22,7 @@ import calendar
 import json
 import math
 import os
+import re
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -123,9 +124,14 @@ def impute_actions_cost(minutes_by_os, rates=None):
 
 
 def month_window(now=None, month=None):
-  """Return (year, month, 'YYYY-MM') for the target calendar month."""
+  """Return (year, month, 'YYYY-MM') for the target calendar month.
+
+  A provided month must be 'YYYY-MM' with a 01-12 month; raises ValueError otherwise.
+  """
   if month:
-    year, mon = (int(part) for part in month.split("-"))
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", month):
+      raise ValueError(f"--month must be YYYY-MM with a 01-12 month, got {month!r}")
+    year, mon = int(month[:4]), int(month[5:7])
   else:
     now = now or datetime.now(timezone.utc)
     year, mon = now.year, now.month
@@ -142,7 +148,7 @@ def _actions_block(data, out):
     out.append("- **GitHub Actions minutes:** not available (read failed).")
     return
   out.append(
-      f"- **GitHub Actions minutes** (window {data['month_label']}, Linux + Windows, "
+      f"- **GitHub Actions minutes** (window {data['month_label']}, GitHub-hosted runners, "
       f"imputed at the {ACTIONS_RATES_AS_OF} list rates):")
   out.append("")
   out.append("  | Runner OS | Minutes | Jobs | Imputed list $ |")
@@ -159,8 +165,8 @@ def _actions_block(data, out):
   out.append("")
   billed = "  Actually billed: **$0.00** (public-repo standard runners are unbilled)."
   if actions["unknown"]:
-    billed += (f" {actions['unknown']} job(s) had unrecognised runner labels and "
-               "were skipped.")
+    billed += (f" {actions['unknown']} job(s) on self-hosted or unrecognised runners "
+               "were excluded (not billed per GitHub-hosted minute).")
   out.append(billed)
 
 
@@ -314,9 +320,13 @@ def read_ai_review(month_label, path=None):
   except (OSError, ValueError):
     return None
   entry = (payload.get("months") or {}).get(month_label)
-  if not isinstance(entry, dict) or "usd" not in entry:
+  if not isinstance(entry, dict):
     return None
-  return {"usd": entry["usd"], "note": entry.get("note", "")}
+  usd = entry.get("usd")
+  # Guard against a hand-edited / corrupted figure (bool, string, NaN, negative).
+  if isinstance(usd, bool) or not isinstance(usd, (int, float)) or not math.isfinite(usd) or usd < 0:
+    return None
+  return {"usd": float(usd), "note": entry.get("note", "")}
 
 
 # --------------------------------------------------------------------------- #
@@ -365,6 +375,9 @@ def main(argv=None):
   parser.add_argument("--print", dest="print_only", action="store_true",
                       help="print the snapshot instead of writing the document")
   args = parser.parse_args(argv)
+  if args.month and not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", args.month):
+    # Clean CLI error (exit 2) instead of a traceback from month_window().
+    parser.error(f"--month must be YYYY-MM with a 01-12 month, got {args.month!r}")
 
   data = collect(
       month=args.month,

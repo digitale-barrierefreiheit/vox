@@ -79,6 +79,12 @@ def test_month_window():
     assert cc.month_window(now=fixed) == (2026, 1, "2026-01")
 
 
+@pytest.mark.parametrize("bad", ["2026-6", "2026-13", "2026-00", "2026-06-01", "nope", "202606"])
+def test_month_window_rejects_malformed(bad):
+    with pytest.raises(ValueError, match="YYYY-MM"):
+        cc.month_window(month=bad)
+
+
 def test_fmt_usd():
     assert cc._fmt_usd(1234.5) == "$1,234.50"
 
@@ -109,7 +115,7 @@ def test_render_snapshot_happy_path():
     assert "13,862 as read on 2026-06-16" in text
     assert "$180.88" in text
     assert "$0.00" in text  # actually billed
-    assert "2 job(s) had unrecognised runner labels" in text
+    assert "2 job(s) on self-hosted or unrecognised runners" in text
     assert "not configured (prerequisite" in text  # billing line
     assert "not yet reported" in text  # ai-review line
     assert "manual / local feed" in text  # claude line
@@ -251,6 +257,13 @@ def test_read_ai_review(tmp_path):
     assert cc.read_ai_review("2026-06", bad) is None  # malformed entry
 
 
+@pytest.mark.parametrize("usd", ['"oops"', "true", "-5", "null"])
+def test_read_ai_review_rejects_non_numeric_usd(tmp_path, usd):
+    path = tmp_path / "ai-review.json"
+    path.write_text('{"months": {"2026-06": {"usd": ' + usd + "}}}", encoding="utf-8")
+    assert cc.read_ai_review("2026-06", path) is None
+
+
 # --------------------------------------------------------------------------- #
 # Orchestration
 # --------------------------------------------------------------------------- #
@@ -321,8 +334,15 @@ def test_main_writes_doc(tmp_path, monkeypatch, capsys):
     assert "Updated snapshot" in capsys.readouterr().out
 
 
+def test_main_rejects_invalid_month(capsys):
+    with pytest.raises(SystemExit) as exc:
+        cc.main(["--month", "2026-13"])
+    assert exc.value.code == 2  # argparse parser.error exit code
+    assert "YYYY-MM" in capsys.readouterr().err
+
+
 def test_entry_guard_runs_as_main(monkeypatch):
-    # urlopen raises so every read falls back to None; --print still exits 0.
+    # urlopen raises so every read falls back to None; offline collection exits non-zero.
     def offline(*args, **kwargs):
         raise urllib.error.URLError("offline")
 

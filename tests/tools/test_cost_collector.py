@@ -257,7 +257,7 @@ def test_read_ai_review(tmp_path):
     assert cc.read_ai_review("2026-06", bad) is None  # malformed entry
 
 
-@pytest.mark.parametrize("usd", ['"oops"', "true", "-5", "null"])
+@pytest.mark.parametrize("usd", ['"oops"', "true", "-5", "null", "Infinity", "NaN"])
 def test_read_ai_review_rejects_non_numeric_usd(tmp_path, usd):
     path = tmp_path / "ai-review.json"
     path.write_text('{"months": {"2026-06": {"usd": ' + usd + "}}}", encoding="utf-8")

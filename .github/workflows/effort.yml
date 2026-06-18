@@ -59,8 +59,11 @@ jobs:
               const m = rest.match(/(\d+)\s*m/i);
               return (h ? Number(h[1]) : 0) * 60 + (m ? Number(m[1]) : 0);
             };
-            const active = (pr.body || '').split(/\r?\n/).find(
-              (l) => /^\s*Effort:/i.test(l) && !l.includes('<!--'));
+            // Strip HTML comments (single- and multi-line) first, so a commented-out
+            // Effort example — including one inside a multi-line `<!-- ... -->` block —
+            // is never treated as an active value.
+            const visible = (pr.body || '').replace(/<!--[\s\S]*?-->/g, '');
+            const active = visible.split(/\r?\n/).find((l) => /^\s*Effort:/i.test(l));
             const recorded = active ? parse(active) : 0;
 
             const marker = '<!-- vox-effort -->';

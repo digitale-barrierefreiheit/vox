@@ -153,10 +153,12 @@ jobs:
             // issue at feature->dev merge. The PR body is the squash-proof source of truth
             // (an `Effort:` line that is not HTML-commented out); effort.yml suggests it.
             if (base === 'dev') {
-              // Parse h/m independently from the text after "Effort:" so an all-optional
-              // regex cannot match the empty string and silently record 0.
-              const active = (pr.body || '').split(/\r?\n/).find(
-                (l) => /^\s*Effort:/i.test(l) && !l.includes('<!--'));
+              // Strip HTML comments (single- and multi-line) first so a commented-out
+              // Effort example is never treated as active; then parse h/m independently
+              // from the text after "Effort:" so an all-optional regex cannot match the
+              // empty string and silently record 0.
+              const visible = (pr.body || '').replace(/<!--[\s\S]*?-->/g, '');
+              const active = visible.split(/\r?\n/).find((l) => /^\s*Effort:/i.test(l));
               const rest = active ? active.replace(/^\s*Effort:\s*/i, '') : '';
               const hMatch = rest.match(/(\d+)\s*h/i);
               const mMatch = rest.match(/(\d+)\s*m/i);

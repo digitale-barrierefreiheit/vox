@@ -307,6 +307,13 @@ def fetch_org_billing(year, month, token):
                    f"for {year:04d}-{month:02d} (repository `{REPO}`).")}
 
 
+def _valid_usd(value):
+  """True if value is a non-negative, finite real number (and not a bool)."""
+  if isinstance(value, bool) or not isinstance(value, (int, float)):
+    return False
+  return math.isfinite(value) and value >= 0
+
+
 def read_ai_review(month_label, path=None):
   """Read the maintainer-contributed AI-review cost (USD) for a month, or None.
 
@@ -323,8 +330,7 @@ def read_ai_review(month_label, path=None):
   if not isinstance(entry, dict):
     return None
   usd = entry.get("usd")
-  # Guard against a hand-edited / corrupted figure (bool, string, NaN, negative).
-  if isinstance(usd, bool) or not isinstance(usd, (int, float)) or not math.isfinite(usd) or usd < 0:
+  if not _valid_usd(usd):  # guard a hand-edited / corrupted figure
     return None
   return {"usd": float(usd), "note": entry.get("note", "")}
 

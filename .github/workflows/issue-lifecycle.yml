@@ -153,10 +153,14 @@ jobs:
             // issue at feature->dev merge. The PR body is the squash-proof source of truth
             // (an `Effort:` line that is not HTML-commented out); effort.yml suggests it.
             if (base === 'dev') {
+              // Parse h/m independently from the text after "Effort:" so an all-optional
+              // regex cannot match the empty string and silently record 0.
               const active = (pr.body || '').split(/\r?\n/).find(
                 (l) => /^\s*Effort:/i.test(l) && !l.includes('<!--'));
-              const match = active && active.match(/(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?/i);
-              const minutes = match ? (Number(match[1]) || 0) * 60 + (Number(match[2]) || 0) : 0;
+              const rest = active ? active.replace(/^\s*Effort:\s*/i, '') : '';
+              const hMatch = rest.match(/(\d+)\s*h/i);
+              const mMatch = rest.match(/(\d+)\s*m/i);
+              const minutes = (hMatch ? Number(hMatch[1]) : 0) * 60 + (mMatch ? Number(mMatch[1]) : 0);
               if (minutes > 0) {
                 const hours = Math.floor(minutes / 60);
                 const dur = [hours ? `${hours}h` : '', minutes % 60 ? `${minutes % 60}m` : ''].filter(Boolean).join(' ');

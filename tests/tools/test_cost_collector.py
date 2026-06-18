@@ -18,9 +18,9 @@ cc = load_script("cost_collector.py")
 # --------------------------------------------------------------------------- #
 @pytest.mark.parametrize("labels, expected", [
     (["ubuntu-24.04"], "Linux"),
-    (["self-hosted", "linux"], "Linux"),
     (["windows-2025"], "Windows"),
     (["macos-14"], "macOS"),
+    (["self-hosted", "linux"], None),  # self-hosted is not billed per-minute
     (["some-runner"], None),
     ([], None),
     (None, None),
@@ -225,7 +225,7 @@ def test_fetch_actions_jobs(monkeypatch):
                  "completed_at": "2026-06-01T00:01:00Z"}]
 
     monkeypatch.setattr(cc, "_paginate", fake_paginate)
-    jobs = cc.fetch_actions_jobs("o", "r", 2026, 6, "tok")
+    jobs = cc.fetch_actions_jobs(2026, 6, "tok")
     assert len(jobs) == 2  # one job per run
 
 
@@ -235,7 +235,7 @@ def test_fetch_org_billing(monkeypatch):
         {"repositoryName": "vox", "product": "Actions", "grossAmount": 27.16, "netAmount": 0.0},
         {"repositoryName": "other", "product": "Actions", "grossAmount": 999.0, "netAmount": 9.0},
     ]})
-    out = cc.fetch_org_billing("org", 2026, 6, "tok")
+    out = cc.fetch_org_billing(2026, 6, "tok")
     assert "gross $127.16 / net $0.00" in out["text"]
     assert "999" not in out["text"]
 
@@ -261,7 +261,7 @@ def test_guarded():
 
 def test_collect_without_credentials(monkeypatch):
     monkeypatch.setattr(cc, "fetch_sonar_ncloc", lambda component: 13862)
-    monkeypatch.setattr(cc, "fetch_actions_jobs", lambda o, r, y, m, t: [
+    monkeypatch.setattr(cc, "fetch_actions_jobs", lambda y, m, t: [
         {"labels": ["ubuntu-24.04"], "started_at": "2026-06-01T00:00:00Z",
          "completed_at": "2026-06-01T00:01:00Z"}])
     monkeypatch.setattr(cc, "read_ai_review", lambda label: None)
@@ -274,8 +274,8 @@ def test_collect_without_credentials(monkeypatch):
 
 def test_collect_with_billing_and_ai_review(monkeypatch):
     monkeypatch.setattr(cc, "fetch_sonar_ncloc", lambda component: 1)
-    monkeypatch.setattr(cc, "fetch_actions_jobs", lambda o, r, y, m, t: [])
-    monkeypatch.setattr(cc, "fetch_org_billing", lambda o, y, m, t: {"text": "billed"})
+    monkeypatch.setattr(cc, "fetch_actions_jobs", lambda y, m, t: [])
+    monkeypatch.setattr(cc, "fetch_org_billing", lambda y, m, t: {"text": "billed"})
     monkeypatch.setattr(cc, "read_ai_review", lambda label: {"usd": 12.5, "note": "n"})
     data = cc.collect(month="2026-06", billing_token="b")
     assert data["billing"] == {"text": "billed"}
@@ -331,4 +331,4 @@ def test_entry_guard_runs_as_main(monkeypatch):
     monkeypatch.delenv("COST_BILLING_TOKEN", raising=False)
     with pytest.raises(SystemExit) as exc:
         runpy.run_path(str(TOOLS_DIR / "cost_collector.py"), run_name="__main__")
-    assert exc.value.code == 0
+    assert exc.value.code == 1  # offline: nothing collected -> non-zero exit

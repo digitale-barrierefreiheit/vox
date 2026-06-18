@@ -55,8 +55,14 @@ _READ_ERRORS = (OSError, ValueError, KeyError)
 # Pure helpers (no IO) — these carry the testable logic.
 # --------------------------------------------------------------------------- #
 def os_bucket(labels):
-  """Map a job's runner labels to 'Linux' / 'Windows' / 'macOS', else None."""
+  """Map a GitHub-hosted runner's labels to 'Linux'/'Windows'/'macOS', else None.
+
+  Self-hosted runners are not billed per minute, so they are unclassifiable here
+  (returned as None and excluded from the imputed list-price cost).
+  """
   joined = " ".join(labels or []).lower()
+  if "self-hosted" in joined:
+    return None
   if "ubuntu" in joined or "linux" in joined:
     return "Linux"
   if "windows" in joined:
@@ -225,11 +231,11 @@ def render_snapshot(data):
 def replace_snapshot(doc_text, snapshot_block):
   """Replace the text between the snapshot markers (inclusive) with a new block."""
   start = doc_text.find(SNAPSHOT_START)
-  end = doc_text.find(SNAPSHOT_END)
-  if start == -1 or end == -1 or end < start:
+  # Search for the end marker after the start so it can never precede it.
+  end = doc_text.find(SNAPSHOT_END, start) if start != -1 else -1
+  if start == -1 or end == -1:
     raise ValueError("snapshot markers not found in document")
-  end += len(SNAPSHOT_END)
-  return doc_text[:start] + snapshot_block + doc_text[end:]
+  return doc_text[:start] + snapshot_block + doc_text[end + len(SNAPSHOT_END):]
 
 
 # --------------------------------------------------------------------------- #
@@ -270,29 +276,29 @@ def fetch_sonar_ncloc(component=SONAR_COMPONENT):
   return None
 
 
-def fetch_actions_jobs(owner, repo, year, month, token):
-  """All jobs of all workflow runs created in the given calendar month."""
+def fetch_actions_jobs(year, month, token):
+  """All jobs of all OWNER/REPO workflow runs created in the calendar month."""
   last = calendar.monthrange(year, month)[1]
   created = f"{year:04d}-{month:02d}-01..{year:04d}-{month:02d}-{last:02d}"
-  runs_url = f"{GITHUB_API}/repos/{owner}/{repo}/actions/runs?created={created}"
+  runs_url = f"{GITHUB_API}/repos/{OWNER}/{REPO}/actions/runs?created={created}"
   jobs = []
   for run in _paginate(runs_url, "workflow_runs", token):
-    jobs_url = f"{GITHUB_API}/repos/{owner}/{repo}/actions/runs/{run['id']}/jobs"
+    jobs_url = f"{GITHUB_API}/repos/{OWNER}/{REPO}/actions/runs/{run['id']}/jobs"
     jobs.extend(_paginate(jobs_url, "jobs", token))
   return jobs
 
 
-def fetch_org_billing(org, year, month, token, repo=REPO):
-  """Sum the org usage-report Actions amounts attributed to one repository."""
-  url = f"{GITHUB_API}/organizations/{org}/settings/billing/usage?year={year}&month={month}"
+def fetch_org_billing(year, month, token):
+  """Sum the OWNER usage-report Actions amounts attributed to the REPO repository."""
+  url = f"{GITHUB_API}/organizations/{OWNER}/settings/billing/usage?year={year}&month={month}"
   data = http_get_json(url, token=token)
   gross = net = 0.0
   for item in data.get("usageItems", []):
-    if item.get("repositoryName") == repo and item.get("product", "").lower() == "actions":
+    if item.get("repositoryName") == REPO and item.get("product", "").lower() == "actions":
       gross += item.get("grossAmount", 0.0)
       net += item.get("netAmount", 0.0)
   return {"text": (f"gross {_fmt_usd(round(gross, 2))} / net {_fmt_usd(round(net, 2))} "
-                   f"for {year:04d}-{month:02d} (repository `{repo}`).")}
+                   f"for {year:04d}-{month:02d} (repository `{REPO}`).")}
 
 
 def read_ai_review(month_label, path=None):
@@ -337,14 +343,14 @@ def collect(now=None, month=None, *, github_token=None, billing_token=None):
     data["sonar_ncloc"] = None
 
   try:
-    aggregate = aggregate_actions(fetch_actions_jobs(OWNER, REPO, year, mon, github_token))
+    aggregate = aggregate_actions(fetch_actions_jobs(year, mon, github_token))
     aggregate["cost"] = impute_actions_cost(aggregate["minutes"])
     data["actions"] = aggregate
   except _READ_ERRORS:
     data["actions"] = None
 
   data["billing"] = (
-      _guarded(lambda: fetch_org_billing(OWNER, year, mon, billing_token))
+      _guarded(lambda: fetch_org_billing(year, mon, billing_token))
       if billing_token else None)
   data["ai_review"] = read_ai_review(label)
   return data
@@ -368,12 +374,14 @@ def main(argv=None):
 
   if args.print_only:
     print(snapshot)
-    return 0
+  else:
+    updated = replace_snapshot(args.doc.read_text(encoding="utf-8"), snapshot)
+    args.doc.write_text(updated, encoding="utf-8")
+    print(f"Updated snapshot in {args.doc} (month {data['month_label']}).")
 
-  updated = replace_snapshot(args.doc.read_text(encoding="utf-8"), snapshot)
-  args.doc.write_text(updated, encoding="utf-8")
-  print(f"Updated snapshot in {args.doc} (month {data['month_label']}).")
-  return 0
+  # Non-zero exit when the collection produced nothing usable (a CI failure signal).
+  collected = data.get("sonar_ncloc") is not None or data.get("actions") is not None
+  return 0 if collected else 1
 
 
 if __name__ == "__main__":

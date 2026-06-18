@@ -30,6 +30,19 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: dev
+          fetch-depth: 0
+      # Base on the existing contribution branch when it exists so repeated or
+      # back-to-back dispatches (a re-send, or several months) accumulate instead
+      # of overwriting each other's unmerged months.
+      - name: Switch to the contribution branch (additive)
+        run: |
+          branch="chore/cost-ledger-ai-review"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            git fetch origin "$branch"
+            git checkout -B "$branch" "origin/$branch"
+          else
+            git checkout -B "$branch"
+          fi
       - uses: actions/github-script@v9
         env:
           MONTH: ${{ github.event.client_payload.month }}
@@ -70,10 +83,11 @@ jobs:
           branch="chore/cost-ledger-ai-review"
           git config user.name "vox cost collector"
           git config user.email "actions@github.com"
-          git checkout -B "$branch"
+          # Already on "$branch" (the switch step based it on the remote branch when
+          # present); commit additively and push with a lease (never a blind --force).
           git add doc/cost-data/ai-review.json
           git commit -m "chore(cost): record AI code-review cost ($month)"
-          git push --force origin "$branch"
+          git push --force-with-lease origin "$branch"
           if gh pr view "$branch" --json number >/dev/null 2>&1; then
             echo "Existing contribution PR updated."
           else

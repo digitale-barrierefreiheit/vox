@@ -166,12 +166,22 @@ jobs:
               if (minutes > 0) {
                 const hours = Math.floor(minutes / 60);
                 const dur = [hours ? `${hours}h` : '', minutes % 60 ? `${minutes % 60}m` : ''].filter(Boolean).join(' ');
+                const marker = '<!-- vox-effort-record -->';
+                const tag = `(PR #${pr.number})`;
+                const body = `${marker}\nEffort: ${dur} ${tag}`;
                 for (const issue_number of issues) {
                   try {
-                    await github.rest.issues.createComment({
-                      ...context.repo, issue_number,
-                      body: `<!-- vox-effort-record -->\nEffort: ${dur} (PR #${pr.number})`,
+                    // Idempotent: update this PR's existing record comment if present,
+                    // so a re-run / re-delivered event does not stack duplicates.
+                    const comments = await github.paginate(github.rest.issues.listComments, {
+                      ...context.repo, issue_number, per_page: 100,
                     });
+                    const existing = comments.find((c) => c.body && c.body.includes(marker) && c.body.includes(tag));
+                    if (existing) {
+                      await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
+                    } else {
+                      await github.rest.issues.createComment({ ...context.repo, issue_number, body });
+                    }
                   } catch (error) {
                     core.info(`Effort record on #${issue_number} failed: ${error.message}`);
                   }

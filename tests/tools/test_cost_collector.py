@@ -257,10 +257,21 @@ def test_read_ai_review(tmp_path):
     assert cc.read_ai_review("2026-06", bad) is None  # malformed entry
 
 
-@pytest.mark.parametrize("usd", ['"oops"', "true", "-5", "null", "Infinity", "NaN"])
-def test_read_ai_review_rejects_non_numeric_usd(tmp_path, usd):
+@pytest.mark.parametrize("value, ok", [
+    (12.5, True), (0, True), (10, True),
+    (True, False), (False, False),  # bool is not a usable amount
+    ("5", False), (None, False),
+    (-1, False), (float("inf"), False), (float("nan"), False),
+])
+def test_valid_usd(value, ok):
+    assert cc._valid_usd(value) is ok
+
+
+@pytest.mark.parametrize("bad_usd", ["oops", True, -5, None, float("inf"), float("nan")])
+def test_read_ai_review_rejects_bad_usd(tmp_path, bad_usd):
+    # json.dumps guarantees valid JSON, so this exercises _valid_usd (not a parse error).
     path = tmp_path / "ai-review.json"
-    path.write_text('{"months": {"2026-06": {"usd": ' + usd + "}}}", encoding="utf-8")
+    path.write_text(json.dumps({"months": {"2026-06": {"usd": bad_usd}}}), encoding="utf-8")
     assert cc.read_ai_review("2026-06", path) is None
 
 

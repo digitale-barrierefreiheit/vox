@@ -65,7 +65,10 @@ jobs:
             const data = JSON.parse(fs.readFileSync(path, 'utf8'));
             data.months = data.months || {};
             const entry = { usd: Math.round(usd * 100) / 100 };
-            const note = String(process.env.NOTE || '').trim();
+            // Collapse whitespace to a single line and cap length, so a malformed or
+            // abusive dispatch note cannot inject multi-line/oversized content into the
+            // committed JSON and the public ledger.
+            const note = String(process.env.NOTE || '').replace(/\s+/g, ' ').trim().slice(0, 200);
             if (note) entry.note = note;
             data.months[month] = entry;
             fs.writeFileSync(path, JSON.stringify(data, null, 2) + '\n');

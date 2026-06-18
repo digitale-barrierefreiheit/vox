@@ -70,6 +70,9 @@ def test_impute_actions_cost():
     assert cc.impute_actions_cost({"Plan9": 100})["total"] == 0.0
     # A caller may override the rate table.
     assert cc.impute_actions_cost({"Linux": 10}, {"Linux": 1.0})["total"] == 10.0
+    # The total always equals the sum of the displayed (rounded) per-OS amounts.
+    drift = cc.impute_actions_cost({"Linux": 3, "Windows": 7, "macOS": 5})
+    assert drift["total"] == round(sum(drift["per_os"].values()), 2)
 
 
 def test_month_window():
@@ -273,6 +276,16 @@ def test_read_ai_review_rejects_bad_usd(tmp_path, bad_usd):
     path = tmp_path / "ai-review.json"
     path.write_text(json.dumps({"months": {"2026-06": {"usd": bad_usd}}}), encoding="utf-8")
     assert cc.read_ai_review("2026-06", path) is None
+
+
+def test_read_ai_review_sanitizes_note(tmp_path):
+    path = tmp_path / "ai-review.json"
+    path.write_text(json.dumps({"months": {"2026-06": {
+        "usd": 10, "note": "line1\nline2\t  spaced " + "x" * 500}}}), encoding="utf-8")
+    note = cc.read_ai_review("2026-06", path)["note"]
+    assert "\n" not in note and "\t" not in note
+    assert note.startswith("line1 line2 spaced")
+    assert len(note) <= 200
 
 
 # --------------------------------------------------------------------------- #

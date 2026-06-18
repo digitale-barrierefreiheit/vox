@@ -4,11 +4,12 @@
   "editor.insertSpaces": true,
   "editor.tabSize": 2,
   "editor.detectIndentation": false,
-  "editor.rulers": [100],
+  "editor.rulers": [
+    100
+  ],
   "files.trimTrailingWhitespace": true,
   "files.insertFinalNewline": true,
   "files.eol": "\n",
-
   // C/C++ — format with the repo .clang-format on save.
   "editor.formatOnSave": true,
   "[cpp]": {
@@ -23,16 +24,13 @@
   "C_Cpp.codeAnalysis.clangTidy.useBuildPath": true,
   "C_Cpp.default.cppStandard": "c++23",
   "C_Cpp.intelliSenseEngine": "default",
-
   // CMake Tools — drive everything through CMakePresets.json so VSCode, Visual
   // Studio, and the CLI agree. Pick a configure preset via the status bar.
   "cmake.useCMakePresets": "always",
   "cmake.options.statusBarVisibility": "visible",
   "cmake.copyCompileCommands": "${workspaceFolder}/build/compile_commands.json",
-
   // IntelliSense reads the generated compile database.
   "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
-
   // Keep the tree focused on sources.
   "files.associations": {
     "*.hpp.in": "cpp"
@@ -40,5 +38,9 @@
   "search.exclude": {
     "**/build": true,
     "**/vcpkg_installed": true
+  },
+  "sonarlint.connectedMode.project": {
+    "connectionId": "digitale-barrierefreiheit",
+    "projectKey": "vox"
   }
 }

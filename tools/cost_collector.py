@@ -117,9 +117,8 @@ def impute_actions_cost(minutes_by_os, rates=None):
   per_os = {}
   total = 0.0
   for name, mins in minutes_by_os.items():
-    cost = mins * rates.get(name, 0.0)
-    per_os[name] = round(cost, 2)
-    total += cost
+    per_os[name] = round(mins * rates.get(name, 0.0), 2)
+    total += per_os[name]  # sum the rounded amounts so the total matches what is shown
   return {"per_os": per_os, "total": round(total, 2)}
 
 
@@ -332,7 +331,10 @@ def read_ai_review(month_label, path=None):
   usd = entry.get("usd")
   if not _valid_usd(usd):  # guard a hand-edited / corrupted figure
     return None
-  return {"usd": float(usd), "note": entry.get("note", "")}
+  # Collapse whitespace and cap the note so a corrupt/oversized value cannot inject
+  # multi-line or runaway content into the rendered public ledger.
+  note = " ".join(str(entry.get("note") or "").split())[:200]
+  return {"usd": float(usd), "note": note}
 
 
 # --------------------------------------------------------------------------- #

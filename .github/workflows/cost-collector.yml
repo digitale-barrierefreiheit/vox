@@ -47,7 +47,10 @@ jobs:
           # (doc/cost-data/ai-review.json) — no third-party billing token lives here.
           COST_BILLING_TOKEN: ${{ secrets.COST_BILLING_TOKEN }}
         run: |
+          # Compute the target month once and persist it so the commit/PR step below
+          # reuses the exact value (a manual run across a UTC month boundary can't drift).
           month="$(date -u -d 'last month' +%Y-%m)"
+          echo "COST_MONTH=$month" >> "$GITHUB_ENV"
           python3 tools/cost_collector.py --month "$month"
           {
             echo "## Cost ledger — $month"
@@ -62,7 +65,7 @@ jobs:
             echo "Cost ledger unchanged; nothing to do."
             exit 0
           fi
-          month="$(date -u -d 'last month' +%Y-%m)"
+          month="$COST_MONTH" # reuse the value persisted by the refresh step
           branch="chore/cost-ledger-refresh"
           git config user.name "vox cost collector"
           git config user.email "actions@github.com"

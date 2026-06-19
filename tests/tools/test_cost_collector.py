@@ -138,6 +138,13 @@ def test_render_snapshot_degraded_and_configured():
     assert "Contributed by the maintainer." in text
 
 
+def test_render_snapshot_ai_review_read_error():
+    data = _full_data()
+    data["ai_review"] = {"error": "boom"}
+    text = cc.render_snapshot(data)
+    assert "could not read" in text and "boom" in text
+
+
 def test_render_snapshot_billing_configured():
     data = _full_data()
     data["billing"] = {"text": "gross $1.00 / net $0.00 for 2026-06 (repository `vox`)."}
@@ -253,11 +260,18 @@ def test_read_ai_review(tmp_path):
     path = tmp_path / "ai-review.json"
     path.write_text('{"months": {"2026-06": {"usd": 42.50, "note": "x"}}}', encoding="utf-8")
     assert cc.read_ai_review("2026-06", path) == {"usd": 42.50, "note": "x"}
-    assert cc.read_ai_review("2026-05", path) is None  # month absent
-    assert cc.read_ai_review("2026-06", tmp_path / "nope.json") is None  # missing file
+    assert cc.read_ai_review("2026-05", path) is None  # month absent -> not reported
     bad = tmp_path / "bad.json"
     bad.write_text('{"months": {"2026-06": {"note": "no usd"}}}', encoding="utf-8")
-    assert cc.read_ai_review("2026-06", bad) is None  # malformed entry
+    assert cc.read_ai_review("2026-06", bad) is None  # valid file, no usd -> not reported
+
+
+def test_read_ai_review_signals_read_errors(tmp_path):
+    # A missing or malformed file is an error, distinct from "not reported" (None).
+    assert "error" in cc.read_ai_review("2026-06", tmp_path / "nope.json")
+    corrupt = tmp_path / "corrupt.json"
+    corrupt.write_text("{not valid json", encoding="utf-8")
+    assert "error" in cc.read_ai_review("2026-06", corrupt)
 
 
 @pytest.mark.parametrize("value, ok", [

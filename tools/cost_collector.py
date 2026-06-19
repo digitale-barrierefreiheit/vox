@@ -211,6 +211,10 @@ def render_snapshot(data):
         "- **AI code review, e.g. Copilot (factor 9):** not yet reported for "
         f"{data['month_label']} — contributed by the maintainer and reported into this ledger "
         "out-of-band (see [Credentials & prerequisites](#credentials--prerequisites)).")
+  elif "error" in ai:
+    out.append(
+        f"- **AI code review, e.g. Copilot (factor 9):** could not read "
+        f"`doc/cost-data/ai-review.json` ({ai['error']}).")
   else:
     note = f" {ai['note']}" if ai.get("note") else ""
     out.append(
@@ -318,7 +322,11 @@ def _valid_usd(value):
 
 
 def read_ai_review(month_label, path=None):
-  """Read the maintainer-contributed AI-review cost (USD) for a month, or None.
+  """Read the maintainer-contributed AI-review cost for a month.
+
+  Returns {'usd', 'note'} when a valid figure exists, None when none is reported
+  for that month, or {'error': ...} when the data file is missing/unreadable or
+  malformed — so the snapshot can distinguish "not yet reported" from "read failed".
 
   The figure is reported into this repo out-of-band: a repository_dispatch updates
   doc/cost-data/ai-review.json. No billing-account identity or mechanism is stored
@@ -327,11 +335,11 @@ def read_ai_review(month_label, path=None):
   path = AI_REVIEW_DATA if path is None else path
   try:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
-  except (OSError, ValueError):
-    return None
+  except (OSError, ValueError) as exc:
+    return {"error": str(exc)}  # file missing/unreadable or malformed JSON
   entry = (payload.get("months") or {}).get(month_label)
   if not isinstance(entry, dict):
-    return None
+    return None  # no figure reported for this month yet
   usd = entry.get("usd")
   if not _valid_usd(usd):  # guard a hand-edited / corrupted figure
     return None

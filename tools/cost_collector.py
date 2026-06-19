@@ -7,10 +7,9 @@ See doc/cost-ledger.md and issue #76 for the methodology. This refreshes the
 marker-bounded "snapshot" block of that document. SonarCloud ncloc is auth-free;
 the GitHub Actions minutes line needs a GitHub token (GITHUB_TOKEN / GH_TOKEN,
 provided automatically in CI). The org-billing cross-check needs a provisioned
-secret, otherwise recording "not
-configured (prerequisite)". The AI code-review cost is reported into this repo
-out-of-band (doc/cost-data/ai-review.json) — no third-party billing credentials
-live here.
+secret, otherwise recording "not configured (prerequisite)". The AI code-review
+cost is reported into this repo out-of-band (doc/cost-data/ai-review.json) — no
+third-party billing credentials live here.
 
 Usage:
   python tools/cost_collector.py [--month YYYY-MM] [--doc PATH]

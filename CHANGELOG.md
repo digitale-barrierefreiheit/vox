@@ -10,6 +10,12 @@ relevant `Added` / `Changed` / `Fixed` / `Removed` headings.
 
 ## [Unreleased]
 
+### Added
+
+- **Signed downloads** — release builds are now Authenticode-signed via Azure
+  Artifact Signing and RFC 3161 timestamped, so Windows SmartScreen and antivirus
+  no longer warn on download or first run.
+
 ## [0.0.1] - 2026-06-15
 
 **First preview.** Vox is a fast, lightweight, German-first screen reader for

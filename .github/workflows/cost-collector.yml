@@ -39,13 +39,27 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
+      # Mint a short-lived installation token from the org-owned GitHub App (with
+      # Organization -> Administration: read) for the billing cross-check. continue-on-error
+      # so that when the App secrets are not set the step is a no-op and the read falls back
+      # to the COST_BILLING_TOKEN PAT (or, absent both, "not configured (prerequisite)").
+      - name: Mint org-billing token (GitHub App, if configured)
+        id: app_token
+        if: ${{ vars.COST_APP_CLIENT_ID != '' }}
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.COST_APP_CLIENT_ID }}
+          private-key: ${{ secrets.COST_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
       - name: Refresh the cost-ledger snapshot
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Optional; until provisioned the org billing cross-check records
-          # "not configured (prerequisite)". The AI-review line is fed out-of-band
+          # Org billing cross-check identity: the GitHub App installation token when the App
+          # is configured, else the COST_BILLING_TOKEN PAT, else unset (records "not
+          # configured (prerequisite)"). The AI-review line is fed out-of-band
           # (doc/cost-data/ai-review.json) — no third-party billing token lives here.
-          COST_BILLING_TOKEN: ${{ secrets.COST_BILLING_TOKEN }}
+          COST_BILLING_TOKEN: ${{ steps.app_token.outputs.token || secrets.COST_BILLING_TOKEN }}
         run: |
           # Compute the target month once and persist it so the commit/PR step below
           # reuses the exact value (a manual run across a UTC month boundary can't drift).

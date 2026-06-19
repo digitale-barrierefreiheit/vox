@@ -44,6 +44,7 @@ jobs:
             git checkout -B "$branch"
           fi
       - uses: actions/github-script@v9
+        id: record
         env:
           MONTH: ${{ github.event.client_payload.month }}
           USD: ${{ github.event.client_payload.usd }}
@@ -80,12 +81,15 @@ jobs:
       - name: Open or update the contribution PR
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Use the VALIDATED month from the step above (constrained to YYYY-MM), via an
+          # env var — never interpolate the untrusted payload directly into the shell.
+          MONTH: ${{ steps.record.outputs.month }}
         run: |
           if git diff --quiet -- doc/cost-data/ai-review.json; then
             echo "AI-review contribution unchanged; nothing to do."
             exit 0
           fi
-          month="${{ github.event.client_payload.month }}"
+          month="$MONTH"
           branch="chore/cost-ledger-ai-review"
           git config user.name "vox cost collector"
           git config user.email "actions@github.com"

@@ -192,7 +192,7 @@ def render_snapshot(data):
   if ncloc is not None:
     out.append(
         f"- **SonarCloud LOC (`ncloc`):** {ncloc:,} as read on {data['generated']} — "
-        "public project, **0 paid LOC** (free until ~50k).")
+        "**0 paid LOC** (this is a public project; SonarCloud is free for public projects).")
   else:
     out.append("- **SonarCloud LOC (`ncloc`):** not available (read failed).")
 

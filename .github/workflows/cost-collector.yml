@@ -66,8 +66,10 @@ jobs:
           branch="chore/cost-ledger-refresh"
           git config user.name "vox cost collector"
           git config user.email "actions@github.com"
-          # Fetch the remote branch (if any) so --force-with-lease has a reference and
-          # the push fails instead of clobbering an unexpected concurrent/manual update.
+          # The refresh branch is intentionally reset to the latest full snapshot each
+          # run (the collector regenerates the whole block, so replacing it loses
+          # nothing). Fetch first and push with --force-with-lease so a race between this
+          # fetch and the push fails loudly instead of silently dropping a concurrent push.
           git fetch origin "$branch" 2>/dev/null || true
           git checkout -B "$branch"
           git add doc/cost-ledger.md

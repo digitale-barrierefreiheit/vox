@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781906499256,
+  "lastUpdate": 1781912554416,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -792,6 +792,35 @@ window.BENCHMARK_DATA = {
           {
             "name": "ttfaPipeline p50",
             "value": 0.6,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e1408e33feeec75f4de24729104b97531292a9d4",
+          "message": "ci: add SPDX headers to remaining workflow YAML for consistency (#124)\n\n* ci: add SPDX headers to remaining workflow YAML for consistency (#124)\n\nWorkflow YAML is exempt from the enforced SPDX check (tools/check-license-headers.py\ndoes not scan .yml), but AGENTS.md lists `#` for YAML and the newer workflows already\ncarry headers — so add the standard header to the six that lacked it (back-merge, ci,\ncla, copilot-approval-gate, release, sonar). ci.yml's \"SPDX note\" line is replaced by\nthe real header. The checker's .yml exemption stays (issue templates, composite\naction.yml, dependabot.yml remain headerless by design).\n\nAlso clarify the cost_collector.py module docstring: the GitHub Actions minutes line\nneeds a GitHub token (GITHUB_TOKEN / GH_TOKEN), unlike the auth-free SonarCloud line.\n\n* ci: keep the quoted phrase on one line in the cost_collector docstring (#124)",
+          "timestamp": "2026-06-20T01:25:06+02:00",
+          "tree_id": "23ef7e93a2c8a6fc33c7daeff23e513c73e08ab1",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/e1408e33feeec75f4de24729104b97531292a9d4"
+        },
+        "date": 1781912554138,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.7,
             "unit": "us"
           }
         ]

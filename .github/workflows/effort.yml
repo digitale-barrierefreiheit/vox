@@ -26,6 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: actions/github-script@v9
+        continue-on-error: true # opt-in suggestion only — an API hiccup must never fail the PR
         env:
           DIVISOR: '150' # changed LOC per hour (tunable — see doc/cost-ledger.md)
           MIN_HOURS: '0.25'

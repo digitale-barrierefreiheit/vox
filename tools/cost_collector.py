@@ -295,6 +295,10 @@ def fetch_actions_jobs(year, month, token):
 
 def fetch_org_billing(year, month, token):
   """Sum the OWNER usage-report Actions amounts attributed to the REPO repository."""
+  # Enhanced billing platform: the usage report lives under /organizations/{login}
+  # (NOT the classic /orgs/{org}/settings/billing/actions, which is 410 Gone).
+  # Verified live: both /organizations/{login} and /orgs/{login} return 200 with an
+  # identical usageItems body, so this does not 404.
   url = f"{GITHUB_API}/organizations/{OWNER}/settings/billing/usage?year={year}&month={month}"
   data = http_get_json(url, token=token)
   gross = net = 0.0

@@ -165,7 +165,7 @@ def _actions_block(data, out):
   billed = "  Actually billed: **$0.00** (public-repo standard runners are unbilled)."
   if actions["unknown"]:
     billed += (f" {actions['unknown']} job(s) on self-hosted or unrecognised runners "
-               "were excluded (not billed per GitHub-hosted minute).")
+               "were excluded from the imputed cost.")
   out.append(billed)
 
 

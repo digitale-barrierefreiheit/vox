@@ -118,7 +118,7 @@ def test_render_snapshot_happy_path():
     assert "13,862 as read on 2026-06-16" in text
     assert "$180.88" in text
     assert "$0.00" in text  # actually billed
-    assert "2 job(s) on self-hosted or unrecognised runners" in text
+    assert "2 job(s)" in text and "excluded from the imputed cost" in text
     assert "not configured (prerequisite" in text  # billing line
     assert "not yet reported" in text  # ai-review line
     assert "manual / local feed" in text  # claude line

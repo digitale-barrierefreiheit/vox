@@ -6,6 +6,12 @@
 
 -
 
+<!-- Effort (optional, for the cost ledger — doc/cost-ledger.md). Uncomment the line
+     below and set your developer-time estimate; a bot suggests a value from the diff
+     size that you can adjust. Format: `Effort: 2h`, `Effort: 1h30m`, or `Effort: 45m`.
+     Opt-in — leaving it out never blocks the merge. -->
+<!-- Effort: 0m -->
+
 ## Review checklist (architecture §8.6.7)
 
 - [ ] Tests added/updated; pure cores covered by TDD.

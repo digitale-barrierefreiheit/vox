@@ -1,0 +1,87 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
+# Refresh the cost-ledger snapshot (doc/cost-ledger.md, issue #76) monthly. Runs
+# tools/cost_collector.py for the last complete calendar month (aligning with the
+# month-bucketed GitHub billing cross-check) and, if the snapshot changed, opens or
+# updates a PR into dev — we never push to the protected dev branch directly. The
+# auth-free / plain-token lines (SonarCloud ncloc, Actions minutes) work with the
+# default token; the org billing cross-check stays "not configured (prerequisite)"
+# until its secret is provisioned. The AI code-review cost is fed out-of-band (see
+# cost-contribution.yml and doc/cost-ledger.md) — no third-party token lives here.
+name: Cost ledger collector
+
+on:
+  schedule:
+    - cron: '17 6 1 * *' # 06:17 UTC on the 1st of each month
+  workflow_dispatch:
+
+# Least privilege at the workflow level; the job requests only what it uses.
+permissions: {}
+
+# Serialize so two runs cannot race on the refresh branch.
+concurrency:
+  group: cost-collector
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    name: Refresh the cost ledger
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # push the refresh branch (never dev directly)
+      pull-requests: write # open or update the refresh PR
+      actions: read # read workflow runs/jobs for the Actions-minutes line
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: dev
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Refresh the cost-ledger snapshot
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Optional; until provisioned the org billing cross-check records
+          # "not configured (prerequisite)". The AI-review line is fed out-of-band
+          # (doc/cost-data/ai-review.json) — no third-party billing token lives here.
+          COST_BILLING_TOKEN: ${{ secrets.COST_BILLING_TOKEN }}
+        run: |
+          # Compute the target month once and persist it so the commit/PR step below
+          # reuses the exact value (a manual run across a UTC month boundary can't drift).
+          month="$(date -u -d 'last month' +%Y-%m)"
+          echo "COST_MONTH=$month" >> "$GITHUB_ENV"
+          python3 tools/cost_collector.py --month "$month"
+          {
+            echo "## Cost ledger — $month"
+            echo
+            sed -n '/cost-snapshot:start/,/cost-snapshot:end/p' doc/cost-ledger.md
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Open or update the refresh PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if git diff --quiet -- doc/cost-ledger.md; then
+            echo "Cost ledger unchanged; nothing to do."
+            exit 0
+          fi
+          month="$COST_MONTH" # reuse the value persisted by the refresh step
+          branch="chore/cost-ledger-refresh"
+          git config user.name "vox cost collector"
+          git config user.email "actions@github.com"
+          # The refresh branch is intentionally reset to the latest full snapshot each
+          # run (the collector regenerates the whole block, so replacing it loses
+          # nothing). Fetch first and push with --force-with-lease so a race between this
+          # fetch and the push fails loudly instead of silently dropping a concurrent push.
+          git fetch origin "$branch" 2>/dev/null || true
+          git checkout -B "$branch"
+          git add doc/cost-ledger.md
+          git commit -m "chore(cost): refresh cost-ledger snapshot ($month)"
+          git push --force-with-lease origin "$branch"
+          if gh pr view "$branch" --json number >/dev/null 2>&1; then
+            echo "Existing refresh PR updated."
+          else
+            gh pr create --base dev --head "$branch" \
+              --title "chore(cost): refresh cost-ledger snapshot" \
+              --body "Automated monthly refresh of the cost-ledger snapshot (\`doc/cost-ledger.md\`) by \`.github/workflows/cost-collector.yml\` for $month. Review and merge."
+          fi

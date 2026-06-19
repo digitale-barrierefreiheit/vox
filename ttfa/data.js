@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781903212776,
+  "lastUpdate": 1781906499256,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -758,6 +758,35 @@ window.BENCHMARK_DATA = {
           "url": "https://github.com/digitale-barrierefreiheit/vox/commit/0f9d3624e68deb003254e2410685c1a181a16ff6"
         },
         "date": 1781903211872,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.6,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0665cf8e8bbd665aff224f45666912cb16949cb4",
+          "message": "build(release): Authenticode-sign release artifacts via Azure Artifact Signing (#104)\n\nSign vox.exe in the publish job using Azure Artifact Signing (formerly Trusted\nSigning), authenticated through GitHub OIDC — no stored client secret. The signing\nstep runs between the Release build and cpack, so the ZIP and its SHA-256 cover the\nsigned binary, and is gated on a clean `signtool verify /pa` plus a present RFC 3161\ntimestamp. Signing is mandatory: the publish job fails fast if the Azure config is\nabsent, so an unsigned release can never ship.\n\n- release.yml: publish job gains id-token: write; split build/package; add\n  azure/login (OIDC) + azure/artifact-signing-action + signature verification; a\n  pre-build guard requires the six signing inputs.\n- RELEASING.md: document the signing flow, the repo secrets/variables, and the\n  Azure-side app registration / federated credential / role setup.\n- CHANGELOG.md: note signed downloads under [Unreleased].",
+          "timestamp": "2026-06-19T23:44:58+02:00",
+          "tree_id": "1db8f816143ac8404eb193a73069717aeeb8082e",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/0665cf8e8bbd665aff224f45666912cb16949cb4"
+        },
+        "date": 1781906498355,
         "tool": "customSmallerIsBetter",
         "benches": [
           {

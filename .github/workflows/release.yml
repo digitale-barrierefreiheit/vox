@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
 # Release automation (#103). Two stages, see RELEASING.md.
 #
 #   prepare  (manual workflow_dispatch on `dev`): bump project(VERSION) + vcpkg.json

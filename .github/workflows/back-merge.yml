@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
 # After anything lands on `main` (a release), back-merge `main` into `dev` so `dev`
 # never falls behind `main`. This keeps the "require branches up to date" (strict)
 # rule on `main` — which we keep on for quality — from blocking the next

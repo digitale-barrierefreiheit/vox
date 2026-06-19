@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
 # Approval gate for PRs into `main`.
 #
 # A solo code owner cannot self-approve their own release PR, so instead of an admin

@@ -160,9 +160,9 @@ jobs:
               const visible = (pr.body || '').replace(/<!--[\s\S]*?-->/g, '');
               const active = visible.split(/\r?\n/).find((l) => /^\s*Effort:/i.test(l));
               const rest = active ? active.replace(/^\s*Effort:\s*/i, '') : '';
-              const hMatch = rest.match(/(\d+)\s*h/i);
-              const mMatch = rest.match(/(\d+)\s*m/i);
-              const minutes = (hMatch ? Number(hMatch[1]) : 0) * 60 + (mMatch ? Number(mMatch[1]) : 0);
+              const hMatch = rest.match(/(\d+(?:\.\d+)?)\s*h/i);  // hours may be fractional (e.g. 0.25h)
+              const mMatch = rest.match(/(\d+(?:\.\d+)?)\s*m/i);
+              const minutes = Math.round((hMatch ? Number(hMatch[1]) : 0) * 60 + (mMatch ? Number(mMatch[1]) : 0));
               if (minutes > 0) {
                 const hours = Math.floor(minutes / 60);
                 const dur = [hours ? `${hours}h` : '', minutes % 60 ? `${minutes % 60}m` : ''].filter(Boolean).join(' ');

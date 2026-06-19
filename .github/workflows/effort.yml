@@ -54,11 +54,12 @@ jobs:
             // An "active" Effort line is one in the body that is not HTML-commented out.
             // Parse hours and minutes independently from the text after "Effort:" so an
             // all-optional regex cannot match the empty string and silently yield 0.
+            // Hours may be fractional (e.g. the suggested "0.25h" / "1.5h").
             const parse = (line) => {
               const rest = line.replace(/^\s*Effort:\s*/i, '');
-              const h = rest.match(/(\d+)\s*h/i);
-              const m = rest.match(/(\d+)\s*m/i);
-              return (h ? Number(h[1]) : 0) * 60 + (m ? Number(m[1]) : 0);
+              const h = rest.match(/(\d+(?:\.\d+)?)\s*h/i);
+              const m = rest.match(/(\d+(?:\.\d+)?)\s*m/i);
+              return Math.round((h ? Number(h[1]) : 0) * 60 + (m ? Number(m[1]) : 0));
             };
             // Strip HTML comments (single- and multi-line) first, so a commented-out
             // Effort example — including one inside a multi-line `<!-- ... -->` block —

@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781779138447,
+  "lastUpdate": 1781863051287,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -705,6 +705,35 @@ window.BENCHMARK_DATA = {
           {
             "name": "ttfaPipeline p50",
             "value": 0.7,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "11bf514832b3e42d73440ebb80163837627a162e",
+          "message": "feat(cost): cost ledger v1 — collector, scheduled refresh, dev-time + AI-review reporting (#120)\n\nCost ledger v1 (issue #76): a committed `doc/cost-ledger.md` recording what Vox\ncosts — imputed list price next to the actually-billed amount — refreshed by a\nscheduled collector, plus opt-in developer-time capture and an out-of-band\nAI-review reporting channel.\n\n- `tools/cost_collector.py` (+ tests, 100% covered): SonarCloud `ncloc` and GitHub\n  Actions minutes imputed at date-stamped per-OS list rates; org-billing cross-check\n  guarded behind a secret; AI-review figure read from `doc/cost-data/ai-review.json`.\n- Workflows: `cost-collector` (scheduled refresh PR), `cost-contribution`\n  (repository_dispatch AI-review intake), `effort` (opt-in diff-size suggestion),\n  and an `issue-lifecycle` effort read-back onto linked issues.\n- The maintainer's private AI-review billing is intentionally kept out of this\n  public repo; only a neutral monthly figure is reported in via repository_dispatch.\n- README documentation link and a `just cost` recipe.\n\nCredential-gated lines (org billing, AI-review) and every list price are documented\nprerequisites / (verify) items, not frozen facts.",
+          "timestamp": "2026-06-19T11:37:53+02:00",
+          "tree_id": "08271b065da66f0436ce330bcb8a39069a494d0f",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/11bf514832b3e42d73440ebb80163837627a162e"
+        },
+        "date": 1781863050480,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.6,
             "unit": "us"
           }
         ]

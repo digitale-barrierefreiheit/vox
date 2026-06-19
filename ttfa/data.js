@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781863051287,
+  "lastUpdate": 1781903212776,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -729,6 +729,35 @@ window.BENCHMARK_DATA = {
           "url": "https://github.com/digitale-barrierefreiheit/vox/commit/11bf514832b3e42d73440ebb80163837627a162e"
         },
         "date": 1781863050480,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.6,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0f9d3624e68deb003254e2410685c1a181a16ff6",
+          "message": "ci(cost): wire the org GitHub App for the billing cross-check (#76)\n\nThe cost-collector now mints a short-lived installation token from an org-owned\nGitHub App (Organization -> Administration: read) via actions/create-github-app-token\nand uses it for the billing cross-check, falling back to the COST_BILLING_TOKEN PAT\nand then to \"not configured (prerequisite)\". App identity is a repo variable\n(COST_APP_CLIENT_ID) + secret (COST_APP_PRIVATE_KEY); the step is skipped when the\nvariable is unset, so nothing breaks until it is provisioned.",
+          "timestamp": "2026-06-19T22:44:11+02:00",
+          "tree_id": "6fc30bf2fa2d250c8893a345691c20901c2e2a50",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/0f9d3624e68deb003254e2410685c1a181a16ff6"
+        },
+        "date": 1781903211872,
         "tool": "customSmallerIsBetter",
         "benches": [
           {

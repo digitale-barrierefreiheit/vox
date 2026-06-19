@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
 name: SonarQube
 on:
   push:
@@ -37,7 +39,7 @@ jobs:
       # exact invocation developers run locally. It limits measurement to our src/
       # (not vcpkg/STL) and covers the test exes ctest spawns. The device/voice
       # integration tests skip here (no hardware): that OS glue is integration-tested,
-      # not coverage-gated (sonar.coverage.exclusions, 8.6.2).
+      # not coverage-gated (see architecture 8.6.2).
       - name: Test with coverage
         run: just coverage x64-msvc-debug
         env:

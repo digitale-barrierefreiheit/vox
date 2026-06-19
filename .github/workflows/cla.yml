@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
 name: CLA
 
 # Gates every pull request on a signed Contributor License Agreement (CLA.md).

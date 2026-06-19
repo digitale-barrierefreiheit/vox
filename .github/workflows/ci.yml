@@ -1,4 +1,5 @@
-# SPDX note: workflow YAML is not part of the SPDX-header check set.
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
 name: CI
 
 on:
@@ -287,7 +288,7 @@ jobs:
           save-data-file: false
       - name: Hand the percentiles to the baseline job
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/dev' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-data
           path: benchmark-data.json
@@ -309,7 +310,7 @@ jobs:
       contents: write # push the new baseline to the benchmark-data branch
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: benchmark-data
       - name: Store the new dev baseline

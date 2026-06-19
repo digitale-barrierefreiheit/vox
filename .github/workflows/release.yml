@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
 # Release automation (#103). Two stages, see RELEASING.md.
 #
 #   prepare  (manual workflow_dispatch on `dev`): bump project(VERSION) + vcpkg.json
@@ -9,10 +11,14 @@
 #
 #   gate + publish  (on push to `main`, i.e. AFTER the release PR is merged — NOT a
 #            pull_request event, so it never runs while the PR's checks validate):
-#            build the Release x64 ZIP, smoke-check it, and create the GitHub
-#            release (tag v<version>, marked pre-release for 0.x), attaching the ZIP
-#            and its SHA-256. Idempotent: skips if the tag already exists or the
-#            version is still the 0.0.0 development sentinel.
+#            build Release x64, Authenticode-sign vox.exe via Azure Artifact Signing
+#            (a.k.a. Trusted Signing) using GitHub OIDC — no stored secret — then
+#            package the ZIP, smoke-check it, and create the GitHub release (tag
+#            v<version>, marked pre-release for 0.x), attaching the ZIP and its
+#            SHA-256. Signing is MANDATORY: the publish job fails if the Azure
+#            credentials/config are absent (see RELEASING.md → Code signing).
+#            Idempotent: skips if the tag already exists or the version is still
+#            the 0.0.0 development sentinel.
 name: Release
 
 on:
@@ -142,9 +148,35 @@ jobs:
     runs-on: windows-2025
     permissions:
       contents: write
+      id-token: write # mint the short-lived GitHub OIDC token for Azure login (no stored secret)
     env:
       VERSION: ${{ needs.gate.outputs.version }}
     steps:
+      # Fail fast — before the ~20 min build — if signing is not fully configured.
+      # Signing is MANDATORY (issue #104): we never publish an unsigned release.
+      - name: Require signing configuration
+        shell: bash
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          SIGN_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          SIGN_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          SIGN_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
+        run: |
+          missing=()
+          [[ -n "$AZURE_CLIENT_ID" ]]       || missing+=("secret AZURE_CLIENT_ID")
+          [[ -n "$AZURE_TENANT_ID" ]]       || missing+=("secret AZURE_TENANT_ID")
+          [[ -n "$AZURE_SUBSCRIPTION_ID" ]] || missing+=("secret AZURE_SUBSCRIPTION_ID")
+          [[ -n "$SIGN_ENDPOINT" ]]         || missing+=("variable AZURE_SIGNING_ENDPOINT")
+          [[ -n "$SIGN_ACCOUNT" ]]          || missing+=("variable AZURE_SIGNING_ACCOUNT")
+          [[ -n "$SIGN_PROFILE" ]]          || missing+=("variable AZURE_SIGNING_PROFILE")
+          if (( ${#missing[@]} )); then
+            printf '::error::Release signing is mandatory but not configured. Missing: %s. See RELEASING.md -> Code signing.\n' "${missing[*]}"
+            exit 1
+          fi
+          echo "Signing configuration present."
+
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -161,11 +193,57 @@ jobs:
         with:
           vcpkgGitCommitId: ${{ env.VCPKG_BASELINE }}
 
-      - name: Build Release (x64) and package the ZIP
+      - name: Build Release (x64)
         shell: pwsh
         run: |
           cmake --preset x64-msvc
           cmake --build --preset x64-msvc-release --target vox
+
+      # OIDC: GitHub mints a short-lived token, exchanged for an Azure access token
+      # via the app registration's federated credential — no client secret stored.
+      # azure/login establishes an `az` CLI session that the signing action below
+      # consumes (exclude-environment-credential: true -> AzureCliCredential path).
+      - name: Azure login (OIDC, no stored secret)
+        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Sign the built exe BEFORE cpack, so the ZIP (and its SHA-256) cover the
+      # signed binary. RFC 3161 timestamp keeps the signature valid past the
+      # short-lived certificate's expiry (action defaults, pinned explicitly).
+      - name: Authenticode-sign vox.exe (Azure Artifact Signing)
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_SIGNING_PROFILE }}
+          files: ${{ github.workspace }}\build\x64-msvc\src\app\Release\vox.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          exclude-environment-credential: true
+
+      # Gate the release on a clean signtool /pa verification + a present RFC 3161
+      # timestamp (AC of #104). Fails the publish if either is missing.
+      - name: Verify the signature (signtool /pa + RFC 3161 timestamp)
+        shell: pwsh
+        run: |
+          $exe = "build/x64-msvc/src/app/Release/vox.exe"
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
+            Sort-Object { [version]$_.Directory.Parent.Name } -Descending | Select-Object -First 1
+          if (-not $signtool) { throw "signtool.exe not found in the Windows 10 SDK" }
+          & $signtool.FullName verify /pa /v $exe
+          if ($LASTEXITCODE -ne 0) { throw "signtool verify /pa failed for $exe" }
+          $sig = Get-AuthenticodeSignature $exe
+          if ($sig.Status -ne 'Valid') { throw "Authenticode status is '$($sig.Status)': $($sig.StatusMessage)" }
+          if (-not $sig.TimeStamperCertificate) { throw "signature is not RFC 3161 timestamped" }
+          Write-Host "Signed & timestamped OK — signer: $($sig.SignerCertificate.Subject)"
+
+      - name: Package the ZIP
+        shell: pwsh
+        run: |
           Set-Location build/x64-msvc
           cpack -C Release
 

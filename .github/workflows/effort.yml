@@ -1,0 +1,89 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
+# Suggest a developer-time "Effort:" value on each PR from the diff size, for the
+# cost ledger (doc/cost-ledger.md, issue #76). Opt-in and non-blocking: it posts or
+# updates one marker comment and never fails the PR. When the author sets an
+# `Effort:` line in the PR description, the comment switches to "recorded"; the
+# confirmed value is read back onto the linked issue(s) at feature->dev merge by
+# issue-lifecycle.yml. The diff-size heuristic (divisor / clamp / generated-path
+# exclusions) is a tunable first guess — see doc/cost-ledger.md "(verify)" items.
+name: Effort suggestion
+
+on:
+  pull_request:
+    types: [opened, synchronize, edited]
+
+# Least privilege: nothing at the workflow level; the job requests only what it uses.
+permissions: {}
+
+jobs:
+  suggest:
+    name: Suggest effort from diff size
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read # checkout (for the local upsert-comment action)
+      pull-requests: write # upsert one suggestion comment on the PR
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/github-script@v9
+        continue-on-error: true # opt-in suggestion only — an API hiccup must never fail the PR
+        env:
+          DIVISOR: '150' # changed LOC per hour (tunable — see doc/cost-ledger.md)
+          MIN_HOURS: '0.25'
+          MAX_HOURS: '8'
+        with:
+          script: |
+            const fs = require('fs');
+            const pr = context.payload.pull_request;
+            // Generated / vendored paths inflate the diff and are excluded from the estimate.
+            const EXCLUDE = [/(^|\/)dist\//, /(^|\/)vcpkg_installed\//, /(^|\/)node_modules\//, /\.lock$/];
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              ...context.repo, pull_number: pr.number, per_page: 100,
+            });
+            let changed = 0;
+            for (const file of files) {
+              if (EXCLUDE.some((re) => re.test(file.filename))) continue;
+              changed += (file.additions || 0) + (file.deletions || 0);
+            }
+            const divisor = Number(process.env.DIVISOR);
+            const lo = Number(process.env.MIN_HOURS);
+            const hi = Number(process.env.MAX_HOURS);
+            const quarter = Math.round((changed / divisor) / 0.25) * 0.25;
+            const suggested = Math.min(hi, Math.max(lo, quarter));
+
+            // An "active" Effort line is one in the body that is not HTML-commented out.
+            // Parse hours and minutes independently from the text after "Effort:" so an
+            // all-optional regex cannot match the empty string and silently yield 0.
+            // Hours may be fractional (e.g. the suggested "0.25h" / "1.5h").
+            const parse = (line) => {
+              const rest = line.replace(/^\s*Effort:\s*/i, '');
+              const h = rest.match(/(\d+(?:\.\d+)?)\s*h/i);
+              const m = rest.match(/(\d+(?:\.\d+)?)\s*m/i);
+              return Math.round((h ? Number(h[1]) : 0) * 60 + (m ? Number(m[1]) : 0));
+            };
+            // Strip HTML comments (single- and multi-line) first, so a commented-out
+            // Effort example — including one inside a multi-line `<!-- ... -->` block —
+            // is never treated as an active value.
+            const visible = (pr.body || '').replace(/<!--[\s\S]*?-->/g, '');
+            const active = visible.split(/\r?\n/).find((l) => /^\s*Effort:/i.test(l));
+            const recorded = active ? parse(active) : 0;
+
+            const marker = '<!-- vox-effort -->';
+            let body;
+            if (recorded > 0) {
+              const h = Math.floor(recorded / 60);
+              const m = recorded % 60;
+              const dur = [h ? `${h}h` : '', m ? `${m}m` : ''].filter(Boolean).join(' ');
+              body = `${marker}\n**Effort recorded:** ${dur} ✓ — counts toward the cost ledger (\`doc/cost-ledger.md\`).`;
+            } else {
+              body = `${marker}\n**Suggested effort:** ~${suggested}h, from ${changed} changed line(s) `
+                + `(generated paths excluded; divisor ${divisor} LOC/h, clamped ${lo}–${hi}h). `
+                + `_Opt-in:_ uncomment the \`Effort:\` line in the PR description and set your actual time to record it — it never blocks the merge.`;
+            }
+            fs.writeFileSync('effort-comment.md', body);
+            core.info(`effort: changed=${changed} suggested=${suggested}h recorded=${recorded}m`);
+      - uses: ./.github/actions/upsert-comment
+        continue-on-error: true # fork PRs get a read-only token; a failed comment must not fail the PR
+        with:
+          marker: '<!-- vox-effort -->'
+          body-file: effort-comment.md

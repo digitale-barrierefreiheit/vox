@@ -1,0 +1,107 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
+# Record an externally-reported AI code-review cost (e.g. GitHub Copilot) into the
+# cost ledger (doc/cost-ledger.md, issue #76). The maintainer runs a private
+# collector in their own billing context; it sends a `repository_dispatch` of type
+# `ai-review-cost` with client_payload { month: "YYYY-MM", usd: <number>, note? }.
+# This workflow writes that single neutral figure into doc/cost-data/ai-review.json
+# and opens/updates a PR into dev. No billing-account identity, endpoint, or token
+# is stored in this public repo — only the voluntarily disclosed monthly amount.
+name: Cost contribution (AI review)
+
+on:
+  repository_dispatch:
+    types: [ai-review-cost]
+
+permissions: {}
+
+concurrency:
+  group: cost-contribution
+  cancel-in-progress: false
+
+jobs:
+  record:
+    name: Record the AI-review contribution
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # push the data branch (never dev directly)
+      pull-requests: write # open or update the PR
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: dev
+          fetch-depth: 0
+      # Base on the existing contribution branch when it exists so repeated or
+      # back-to-back dispatches (a re-send, or several months) accumulate instead
+      # of overwriting each other's unmerged months.
+      - name: Switch to the contribution branch (additive)
+        run: |
+          branch="chore/cost-ledger-ai-review"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            git fetch origin "$branch"
+            git checkout -B "$branch" "origin/$branch"
+          else
+            git checkout -B "$branch"
+          fi
+      - uses: actions/github-script@v9
+        id: record
+        env:
+          MONTH: ${{ github.event.client_payload.month }}
+          USD: ${{ github.event.client_payload.usd }}
+          NOTE: ${{ github.event.client_payload.note }}
+        with:
+          script: |
+            const fs = require('fs');
+            const month = String(process.env.MONTH || '').trim();
+            if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+              core.setFailed(`invalid month (expected YYYY-MM, 01-12): ${month}`);
+              return;
+            }
+            const usd = Number(process.env.USD);
+            if (!Number.isFinite(usd) || usd < 0) {
+              core.setFailed(`invalid usd amount: ${process.env.USD}`);
+              return;
+            }
+            const path = 'doc/cost-data/ai-review.json';
+            const data = JSON.parse(fs.readFileSync(path, 'utf8'));
+            data.months = data.months || {};
+            const existing = data.months[month] || {};
+            const entry = { usd: Math.round(usd * 100) / 100 };
+            // Collapse whitespace to a single line and cap length, so a malformed or
+            // abusive dispatch note cannot inject multi-line/oversized content into the
+            // committed JSON and the public ledger.
+            const note = String(process.env.NOTE || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+            // Keep a previously-recorded note when this dispatch omits one.
+            const keptNote = note || existing.note;
+            if (keptNote) entry.note = keptNote;
+            data.months[month] = entry;
+            fs.writeFileSync(path, JSON.stringify(data, null, 2) + '\n');
+            core.setOutput('month', month);
+            core.info(`recorded ${month}: $${entry.usd}`);
+      - name: Open or update the contribution PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Use the VALIDATED month from the step above (constrained to YYYY-MM), via an
+          # env var — never interpolate the untrusted payload directly into the shell.
+          MONTH: ${{ steps.record.outputs.month }}
+        run: |
+          if git diff --quiet -- doc/cost-data/ai-review.json; then
+            echo "AI-review contribution unchanged; nothing to do."
+            exit 0
+          fi
+          month="$MONTH"
+          branch="chore/cost-ledger-ai-review"
+          git config user.name "vox cost collector"
+          git config user.email "actions@github.com"
+          # Already on "$branch" (the switch step based it on the remote branch when
+          # present); commit additively and push with a lease (never a blind --force).
+          git add doc/cost-data/ai-review.json
+          git commit -m "chore(cost): record AI code-review cost ($month)"
+          git push --force-with-lease origin "$branch"
+          if gh pr view "$branch" --json number >/dev/null 2>&1; then
+            echo "Existing contribution PR updated."
+          else
+            gh pr create --base dev --head "$branch" \
+              --title "chore(cost): record AI code-review cost" \
+              --body "Records the maintainer-contributed AI code-review cost for $month into \`doc/cost-data/ai-review.json\` (reported via repository_dispatch). Review and merge; the cost-collector renders it into the ledger snapshot."
+          fi

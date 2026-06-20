@@ -1,13 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
-# Refresh the cost-ledger snapshot (doc/cost-ledger.md, issue #76) monthly. Runs
-# tools/cost_collector.py for the last complete calendar month (aligning with the
-# month-bucketed GitHub billing cross-check) and, if the snapshot changed, opens or
-# updates a PR into dev — we never push to the protected dev branch directly. The
-# auth-free / plain-token lines (SonarCloud ncloc, Actions minutes) work with the
-# default token; the org billing cross-check stays "not configured (prerequisite)"
-# until its secret is provisioned. The AI code-review cost is fed out-of-band (see
-# cost-contribution.yml and doc/cost-ledger.md) — no third-party token lives here.
+# Refresh the cost-ledger snapshot MONTHLY. Runs tools/cost_collector.py for the last
+# complete calendar month and writes the result to the orphan `cost-data` branch
+# (snapshot.md) — never to dev/main, so a data refresh never triggers the build / test /
+# Sonar / benchmark pipelines (same pattern as the benchmark-data and cla-signatures
+# branches). Methodology lives in doc/cost-ledger.md on the code branches; the AI-review
+# figure is fed in by cost-contribution.yml (also on cost-data). See issue #76 / #128.
 name: Cost ledger collector
 
 on:
@@ -15,12 +13,12 @@ on:
     - cron: '17 6 1 * *' # 06:17 UTC on the 1st of each month
   workflow_dispatch:
 
-# Least privilege at the workflow level; the job requests only what it uses.
 permissions: {}
 
-# Serialize so two runs cannot race on the refresh branch.
+# Serialize every cost-data writer (this workflow and cost-contribution.yml share the
+# group) so two runs can never race on a push to the cost-data branch.
 concurrency:
-  group: cost-collector
+  group: cost-data-write
   cancel-in-progress: false
 
 jobs:
@@ -28,21 +26,24 @@ jobs:
     name: Refresh the cost ledger
     runs-on: ubuntu-24.04
     permissions:
-      contents: write # push the refresh branch (never dev directly)
-      pull-requests: write # open or update the refresh PR
+      contents: write # push the cost-data branch (never dev/main)
       actions: read # read workflow runs/jobs for the Actions-minutes line
     steps:
-      - uses: actions/checkout@v6
+      - name: Check out the code (for tools/cost_collector.py)
+        uses: actions/checkout@v6
+      - name: Check out the cost-data branch (the data lives here)
+        uses: actions/checkout@v6
         with:
-          ref: dev
+          ref: cost-data
+          path: cost-data
           fetch-depth: 0
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      # Mint a short-lived installation token from the org-owned GitHub App (with
-      # Organization -> Administration: read) for the billing cross-check. continue-on-error
-      # so that when the App secrets are not set the step is a no-op and the read falls back
-      # to the COST_BILLING_TOKEN PAT (or, absent both, "not configured (prerequisite)").
+      # Mint a short-lived installation token from the org-owned GitHub App (Organization
+      # -> Administration: read) for the billing cross-check. continue-on-error so that when
+      # the App is not configured the read falls back to the COST_BILLING_TOKEN PAT (or,
+      # absent both, "not configured (prerequisite)").
       - name: Mint org-billing token (GitHub App, if configured)
         id: app_token
         if: ${{ vars.COST_APP_CLIENT_ID != '' }}
@@ -52,50 +53,34 @@ jobs:
           client-id: ${{ vars.COST_APP_CLIENT_ID }}
           private-key: ${{ secrets.COST_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
-      - name: Refresh the cost-ledger snapshot
+      - name: Refresh the snapshot on the cost-data branch
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Org billing cross-check identity: the GitHub App installation token when the App
-          # is configured, else the COST_BILLING_TOKEN PAT, else unset (records "not
-          # configured (prerequisite)"). The AI-review line is fed out-of-band
-          # (doc/cost-data/ai-review.json) — no third-party billing token lives here.
           COST_BILLING_TOKEN: ${{ steps.app_token.outputs.token || secrets.COST_BILLING_TOKEN }}
         run: |
-          # Compute the target month once and persist it so the commit/PR step below
-          # reuses the exact value (a manual run across a UTC month boundary can't drift).
+          # Compute the target month once and persist it so the commit step below reuses the
+          # exact value (a manual run across a UTC month boundary can't drift).
           month="$(date -u -d 'last month' +%Y-%m)"
           echo "COST_MONTH=$month" >> "$GITHUB_ENV"
-          python3 tools/cost_collector.py --month "$month"
+          python3 tools/cost_collector.py --month "$month" \
+            --doc cost-data/snapshot.md --ai-review cost-data/ai-review.json
           {
             echo "## Cost ledger — $month"
             echo
-            sed -n '/cost-snapshot:start/,/cost-snapshot:end/p' doc/cost-ledger.md
+            sed -n '/cost-snapshot:start/,/cost-snapshot:end/p' cost-data/snapshot.md
           } >> "$GITHUB_STEP_SUMMARY"
-      - name: Open or update the refresh PR
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Commit and push to cost-data (no PR, no CI)
         run: |
-          if git diff --quiet -- doc/cost-ledger.md; then
-            echo "Cost ledger unchanged; nothing to do."
+          cd cost-data
+          if git diff --quiet -- snapshot.md; then
+            echo "Snapshot unchanged; nothing to do."
             exit 0
           fi
-          month="$COST_MONTH" # reuse the value persisted by the refresh step
-          branch="chore/cost-ledger-refresh"
           git config user.name "vox cost collector"
           git config user.email "actions@github.com"
-          # The refresh branch is intentionally reset to the latest full snapshot each
-          # run (the collector regenerates the whole block, so replacing it loses
-          # nothing). Fetch first and push with --force-with-lease so a race between this
-          # fetch and the push fails loudly instead of silently dropping a concurrent push.
-          git fetch origin "$branch" 2>/dev/null || true
-          git checkout -B "$branch"
-          git add doc/cost-ledger.md
-          git commit -m "chore(cost): refresh cost-ledger snapshot ($month)"
-          git push --force-with-lease origin "$branch"
-          if gh pr view "$branch" --json number >/dev/null 2>&1; then
-            echo "Existing refresh PR updated."
-          else
-            gh pr create --base dev --head "$branch" \
-              --title "chore(cost): refresh cost-ledger snapshot" \
-              --body "Automated monthly refresh of the cost-ledger snapshot (\`doc/cost-ledger.md\`) by \`.github/workflows/cost-collector.yml\` for $month. Review and merge."
-          fi
+          git add snapshot.md
+          git commit -m "chore(cost): refresh cost-ledger snapshot ($COST_MONTH)"
+          # Serialized by the concurrency group; rebase defensively in case the branch
+          # moved (e.g. a contribution push) between checkout and now, then push.
+          git pull --rebase origin cost-data
+          git push origin cost-data

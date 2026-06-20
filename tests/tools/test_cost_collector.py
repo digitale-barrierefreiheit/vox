@@ -256,7 +256,8 @@ def test_fetch_org_billing(monkeypatch):
     assert "999" not in out["text"]
 
 
-def test_read_ai_review(tmp_path):
+def test_read_ai_review(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     path = tmp_path / "ai-review.json"
     path.write_text('{"months": {"2026-06": {"usd": 42.50, "note": "x"}}}', encoding="utf-8")
     assert cc.read_ai_review("2026-06", path) == {"usd": 42.50, "note": "x"}
@@ -266,12 +267,15 @@ def test_read_ai_review(tmp_path):
     assert cc.read_ai_review("2026-06", bad) is None  # valid file, no usd -> not reported
 
 
-def test_read_ai_review_signals_read_errors(tmp_path):
+def test_read_ai_review_signals_read_errors(tmp_path, monkeypatch):
     # A missing or malformed file is an error, distinct from "not reported" (None).
+    monkeypatch.chdir(tmp_path)
     assert "error" in cc.read_ai_review("2026-06", tmp_path / "nope.json")
     corrupt = tmp_path / "corrupt.json"
     corrupt.write_text("{not valid json", encoding="utf-8")
     assert "error" in cc.read_ai_review("2026-06", corrupt)
+    # A path escaping the working directory is rejected before any file access.
+    assert "error" in cc.read_ai_review("2026-06", "../escape.json")
 
 
 @pytest.mark.parametrize("value, ok", [
@@ -285,14 +289,16 @@ def test_valid_usd(value, ok):
 
 
 @pytest.mark.parametrize("bad_usd", ["oops", True, -5, None, float("inf"), float("nan")])
-def test_read_ai_review_rejects_bad_usd(tmp_path, bad_usd):
+def test_read_ai_review_rejects_bad_usd(tmp_path, monkeypatch, bad_usd):
     # json.dumps guarantees valid JSON, so this exercises _valid_usd (not a parse error).
+    monkeypatch.chdir(tmp_path)
     path = tmp_path / "ai-review.json"
     path.write_text(json.dumps({"months": {"2026-06": {"usd": bad_usd}}}), encoding="utf-8")
     assert cc.read_ai_review("2026-06", path) is None
 
 
-def test_read_ai_review_sanitizes_note(tmp_path):
+def test_read_ai_review_sanitizes_note(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     path = tmp_path / "ai-review.json"
     path.write_text(json.dumps({"months": {"2026-06": {
         "usd": 10, "note": "line1\nline2\t  spaced " + "x" * 500}}}), encoding="utf-8")
@@ -300,6 +306,15 @@ def test_read_ai_review_sanitizes_note(tmp_path):
     assert "\n" not in note and "\t" not in note
     assert note.startswith("line1 line2 spaced")
     assert len(note) <= 200
+
+
+def test_safe_path_confines(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    inside = cc._safe_path("sub/data.json")
+    assert inside.name == "data.json"
+    assert inside.is_relative_to(cc.Path.cwd().resolve())
+    with pytest.raises(ValueError):
+        cc._safe_path("../escape.json")  # traversal outside the working dir
 
 
 # --------------------------------------------------------------------------- #
@@ -315,7 +330,7 @@ def test_collect_without_credentials(monkeypatch):
     monkeypatch.setattr(cc, "fetch_actions_jobs", lambda y, m, t: [
         {"labels": ["ubuntu-24.04"], "started_at": "2026-06-01T00:00:00Z",
          "completed_at": "2026-06-01T00:01:00Z"}])
-    monkeypatch.setattr(cc, "read_ai_review", lambda label: None)
+    monkeypatch.setattr(cc, "read_ai_review", lambda label, path=None: None)
     data = cc.collect(month="2026-06")
     assert data["sonar_ncloc"] == 13862
     assert data["actions"]["minutes"] == {"Linux": 1}
@@ -327,8 +342,8 @@ def test_collect_with_billing_and_ai_review(monkeypatch):
     monkeypatch.setattr(cc, "fetch_sonar_ncloc", lambda component: 1)
     monkeypatch.setattr(cc, "fetch_actions_jobs", lambda y, m, t: [])
     monkeypatch.setattr(cc, "fetch_org_billing", lambda y, m, t: {"text": "billed"})
-    monkeypatch.setattr(cc, "read_ai_review", lambda label: {"usd": 12.5, "note": "n"})
-    data = cc.collect(month="2026-06", billing_token="b")
+    monkeypatch.setattr(cc, "read_ai_review", lambda label, path=None: {"usd": 12.5, "note": "n"})
+    data = cc.collect(month="2026-06", billing_token="b", ai_review_path="ai-review.json")
     assert data["billing"] == {"text": "billed"}
     assert data["ai_review"] == {"usd": 12.5, "note": "n"}
 
@@ -358,7 +373,17 @@ def test_main_print(monkeypatch, capsys):
     assert cc.SNAPSHOT_START in out and "$180.88" in out
 
 
+def test_main_default_preview(monkeypatch, capsys):
+    # No --doc and no --print -> print the snapshot (never write a markerless doc).
+    monkeypatch.setattr(cc, "collect", lambda **kw: _full_data())
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    assert cc.main([]) == 0
+    assert cc.SNAPSHOT_START in capsys.readouterr().out
+
+
 def test_main_writes_doc(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
     doc = tmp_path / "cost-ledger.md"
     doc.write_text(f"head\n{cc.SNAPSHOT_START}\nplaceholder\n{cc.SNAPSHOT_END}\ntail\n",
                    encoding="utf-8")

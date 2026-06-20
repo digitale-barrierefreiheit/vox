@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781912554416,
+  "lastUpdate": 1781914461411,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -821,6 +821,35 @@ window.BENCHMARK_DATA = {
           {
             "name": "ttfaPipeline p50",
             "value": 0.7,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "6edc611a8fe3d494219c05b9dc1337e955ec4645",
+          "message": "release: v0.0.1 — first preview of the German-first screen reader\n\nVox is a fast, lightweight, German-first screen reader for Windows. This first\npreview announces the control you move keyboard focus to — its type, name,\nstate, and value — as one natural German utterance (e.g. \"Schaltfläche,\nSpeichern\").\n\nHighlights\n- Focus announcements: speaks the focused control as a single German utterance\n  (role, name, state, value) as you Tab/arrow through applications.\n- German-first speech: selects an installed German voice — including OneCore\n  voices added through Windows Settings — and never stays silent, falling back\n  to another voice when no German one is present.\n- Instant reaction: a new announcement preempts the previous one immediately, so\n  navigation stays responsive (first audio in well under a fifth of a second).\n- Configurable language: choose the language with VOX_LANGUAGE; the spoken role\n  and state words come from editable lexicon files. Override just the voice with\n  VOX_VOICE, or just the words with VOX_LEXICON.\n- Keyboard-driven operation with clear, high-quality audio output.\n\nKnown limitations\nAn early preview — validated with a German user as fast and natural for what it\ncovers, but not yet a full daily-driver screen reader. It does not yet read text\nyou type, selected text, tree views (e.g. mail folders), or terminal/console\ncontent.\n\nEngineering: 100% line coverage on the gated view, CodeScene Code Health 10.0\nacross the codebase, and a green CI matrix (x64/x86, German-locale, ASAN/TSAN,\nclang-tidy). Marked a pre-release per 0.x semantics.",
+          "timestamp": "2026-06-20T01:58:30+02:00",
+          "tree_id": "23ef7e93a2c8a6fc33c7daeff23e513c73e08ab1",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/6edc611a8fe3d494219c05b9dc1337e955ec4645"
+        },
+        "date": 1781914461118,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.9,
             "unit": "us"
           }
         ]

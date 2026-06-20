@@ -404,6 +404,15 @@ def test_main_rejects_invalid_month(capsys):
     assert "YYYY-MM" in capsys.readouterr().err
 
 
+def test_main_rejects_escaping_doc(monkeypatch, capsys):
+    # An out-of-bounds --doc is a clean argparse error (exit 2), not a traceback.
+    monkeypatch.setattr(cc, "collect", lambda **kw: _full_data())
+    with pytest.raises(SystemExit) as exc:
+        cc.main(["--doc", "../escape.md", "--month", "2026-06"])
+    assert exc.value.code == 2
+    assert "escapes the working directory" in capsys.readouterr().err
+
+
 def test_entry_guard_runs_as_main(monkeypatch):
     # urlopen raises so every read falls back to None; offline collection exits non-zero.
     def offline(*args, **kwargs):

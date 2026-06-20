@@ -72,13 +72,14 @@ jobs:
       - name: Commit and push to cost-data (no PR, no CI)
         run: |
           cd cost-data
-          if git diff --quiet -- snapshot.md; then
+          git config user.name "vox cost collector"
+          git config user.email "actions@github.com"
+          # Stage first so the guard also detects a newly-created (untracked) file.
+          git add snapshot.md
+          if git diff --cached --quiet; then
             echo "Snapshot unchanged; nothing to do."
             exit 0
           fi
-          git config user.name "vox cost collector"
-          git config user.email "actions@github.com"
-          git add snapshot.md
           git commit -m "chore(cost): refresh cost-ledger snapshot ($COST_MONTH)"
           # Serialized by the concurrency group; rebase defensively in case the branch
           # moved (e.g. a contribution push) between checkout and now, then push.

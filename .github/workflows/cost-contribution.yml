@@ -78,13 +78,15 @@ jobs:
           # untrusted payload interpolated into the shell.
           MONTH: ${{ steps.record.outputs.month }}
         run: |
-          if git diff --quiet -- ai-review.json; then
+          git config user.name "vox cost collector"
+          git config user.email "actions@github.com"
+          # Stage first so the guard also detects a newly-created (untracked) file, not
+          # just a modification to a tracked one.
+          git add ai-review.json
+          if git diff --cached --quiet; then
             echo "AI-review contribution unchanged; nothing to do."
             exit 0
           fi
-          git config user.name "vox cost collector"
-          git config user.email "actions@github.com"
-          git add ai-review.json
           git commit -m "chore(cost): record AI code-review cost ($MONTH)"
           # Serialized by the concurrency group; rebase defensively in case a collector push
           # moved the branch between checkout and now, then push.

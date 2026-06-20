@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
-"""Collect the facts that drive Vox's running costs into doc/cost-ledger.md.
+"""Collect the facts that drive Vox's running costs into the cost-ledger snapshot.
 
 See doc/cost-ledger.md and issue #76 for the methodology. This refreshes the
 marker-bounded "snapshot" block of that document. SonarCloud ncloc is auth-free;
 the GitHub Actions minutes line needs a GitHub token (GITHUB_TOKEN / GH_TOKEN,
 provided automatically in CI). The org-billing cross-check needs a provisioned
 secret, otherwise recording "not configured (prerequisite)". The AI code-review
-cost is reported into this repo out-of-band (doc/cost-data/ai-review.json) — no
+cost is reported in out-of-band (ai-review.json on the cost-data branch) — no
 third-party billing credentials live here.
 
 Usage:
@@ -26,10 +26,6 @@ import re
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_DOC = REPO_ROOT / "doc" / "cost-ledger.md"
-AI_REVIEW_DATA = REPO_ROOT / "doc" / "cost-data" / "ai-review.json"
 
 OWNER = "digitale-barrierefreiheit"
 REPO = "vox"
@@ -321,7 +317,21 @@ def _valid_usd(value):
   return math.isfinite(value) and value >= 0
 
 
-def read_ai_review(month_label, path=None):
+def _safe_path(path):
+  """Resolve a CLI-supplied path and confine it to the working directory.
+
+  The collector only reads/writes data files inside the checkout (the repo, or the
+  cost-data branch checkout). Canonicalising and confining the path neutralises a
+  traversal via a faulty --doc/--ai-review argument before any file-system access.
+  """
+  root = Path.cwd().resolve()
+  resolved = (root / path).resolve()
+  if not resolved.is_relative_to(root):
+    raise ValueError(f"path escapes the working directory: {path}")
+  return resolved
+
+
+def read_ai_review(month_label, path):
   """Read the maintainer-contributed AI-review cost for a month.
 
   Returns {'usd', 'note'} when a valid figure exists, None when none is reported
@@ -329,12 +339,11 @@ def read_ai_review(month_label, path=None):
   malformed — so the snapshot can distinguish "not yet reported" from "read failed".
 
   The figure is reported into this repo out-of-band: a repository_dispatch updates
-  doc/cost-data/ai-review.json. No billing-account identity or mechanism is stored
-  in this public repo — only the voluntarily disclosed monthly amount.
+  ai-review.json on the cost-data branch. No billing-account identity or mechanism is
+  stored in this public repo — only the voluntarily disclosed monthly amount.
   """
-  path = AI_REVIEW_DATA if path is None else path
   try:
-    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    payload = json.loads(_safe_path(path).read_text(encoding="utf-8"))
   except (OSError, ValueError) as exc:
     return {"error": str(exc)}  # file missing/unreadable or malformed JSON
   entry = (payload.get("months") or {}).get(month_label)
@@ -383,7 +392,7 @@ def collect(now=None, month=None, *, github_token=None, billing_token=None,
   data["billing"] = (
       _guarded(lambda: fetch_org_billing(year, mon, billing_token))
       if billing_token else None)
-  data["ai_review"] = read_ai_review(label, ai_review_path)
+  data["ai_review"] = read_ai_review(label, ai_review_path) if ai_review_path else None
   return data
 
 
@@ -391,10 +400,12 @@ def main(argv=None):
   parser = argparse.ArgumentParser(
       description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
   parser.add_argument("--month", help="target calendar month YYYY-MM (default: current)")
-  parser.add_argument("--doc", type=Path, default=DEFAULT_DOC,
-                      help="path to the document holding the snapshot block")
-  parser.add_argument("--ai-review", dest="ai_review", type=Path, default=AI_REVIEW_DATA,
-                      help="path to the AI-review data file (ai-review.json)")
+  parser.add_argument("--doc", type=Path, default=None,
+                      help="document holding the snapshot block; omit (or pass "
+                           "--print) to print instead of writing")
+  parser.add_argument("--ai-review", dest="ai_review", type=Path, default=None,
+                      help="AI-review data file (ai-review.json); omit to leave the "
+                           "AI-review line as 'not yet reported'")
   parser.add_argument("--print", dest="print_only", action="store_true",
                       help="print the snapshot instead of writing the document")
   args = parser.parse_args(argv)
@@ -409,12 +420,13 @@ def main(argv=None):
       ai_review_path=args.ai_review)
   snapshot = render_snapshot(data)
 
-  if args.print_only:
+  if args.print_only or args.doc is None:
     print(snapshot)
   else:
-    updated = replace_snapshot(args.doc.read_text(encoding="utf-8"), snapshot)
-    args.doc.write_text(updated, encoding="utf-8")
-    print(f"Updated snapshot in {args.doc} (month {data['month_label']}).")
+    doc = _safe_path(args.doc)
+    updated = replace_snapshot(doc.read_text(encoding="utf-8"), snapshot)
+    doc.write_text(updated, encoding="utf-8")
+    print(f"Updated snapshot in {doc} (month {data['month_label']}).")
 
   # Non-zero exit when the collection produced nothing usable (a CI failure signal).
   collected = data.get("sonar_ncloc") is not None or data.get("actions") is not None

@@ -57,8 +57,14 @@ jobs:
             try {
               data = JSON.parse(fs.readFileSync(path, 'utf8'));
             } catch {
-              // Initialise if the data file is somehow absent on the cost-data branch.
-              data = { schema: 1, currency: 'USD', months: {} };
+              // Initialise a self-describing payload (same shape as the seeded file) if the
+              // data file is somehow absent on the cost-data branch.
+              data = {
+                schema: 1,
+                currency: 'USD',
+                about: "Monthly AI code-review cost (e.g. GitHub Copilot) voluntarily contributed by the maintainer for vox. Reported out-of-band via a repository_dispatch (type 'ai-review-cost') from the maintainer's separate billing context; no billing-account identity or mechanism is stored here. GitHub exposes no per-repository attribution, so figures are a good-faith monthly disclosure. tools/cost_collector.py reads this into the cost-ledger snapshot. Lives on the orphan cost-data branch so refreshes never trigger code CI.",
+                months: {},
+              };
             }
             data.months = data.months || {};
             const existing = data.months[month] || {};

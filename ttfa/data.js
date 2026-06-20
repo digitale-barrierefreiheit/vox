@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781972242540,
+  "lastUpdate": 1781983951435,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -937,6 +937,35 @@ window.BENCHMARK_DATA = {
           {
             "name": "ttfaPipeline p50",
             "value": 0.7,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5a70d68e63bb636bb89c909735771966af67903b",
+          "message": "ci(cost): complete cost-data move hardening (#133)\n\n- cost_collector.py main(): wrap the snapshot read/replace/write in try/except\n  (OSError, ValueError) -> parser.error (exit 2), so a missing-markers --doc or an IO\n  failure is a clean CLI error, not a traceback.\n- render_snapshot(): the AI-review read-error line referenced the old\n  doc/cost-data/ai-review.json path -> now ai-review.json (cost-data branch layout).\n- cost-collector.yml / cost-contribution.yml: push via fetch + rebase origin/cost-data\n  + git push origin HEAD:cost-data, robust against actions/checkout's detached HEAD.\n- doc/cost-ledger.md: just cost only previews now (not \"refresh\") — fixed in two places.\n- Tests: cover the markerless-doc error branch + pin the render path. 76 tests, 100% cov.",
+          "timestamp": "2026-06-20T21:16:52+02:00",
+          "tree_id": "cc95469f6dc4fa119491b1707ce0a0efadb1fbe6",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/5a70d68e63bb636bb89c909735771966af67903b"
+        },
+        "date": 1781983951129,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.9,
             "unit": "us"
           }
         ]

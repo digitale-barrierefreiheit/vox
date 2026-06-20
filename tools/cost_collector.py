@@ -12,7 +12,7 @@ cost is reported into this repo out-of-band (doc/cost-data/ai-review.json) — n
 third-party billing credentials live here.
 
 Usage:
-  python tools/cost_collector.py [--month YYYY-MM] [--doc PATH]
+  python tools/cost_collector.py [--month YYYY-MM] [--doc PATH] [--ai-review PATH]
   python tools/cost_collector.py --print   # print the snapshot, do not write
 """
 from __future__ import annotations
@@ -361,7 +361,8 @@ def _guarded(fetch):
     return {"error": str(exc)}
 
 
-def collect(now=None, month=None, *, github_token=None, billing_token=None):
+def collect(now=None, month=None, *, github_token=None, billing_token=None,
+            ai_review_path=None):
   """Gather every available cost line for the target month into a dict."""
   now = now or datetime.now(timezone.utc)
   year, mon, label = month_window(now, month)
@@ -382,7 +383,7 @@ def collect(now=None, month=None, *, github_token=None, billing_token=None):
   data["billing"] = (
       _guarded(lambda: fetch_org_billing(year, mon, billing_token))
       if billing_token else None)
-  data["ai_review"] = read_ai_review(label)
+  data["ai_review"] = read_ai_review(label, ai_review_path)
   return data
 
 
@@ -391,7 +392,9 @@ def main(argv=None):
       description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
   parser.add_argument("--month", help="target calendar month YYYY-MM (default: current)")
   parser.add_argument("--doc", type=Path, default=DEFAULT_DOC,
-                      help="path to the cost-ledger document")
+                      help="path to the document holding the snapshot block")
+  parser.add_argument("--ai-review", dest="ai_review", type=Path, default=AI_REVIEW_DATA,
+                      help="path to the AI-review data file (ai-review.json)")
   parser.add_argument("--print", dest="print_only", action="store_true",
                       help="print the snapshot instead of writing the document")
   args = parser.parse_args(argv)
@@ -402,7 +405,8 @@ def main(argv=None):
   data = collect(
       month=args.month,
       github_token=os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN"),
-      billing_token=os.environ.get("COST_BILLING_TOKEN"))
+      billing_token=os.environ.get("COST_BILLING_TOKEN"),
+      ai_review_path=args.ai_review)
   snapshot = render_snapshot(data)
 
   if args.print_only:

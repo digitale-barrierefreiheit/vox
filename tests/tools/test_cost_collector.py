@@ -315,7 +315,7 @@ def test_collect_without_credentials(monkeypatch):
     monkeypatch.setattr(cc, "fetch_actions_jobs", lambda y, m, t: [
         {"labels": ["ubuntu-24.04"], "started_at": "2026-06-01T00:00:00Z",
          "completed_at": "2026-06-01T00:01:00Z"}])
-    monkeypatch.setattr(cc, "read_ai_review", lambda label: None)
+    monkeypatch.setattr(cc, "read_ai_review", lambda label, path=None: None)
     data = cc.collect(month="2026-06")
     assert data["sonar_ncloc"] == 13862
     assert data["actions"]["minutes"] == {"Linux": 1}
@@ -327,7 +327,7 @@ def test_collect_with_billing_and_ai_review(monkeypatch):
     monkeypatch.setattr(cc, "fetch_sonar_ncloc", lambda component: 1)
     monkeypatch.setattr(cc, "fetch_actions_jobs", lambda y, m, t: [])
     monkeypatch.setattr(cc, "fetch_org_billing", lambda y, m, t: {"text": "billed"})
-    monkeypatch.setattr(cc, "read_ai_review", lambda label: {"usd": 12.5, "note": "n"})
+    monkeypatch.setattr(cc, "read_ai_review", lambda label, path=None: {"usd": 12.5, "note": "n"})
     data = cc.collect(month="2026-06", billing_token="b")
     assert data["billing"] == {"text": "billed"}
     assert data["ai_review"] == {"usd": 12.5, "note": "n"}

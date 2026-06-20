@@ -1,12 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
-# Record an externally-reported AI code-review cost (e.g. GitHub Copilot) into the
-# cost ledger (doc/cost-ledger.md, issue #76). The maintainer runs a private
-# collector in their own billing context; it sends a `repository_dispatch` of type
-# `ai-review-cost` with client_payload { month: "YYYY-MM", usd: <number>, note? }.
-# This workflow writes that single neutral figure into doc/cost-data/ai-review.json
-# and opens/updates a PR into dev. No billing-account identity, endpoint, or token
-# is stored in this public repo — only the voluntarily disclosed monthly amount.
+# Record an externally-reported AI code-review cost (e.g. GitHub Copilot) into the cost
+# ledger. The maintainer runs a private collector in their own billing context; it sends a
+# `repository_dispatch` of type `ai-review-cost` with client_payload { month: "YYYY-MM",
+# usd: <number>, note? }. This workflow writes that single neutral figure into ai-review.json
+# on the orphan `cost-data` branch (never dev/main, so it triggers no code CI). No billing
+# identity, endpoint, or token is stored in this public repo. See issue #76 / #128.
 name: Cost contribution (AI review)
 
 on:
@@ -15,8 +14,10 @@ on:
 
 permissions: {}
 
+# Share the cost-data writer group with cost-collector.yml so the two can never race on a
+# push to the cost-data branch.
 concurrency:
-  group: cost-contribution
+  group: cost-data-write
   cancel-in-progress: false
 
 jobs:
@@ -24,25 +25,13 @@ jobs:
     name: Record the AI-review contribution
     runs-on: ubuntu-24.04
     permissions:
-      contents: write # push the data branch (never dev directly)
-      pull-requests: write # open or update the PR
+      contents: write # push the cost-data branch (never dev/main)
     steps:
-      - uses: actions/checkout@v6
+      - name: Check out the cost-data branch
+        uses: actions/checkout@v6
         with:
-          ref: dev
+          ref: cost-data
           fetch-depth: 0
-      # Base on the existing contribution branch when it exists so repeated or
-      # back-to-back dispatches (a re-send, or several months) accumulate instead
-      # of overwriting each other's unmerged months.
-      - name: Switch to the contribution branch (additive)
-        run: |
-          branch="chore/cost-ledger-ai-review"
-          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
-            git fetch origin "$branch"
-            git checkout -B "$branch" "origin/$branch"
-          else
-            git checkout -B "$branch"
-          fi
       - uses: actions/github-script@v9
         id: record
         env:
@@ -62,46 +51,36 @@ jobs:
               core.setFailed(`invalid usd amount: ${process.env.USD}`);
               return;
             }
-            const path = 'doc/cost-data/ai-review.json';
+            // ai-review.json lives at the root of the cost-data branch (checked out above).
+            const path = 'ai-review.json';
             const data = JSON.parse(fs.readFileSync(path, 'utf8'));
             data.months = data.months || {};
             const existing = data.months[month] || {};
             const entry = { usd: Math.round(usd * 100) / 100 };
-            // Collapse whitespace to a single line and cap length, so a malformed or
-            // abusive dispatch note cannot inject multi-line/oversized content into the
-            // committed JSON and the public ledger.
+            // Collapse whitespace to a single line and cap length, so a malformed or abusive
+            // dispatch note cannot inject multi-line/oversized content into the committed JSON.
             const note = String(process.env.NOTE || '').replace(/\s+/g, ' ').trim().slice(0, 200);
-            // Keep a previously-recorded note when this dispatch omits one.
-            const keptNote = note || existing.note;
+            const keptNote = note || existing.note; // keep a prior note when this dispatch omits one
             if (keptNote) entry.note = keptNote;
             data.months[month] = entry;
             fs.writeFileSync(path, JSON.stringify(data, null, 2) + '\n');
             core.setOutput('month', month);
             core.info(`recorded ${month}: $${entry.usd}`);
-      - name: Open or update the contribution PR
+      - name: Commit and push to cost-data (no PR, no CI)
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Use the VALIDATED month from the step above (constrained to YYYY-MM), via an
-          # env var — never interpolate the untrusted payload directly into the shell.
+          # Use the VALIDATED month from the step above (constrained to YYYY-MM), never the
+          # untrusted payload interpolated into the shell.
           MONTH: ${{ steps.record.outputs.month }}
         run: |
-          if git diff --quiet -- doc/cost-data/ai-review.json; then
+          if git diff --quiet -- ai-review.json; then
             echo "AI-review contribution unchanged; nothing to do."
             exit 0
           fi
-          month="$MONTH"
-          branch="chore/cost-ledger-ai-review"
           git config user.name "vox cost collector"
           git config user.email "actions@github.com"
-          # Already on "$branch" (the switch step based it on the remote branch when
-          # present); commit additively and push with a lease (never a blind --force).
-          git add doc/cost-data/ai-review.json
-          git commit -m "chore(cost): record AI code-review cost ($month)"
-          git push --force-with-lease origin "$branch"
-          if gh pr view "$branch" --json number >/dev/null 2>&1; then
-            echo "Existing contribution PR updated."
-          else
-            gh pr create --base dev --head "$branch" \
-              --title "chore(cost): record AI code-review cost" \
-              --body "Records the maintainer-contributed AI code-review cost for $month into \`doc/cost-data/ai-review.json\` (reported via repository_dispatch). Review and merge; the cost-collector renders it into the ledger snapshot."
-          fi
+          git add ai-review.json
+          git commit -m "chore(cost): record AI code-review cost ($MONTH)"
+          # Serialized by the concurrency group; rebase defensively in case a collector push
+          # moved the branch between checkout and now, then push.
+          git pull --rebase origin cost-data
+          git push origin cost-data

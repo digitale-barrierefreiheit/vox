@@ -143,6 +143,7 @@ def test_render_snapshot_ai_review_read_error():
     data["ai_review"] = {"error": "boom"}
     text = cc.render_snapshot(data)
     assert "could not read" in text and "boom" in text
+    assert "ai-review.json" in text and "doc/cost-data" not in text  # post-move path
 
 
 def test_render_snapshot_billing_configured():
@@ -411,6 +412,18 @@ def test_main_rejects_escaping_doc(monkeypatch, capsys):
         cc.main(["--doc", "../escape.md", "--month", "2026-06"])
     assert exc.value.code == 2
     assert "escapes the working directory" in capsys.readouterr().err
+
+
+def test_main_rejects_markerless_doc(tmp_path, monkeypatch, capsys):
+    # A --doc with no snapshot markers is a clean argparse error (exit 2), not a traceback.
+    monkeypatch.chdir(tmp_path)
+    doc = tmp_path / "no-markers.md"
+    doc.write_text("nothing here", encoding="utf-8")
+    monkeypatch.setattr(cc, "collect", lambda **kw: _full_data())
+    with pytest.raises(SystemExit) as exc:
+        cc.main(["--doc", str(doc), "--month", "2026-06"])
+    assert exc.value.code == 2
+    assert "markers not found" in capsys.readouterr().err
 
 
 def test_entry_guard_runs_as_main(monkeypatch):

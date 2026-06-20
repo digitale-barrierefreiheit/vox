@@ -83,5 +83,6 @@ jobs:
           git commit -m "chore(cost): refresh cost-ledger snapshot ($COST_MONTH)"
           # Serialized by the concurrency group; rebase defensively in case the branch
           # moved (e.g. a contribution push) between checkout and now, then push.
-          git pull --rebase origin cost-data
-          git push origin cost-data
+          git fetch origin cost-data
+          git rebase origin/cost-data
+          git push origin HEAD:cost-data

@@ -211,7 +211,7 @@ def render_snapshot(data):
   elif "error" in ai:
     out.append(
         f"- **AI code review, e.g. Copilot (factor 9):** could not read "
-        f"`doc/cost-data/ai-review.json` ({ai['error']}).")
+        f"`ai-review.json` ({ai['error']}).")
   else:
     note = f" {ai['note']}" if ai.get("note") else ""
     out.append(
@@ -426,10 +426,11 @@ def main(argv=None):
   else:
     try:
       doc = _safe_path(args.doc)
-    except ValueError as exc:
-      parser.error(str(exc))  # clean exit 2, consistent with --month
-    updated = replace_snapshot(doc.read_text(encoding="utf-8"), snapshot)
-    doc.write_text(updated, encoding="utf-8")
+      updated = replace_snapshot(doc.read_text(encoding="utf-8"), snapshot)
+      doc.write_text(updated, encoding="utf-8")
+    except (OSError, ValueError) as exc:
+      # Bad path, missing markers, or an IO failure -> clean exit 2, like --month.
+      parser.error(str(exc))
     print(f"Updated snapshot in {doc} (month {data['month_label']}).")
 
   # Non-zero exit when the collection produced nothing usable (a CI failure signal).

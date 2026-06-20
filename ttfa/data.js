@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781988347596,
+  "lastUpdate": 1781995361824,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -990,6 +990,35 @@ window.BENCHMARK_DATA = {
           "url": "https://github.com/digitale-barrierefreiheit/vox/commit/6462c80a4173ec2ebb3f2e81d36d20cb129c1cc8"
         },
         "date": 1781988347313,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.7,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "069127e66d2af31333c8179922853b01efd6d4ae",
+          "message": "ci(cost): bootstrap ai-review.json only when missing, not when corrupt (#137)\n\n* ci(cost): bootstrap ai-review.json only when missing, not when corrupt (#137)\n\nThe catch re-initialised the file on ANY read/parse error, so a corrupt/truncated\nai-review.json would be silently overwritten (dropping recorded months). Bootstrap\nonly on ENOENT; otherwise core.setFailed so the workflow fails loudly.\n\n* ci(cost): say 'read/parse' in the failure message (#137)\n\nThe failure also covers a corrupt/unreadable existing file, not just a read error.",
+          "timestamp": "2026-06-21T00:25:21+02:00",
+          "tree_id": "a8f77198c8d7c2220d7ce05812d1a18fad7187ed",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/069127e66d2af31333c8179922853b01efd6d4ae"
+        },
+        "date": 1781995361378,
         "tool": "customSmallerIsBetter",
         "benches": [
           {

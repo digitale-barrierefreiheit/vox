@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781956321752,
+  "lastUpdate": 1781972242540,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -903,6 +903,35 @@ window.BENCHMARK_DATA = {
           "url": "https://github.com/digitale-barrierefreiheit/vox/commit/277be3fdebb674b5b27858efe9ef97086cfe0003"
         },
         "date": 1781956320898,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.7,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a141a6ef76def18766bbe25ca8d86853c43e3509",
+          "message": "ci(cost): clean CLI error for bad --doc; detect a new ai-review.json (#131)\n\n- cost_collector.py: an out-of-bounds --doc now surfaces as a clean argparse error\n  (exit 2) via parser.error, instead of an uncaught _safe_path ValueError traceback —\n  consistent with how --month is handled.\n- cost-contribution.yml / cost-collector.yml: stage the data file first, then guard on\n  `git diff --cached --quiet`, so a newly-created (untracked) file is committed too — the\n  previous `git diff --quiet -- <file>` missed untracked files, letting the \"initialise if\n  absent\" path silently skip the push.\n- 75 tests, 100% coverage.",
+          "timestamp": "2026-06-20T18:00:04+02:00",
+          "tree_id": "ccffa94c0b494f1246cc5b0ab8f6c595009ae32a",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/a141a6ef76def18766bbe25ca8d86853c43e3509"
+        },
+        "date": 1781972241594,
         "tool": "customSmallerIsBetter",
         "benches": [
           {

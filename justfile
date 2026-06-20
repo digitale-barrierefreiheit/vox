@@ -123,15 +123,15 @@ bench:
 bench:
     @echo 'Benchmarks run on Windows (x64-msvc-bench) and Linux (linux-clang-bench); no macOS preset yet.'
 
-# 📊 Refresh the cost-ledger snapshot (doc/cost-ledger.md). Pass --print to preview, --month YYYY-MM to target a month.
+# 📊 Preview the cost-ledger snapshot to stdout. CI refreshes the live copy on the cost-data branch. --month YYYY-MM targets a month.
 [windows]
 cost *args:
-    python tools/cost_collector.py {{args}}
+    python tools/cost_collector.py --print {{args}}
 
-# 📊 Refresh the cost-ledger snapshot (doc/cost-ledger.md). Pass --print to preview, --month YYYY-MM to target a month.
+# 📊 Preview the cost-ledger snapshot to stdout. CI refreshes the live copy on the cost-data branch. --month YYYY-MM targets a month.
 [unix]
 cost *args:
-    python3 tools/cost_collector.py {{args}}
+    python3 tools/cost_collector.py --print {{args}}
 
 # 🧽 Delete the build/ directory.
 clean:

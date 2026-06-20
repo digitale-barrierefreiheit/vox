@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781983951435,
+  "lastUpdate": 1781988347596,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -966,6 +966,35 @@ window.BENCHMARK_DATA = {
           {
             "name": "ttfaPipeline p50",
             "value": 0.9,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6462c80a4173ec2ebb3f2e81d36d20cb129c1cc8",
+          "message": "ci(cost): keep the ai-review.json bootstrap self-describing (#135)\n\nThe missing-file fallback in cost-contribution.yml dropped the 'about' field the\nseeded file carries; include it so a bootstrap keeps the same self-describing shape.",
+          "timestamp": "2026-06-20T22:27:01+02:00",
+          "tree_id": "dd8b4c7ea64457db0a32adcc0154d876e221ba5c",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/6462c80a4173ec2ebb3f2e81d36d20cb129c1cc8"
+        },
+        "date": 1781988347313,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.7,
             "unit": "us"
           }
         ]

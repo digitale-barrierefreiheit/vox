@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781917594415,
+  "lastUpdate": 1781956321752,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -874,6 +874,35 @@ window.BENCHMARK_DATA = {
           "url": "https://github.com/digitale-barrierefreiheit/vox/commit/617943f926225089ddedbff91d9237396ebf0a7c"
         },
         "date": 1781917593554,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.7,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "277be3fdebb674b5b27858efe9ef97086cfe0003",
+          "message": "ci(cost): move auto-refreshed cost data to an orphan cost-data branch (#128)\n\n* ci(cost): move auto-refreshed cost data to an orphan cost-data branch (#128)\n\nThe cost workflows previously opened PRs into dev to commit refreshed data, dragging\nthe full CI / Sonar / benchmark pipeline for what is just data. Mirror the existing\nbenchmark-data and cla-signatures orphan-branch pattern: keep the churning data on an\nindependent branch that code CI never watches.\n\n- New orphan branch `cost-data` holds ai-review.json + snapshot.md (seeded separately).\n- cost-collector.yml / cost-contribution.yml push DIRECTLY to cost-data (no PR), sharing\n  a `cost-data-write` concurrency group so they can never race; pull-requests: write dropped.\n- cost_collector.py gains --ai-review so its input + output (--doc) point at the data-branch\n  checkout (72 tests, 100% coverage retained).\n- doc/cost-ledger.md stays in code as the methodology doc; its live-snapshot block becomes\n  a link to the cost-data branch. doc/cost-data/ai-review.json removed (relocated). The\n  justfile `cost` recipe is now a stdout preview.\n\n* ci(cost): validate CLI paths + tidy defaults (Sonar S8707, Copilot) (#128)\n\n- Add _safe_path() to canonicalize and confine --doc/--ai-review before any file\n  access, clearing SonarCloud pythonsecurity:S8707 (CLI path injection).\n- --doc and --ai-review now default to None: print unless --doc is given (no more\n  \"snapshot markers not found\" when run bare), and skip the AI-review read entirely\n  when no path is given (no spurious \"read error\"). DEFAULT_DOC / AI_REVIEW_DATA\n  constants removed.\n- Refresh the module/read_ai_review docstrings and the factor-9 doc row to point at\n  ai-review.json on the cost-data branch.\n- Tests: chdir into tmp_path for the confinement; cover _safe_path and the default\n  preview path. 74 tests, 100% coverage.\n\n* ci(cost): docstring snapshot-target + grammar; guard missing ai-review.json (#128)",
+          "timestamp": "2026-06-20T13:33:52+02:00",
+          "tree_id": "bfcb8fe3593077276e0e04c1eaab1c25a61a25c1",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/277be3fdebb674b5b27858efe9ef97086cfe0003"
+        },
+        "date": 1781956320898,
         "tool": "customSmallerIsBetter",
         "benches": [
           {

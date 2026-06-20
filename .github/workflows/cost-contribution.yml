@@ -60,7 +60,7 @@ jobs:
               // Only bootstrap a genuinely MISSING file. An existing-but-corrupt/unreadable
               // file must fail loudly, never be silently overwritten (that would drop months).
               if (err.code !== 'ENOENT') {
-                core.setFailed(`could not read ${path}: ${err.message}`);
+                core.setFailed(`could not read/parse ${path}: ${err.message}`);
                 return;
               }
               // Self-describing payload, same shape as the seeded file.

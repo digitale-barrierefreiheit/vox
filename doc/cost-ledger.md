@@ -5,7 +5,8 @@
 > (contributors, sponsors, the association / e.V.) and spot runaway usage early.
 > **Status:** v1 ledger (see [issue #76](https://github.com/digitale-barrierefreiheit/vox/issues/76)).
 > **How it stays current:** the [snapshot](#snapshot) is refreshed by a scheduled collector
-> (`tools/cost_collector.py`, run via `just cost` or the `cost-collector` workflow). Everything
+> (`tools/cost_collector.py`, run by the `cost-collector` workflow; preview locally with
+> `just cost`). Everything
 > else on this page is maintained by hand on the cadence noted below.
 
 Vox consumes resources that cost real money, even though most is currently provided **free or
@@ -116,8 +117,9 @@ Recommended pre-implementation smoke tests are listed in
 ## Refresh cadence
 
 - **Automated lines** (Sonar `ncloc`, Actions minutes, and — once wired — the billing cross-check):
-  refreshed **monthly** by the `cost-collector` workflow (and on demand via `workflow_dispatch` /
-  `just cost`). The **AI-review** line is reported in separately via `repository_dispatch`.
+  refreshed **monthly** by the `cost-collector` workflow (and on demand via `workflow_dispatch`;
+  preview locally with `just cost`). The **AI-review** line is reported in separately via
+  `repository_dispatch`.
 - **Manual lines** (rate tables, Claude price table, CodeScene): reviewed **quarterly** or when a
   vendor changes prices; re-stamp the date.
 - **Developer time:** accrues per merged PR (opt-in), read back from issue comments.

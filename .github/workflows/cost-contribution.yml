@@ -90,5 +90,6 @@ jobs:
           git commit -m "chore(cost): record AI code-review cost ($MONTH)"
           # Serialized by the concurrency group; rebase defensively in case a collector push
           # moved the branch between checkout and now, then push.
-          git pull --rebase origin cost-data
-          git push origin cost-data
+          git fetch origin cost-data
+          git rebase origin/cost-data
+          git push origin HEAD:cost-data

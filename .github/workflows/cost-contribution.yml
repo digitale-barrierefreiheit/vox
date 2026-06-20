@@ -53,7 +53,13 @@ jobs:
             }
             // ai-review.json lives at the root of the cost-data branch (checked out above).
             const path = 'ai-review.json';
-            const data = JSON.parse(fs.readFileSync(path, 'utf8'));
+            let data;
+            try {
+              data = JSON.parse(fs.readFileSync(path, 'utf8'));
+            } catch {
+              // Initialise if the data file is somehow absent on the cost-data branch.
+              data = { schema: 1, currency: 'USD', months: {} };
+            }
             data.months = data.months || {};
             const existing = data.months[month] || {};
             const entry = { usd: Math.round(usd * 100) / 100 };

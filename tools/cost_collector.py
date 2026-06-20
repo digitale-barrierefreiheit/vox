@@ -4,11 +4,12 @@
 """Collect the facts that drive Vox's running costs into the cost-ledger snapshot.
 
 See doc/cost-ledger.md and issue #76 for the methodology. This refreshes the
-marker-bounded "snapshot" block of that document. SonarCloud ncloc is auth-free;
+marker-bounded "snapshot" block of the --doc file (the cost-data branch's
+snapshot.md in CI). SonarCloud ncloc is auth-free;
 the GitHub Actions minutes line needs a GitHub token (GITHUB_TOKEN / GH_TOKEN,
 provided automatically in CI). The org-billing cross-check needs a provisioned
 secret, otherwise recording "not configured (prerequisite)". The AI code-review
-cost is reported in out-of-band (ai-review.json on the cost-data branch) — no
+cost is reported out-of-band (ai-review.json on the cost-data branch) — no
 third-party billing credentials live here.
 
 Usage:

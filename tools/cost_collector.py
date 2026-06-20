@@ -424,7 +424,10 @@ def main(argv=None):
   if args.print_only or args.doc is None:
     print(snapshot)
   else:
-    doc = _safe_path(args.doc)
+    try:
+      doc = _safe_path(args.doc)
+    except ValueError as exc:
+      parser.error(str(exc))  # clean exit 2, consistent with --month
     updated = replace_snapshot(doc.read_text(encoding="utf-8"), snapshot)
     doc.write_text(updated, encoding="utf-8")
     print(f"Updated snapshot in {doc} (month {data['month_label']}).")

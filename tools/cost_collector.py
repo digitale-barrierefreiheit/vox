@@ -177,6 +177,54 @@ def _line_or_prereq(out, label, value, prereq):
     out.append(f"- **{label}:** {value['text']}")
 
 
+def _ai_review_block(data, out):
+  """Append the factor-9 (AI code review, e.g. Copilot) line."""
+  ai = data.get("ai_review")
+  if ai is None:
+    out.append(
+        "- **AI code review, e.g. Copilot (factor 9):** not yet reported for "
+        f"{data['month_label']} — contributed by the maintainer and reported into this ledger "
+        "out-of-band (see [Credentials & prerequisites](#credentials--prerequisites)).")
+  elif "error" in ai:
+    out.append(
+        f"- **AI code review, e.g. Copilot (factor 9):** could not read "
+        f"`ai-review.json` ({ai['error']}).")
+  else:
+    note = f" {ai['note']}" if ai.get("note") else ""
+    out.append(
+        f"- **AI code review, e.g. Copilot (factor 9):** {_fmt_usd(ai['usd'])} for "
+        f"{data['month_label']} — voluntarily disclosed by the maintainer; GitHub exposes no "
+        f"per-repository attribution.{note}")
+
+
+def _claude_block(data, out):
+  """Append the factor-4 (Claude Code tokens) line.
+
+  Shows the figure as month-to-date for the still-open month (the rendered month
+  equals the generation month) and as a settled figure once the month has closed.
+  """
+  claude = data.get("claude")
+  if claude is None:
+    out.append(
+        "- **Claude Code tokens (factor 4):** not yet reported for "
+        f"{data['month_label']} — fed in out-of-band by the maintainer (`ccusage` over the "
+        "vox project; see [Credentials & prerequisites](#credentials--prerequisites)).")
+  elif "error" in claude:
+    out.append(
+        "- **Claude Code tokens (factor 4):** could not read "
+        f"`claude.json` ({claude['error']}).")
+  else:
+    # generated[:7] is the current calendar month; when the rendered month equals it the
+    # figure is still a running month-to-date total rather than a settled monthly close.
+    partial = " (month-to-date)" if data["month_label"] == data["generated"][:7] else ""
+    updated = f", updated {claude['updated']}" if claude.get("updated") else ""
+    note = f" {claude['note']}" if claude.get("note") else ""
+    out.append(
+        f"- **Claude Code tokens (factor 4):** {_fmt_usd(claude['usd'])} for "
+        f"{data['month_label']}{partial}{updated} — voluntarily disclosed by the maintainer; "
+        f"Claude Code stores sessions per project, so this is attributable to vox.{note}")
+
+
 def render_snapshot(data):
   """Render the full marker-bounded snapshot block from collected data."""
   out = [SNAPSHOT_START, ""]
@@ -203,44 +251,10 @@ def render_snapshot(data):
       "see [Credentials & prerequisites](#credentials--prerequisites)")
 
   out.append("")
-  ai = data.get("ai_review")
-  if ai is None:
-    out.append(
-        "- **AI code review, e.g. Copilot (factor 9):** not yet reported for "
-        f"{data['month_label']} — contributed by the maintainer and reported into this ledger "
-        "out-of-band (see [Credentials & prerequisites](#credentials--prerequisites)).")
-  elif "error" in ai:
-    out.append(
-        f"- **AI code review, e.g. Copilot (factor 9):** could not read "
-        f"`ai-review.json` ({ai['error']}).")
-  else:
-    note = f" {ai['note']}" if ai.get("note") else ""
-    out.append(
-        f"- **AI code review, e.g. Copilot (factor 9):** {_fmt_usd(ai['usd'])} for "
-        f"{data['month_label']} — voluntarily disclosed by the maintainer; GitHub exposes no "
-        f"per-repository attribution.{note}")
+  _ai_review_block(data, out)
 
   out.append("")
-  claude = data.get("claude")
-  if claude is None:
-    out.append(
-        "- **Claude Code tokens (factor 4):** not yet reported for "
-        f"{data['month_label']} — fed in out-of-band by the maintainer (`ccusage` over the "
-        "vox project; see [Credentials & prerequisites](#credentials--prerequisites)).")
-  elif "error" in claude:
-    out.append(
-        "- **Claude Code tokens (factor 4):** could not read "
-        f"`claude.json` ({claude['error']}).")
-  else:
-    # generated[:7] is the current calendar month; when the rendered month equals it the
-    # figure is still a running month-to-date total rather than a settled monthly close.
-    partial = " (month-to-date)" if data["month_label"] == data["generated"][:7] else ""
-    updated = f", updated {claude['updated']}" if claude.get("updated") else ""
-    note = f" {claude['note']}" if claude.get("note") else ""
-    out.append(
-        f"- **Claude Code tokens (factor 4):** {_fmt_usd(claude['usd'])} for "
-        f"{data['month_label']}{partial}{updated} — voluntarily disclosed by the maintainer; "
-        f"Claude Code stores sessions per project, so this is attributable to vox.{note}")
+  _claude_block(data, out)
 
   out.append("")
   out.append(

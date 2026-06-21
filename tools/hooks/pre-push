@@ -15,7 +15,7 @@
 #
 # Verify without pushing:   sh tools/hooks/pre-push --dry-run
 # Tune the project match:   VOX_CCUSAGE_PROJECT=vox          (substring of the ccusage project key)
-# Pin the ccusage version:  VOX_CCUSAGE_SPEC=ccusage@latest  (default: pinned, see below)
+# Override ccusage version: VOX_CCUSAGE_SPEC=ccusage@latest  (default is pinned; @latest floats)
 # Override the repo:        VOX_COST_REPO=digitale-barrierefreiheit/vox
 #
 # git invokes this as `pre-push <remote> <url>` with refs on stdin; we ignore both.
@@ -68,7 +68,8 @@ compute_usd() {
 report() {
   command -v npx  >/dev/null 2>&1 || return 0
   command -v node >/dev/null 2>&1 || return 0
-  command -v gh   >/dev/null 2>&1 || return 0
+  # gh is only needed to actually dispatch; --dry-run just prints, so don't require it there.
+  [ "$DRY_RUN" = "1" ] || command -v gh >/dev/null 2>&1 || return 0
 
   usd="$(compute_usd)"
   [ -n "${usd:-}" ] || return 0          # no usage yet this month, or ccusage/parse failed

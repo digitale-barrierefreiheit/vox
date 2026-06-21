@@ -136,7 +136,7 @@ cost *args:
 # 🪝 Install the opt-in git hooks (pre-push: reports Claude-token month-to-date cost). Verify with `sh tools/hooks/pre-push --dry-run`.
 [windows]
 install-hooks:
-    Copy-Item "{{root_native}}\tools\hooks\pre-push" "{{root_native}}\.git\hooks\pre-push" -Force; Write-Host "Installed .git/hooks/pre-push (Claude-cost reporter). Verify (no push): sh tools/hooks/pre-push --dry-run"
+    Copy-Item "{{root_native}}\tools\hooks\pre-push" "{{root_native}}\.git\hooks\pre-push" -Force -ErrorAction Stop; Write-Host "Installed .git/hooks/pre-push (Claude-cost reporter). Verify (no push): sh tools/hooks/pre-push --dry-run"
 
 # 🪝 Install the opt-in git hooks (pre-push: reports Claude-token month-to-date cost). Verify with `sh tools/hooks/pre-push --dry-run`.
 [unix]

@@ -12,6 +12,12 @@ on:
   schedule:
     - cron: '17 6 1 * *' # 06:17 UTC on the 1st of each month
   workflow_dispatch:
+    inputs:
+      month:
+        description: 'Target month YYYY-MM. Blank = last complete month (the scheduled default). Set it to preview the current, still-open month or to backfill a past one.'
+        required: false
+        type: string
+        default: ''
 
 permissions: {}
 
@@ -57,10 +63,22 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COST_BILLING_TOKEN: ${{ steps.app_token.outputs.token || secrets.COST_BILLING_TOKEN }}
+          # Read the dispatch input via env (never interpolate ${{ }} into the shell) so a
+          # crafted value can't inject commands. Empty for scheduled runs.
+          INPUT_MONTH: ${{ github.event.inputs.month }}
         run: |
-          # Compute the target month once and persist it so the commit step below reuses the
-          # exact value (a manual run across a UTC month boundary can't drift).
-          month="$(date -u -d 'last month' +%Y-%m)"
+          # Pick the target month: an explicit dispatch input (preview/backfill) wins, else
+          # close out the last complete calendar month. Validate the shape here so a typo fails
+          # fast — before any push to cost-data — even though the collector also checks --month.
+          # Compute once and persist so the commit step reuses the exact value (a manual run
+          # across a UTC month boundary can't drift).
+          month="$INPUT_MONTH"
+          if [ -z "$month" ]; then
+            month="$(date -u -d 'last month' +%Y-%m)"
+          elif ! printf '%s' "$month" | grep -Eq '^[0-9]{4}-(0[1-9]|1[0-2])$'; then
+            echo "::error::month input must be YYYY-MM with a 01-12 month, got '$month'"
+            exit 1
+          fi
           echo "COST_MONTH=$month" >> "$GITHUB_ENV"
           python3 tools/cost_collector.py --month "$month" \
             --doc cost-data/snapshot.md --ai-review cost-data/ai-review.json

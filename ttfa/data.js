@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782016864290,
+  "lastUpdate": 1782086062030,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -1111,6 +1111,35 @@ window.BENCHMARK_DATA = {
           {
             "name": "ttfaPipeline p50",
             "value": 0.7,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e0ade7e503c989b65d3aa329aafcabc73e28b430",
+          "message": "feat(cost): opt-in pre-push hook to auto-report Claude tokens (factor 4) (#144)\n\n* feat(cost): opt-in pre-push hook to auto-report Claude tokens (factor 4)\n\nCompletes the factor-4 channel: a best-effort, NON-BLOCKING pre-push hook reports\nthis machine's vox month-to-date Claude cost on every push, so the figure stays\nfresh without a manual monthly step.\n\n- tools/hooks/pre-push: runs `ccusage daily --json --instances`, sums the vox\n  project's current-month cost (defensive node parser: handles totalCost/costUSD,\n  filters by month + a \"vox\" project-key substring), and fires the `claude-cost`\n  repository_dispatch. Detached + always exits 0 (never blocks/fails a push);\n  skips silently without gh/npx/node. `--dry-run` prints what it would send.\n- just install-hooks: copies it into .git/hooks (PowerShell + sh variants).\n- docs: flip the factor-4 row, credentials row, and cadence note to describe the\n  hook as wired (just install-hooks), with the manual gh-api dispatch as the\n  equivalent and `sh tools/hooks/pre-push --dry-run` to verify.\n\nThe receiver (cost-contribution.yml) already upserts the month and no-ops on\nunchanged values, so the per-push cadence is cheap.\n\nCloses #142\n\n* fix(cost): address Copilot review on the pre-push hook (#144)\n\n- pre-push: the env assignment was on the npx side of the pipe, so the node\n  parser never saw VOX_COST_MONTH/VOX_CCUSAGE_PROJECT and skipped month\n  filtering. Move the prefix to the node side.\n- tests: add tests/tools/test_ccusage_hook_parser.py — extracts the inline node\n  parser from the hook and runs it under node against fixtures (month + project\n  filtering, totalCost/costUSD/cost fallbacks, empty/malformed). Skips where node\n  is absent. Kept inline (not a standalone .js) to avoid a Sonar new-code JS\n  coverage gap; the test exercises the real runtime script.\n- doc: factor-4 row now names the actual command (ccusage daily --json --instances).\n- justfile: use 'sh tools/hooks/pre-push --dry-run' consistently.\n\n* fix(cost): pin-able ccusage spec + complete the doc dispatch reference (#144)\n\n- pre-push: add VOX_CCUSAGE_SPEC (default ccusage@latest) so a maintainer can lock\n  to a known-good ccusage if its JSON shape changes.\n- doc: the factor-4 row pointed at an incomplete 'gh api … -f event_type' example;\n  reference the full dispatches command in Credentials & prerequisites instead.\n\nAddresses Copilot review on #144.\n\n* fix(cost): exclude dateless rows from month filter + pin ccusage default (#144)\n\n- pre-push parser: with a month set, require a matching date — a row with a\n  missing/empty date is now treated as non-matching (never summed into the wrong\n  month). Regression test added.\n- pre-push: default VOX_CCUSAGE_SPEC to a pinned ccusage@20.0.14 (reproducible /\n  supply-chain-safe — npx won't fetch fresh unreviewed code each push); set\n  VOX_CCUSAGE_SPEC=ccusage@latest to float, bump deliberately after --dry-run.\n\nAddresses Copilot review on #144.\n\n* fix(cost): dry-run without gh, honest pin wording, fail-stop install (#144)\n\n- pre-push: --dry-run no longer requires gh (it only prints); gh is required only\n  when actually dispatching.\n- pre-push: header no longer labels ccusage@latest as a 'pin' (it floats) — it is\n  now an override of the pinned default.\n- justfile (windows): Copy-Item -ErrorAction Stop so a failed hook copy stops the\n  recipe instead of printing a misleading 'Installed' message.\n\nAddresses Copilot review on #144.\n\n* fix(cost): robust dry-run detection, drain git stdin, 4-space test indent (#144)\n\n- pre-push: enable --dry-run only on the explicit one-arg manual form; git always\n  passes <remote> <url>, so a remote named --dry-run can no longer disable dispatch.\n- pre-push: drain the ref list git streams on stdin (when not a TTY) before exit,\n  so backgrounding the work can't trigger a broken-pipe on the push.\n- tests: re-indent test_ccusage_hook_parser.py to 4 spaces to match the sibling\n  Python tests.\n\nAddresses Copilot review on #144.\n\n* fix(cost): robust hook install path + version-agnostic doc (#144)\n\n- justfile (both shells): install via `git rev-parse --git-path hooks` instead of\n  hardcoding .git/hooks, so install honours core.hooksPath and works in git\n  worktrees (where .git is a file). Verified the resolved path on Windows.\n- doc: the factor-4 row no longer pins @latest in the example (the hook pins a\n  known-good version; override with VOX_CCUSAGE_SPEC).\n\nAddresses Copilot review on #144.",
+          "timestamp": "2026-06-22T01:38:18+02:00",
+          "tree_id": "1ca8f44ef1f12abcb841b69e18decb31a72f1f75",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/e0ade7e503c989b65d3aa329aafcabc73e28b430"
+        },
+        "date": 1782086061696,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.6,
             "unit": "us"
           }
         ]

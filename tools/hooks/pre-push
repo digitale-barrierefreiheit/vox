@@ -14,7 +14,8 @@
 #   * It skips silently when gh (authenticated), npx, or node is unavailable, or offline.
 #
 # Verify without pushing:   sh tools/hooks/pre-push --dry-run
-# Tune the project match:   VOX_CCUSAGE_PROJECT=vox   (substring of the ccusage project key)
+# Tune the project match:   VOX_CCUSAGE_PROJECT=vox          (substring of the ccusage project key)
+# Pin the ccusage version:  VOX_CCUSAGE_SPEC=ccusage@15.0.0  (default: ccusage@latest)
 # Override the repo:        VOX_COST_REPO=digitale-barrierefreiheit/vox
 #
 # git invokes this as `pre-push <remote> <url>` with refs on stdin; we ignore both.
@@ -23,6 +24,8 @@ REPO="${VOX_COST_REPO:-digitale-barrierefreiheit/vox}"
 # ccusage keys projects by a slug derived from the path; vox's is c--…-vox, so a "vox"
 # substring match is enough and survives a different checkout location.
 PROJECT_MATCH="${VOX_CCUSAGE_PROJECT:-vox}"
+# Pin to a known-good ccusage when its JSON shape changes under you; @latest by default.
+CCUSAGE_SPEC="${VOX_CCUSAGE_SPEC:-ccusage@latest}"
 MONTH="$(date -u +%Y-%m)"
 
 DRY_RUN=0
@@ -34,7 +37,7 @@ DRY_RUN=0
 compute_usd() {
   # The env assignment must sit on the `node` side of the pipe — a prefix applies only to the
   # command it precedes — so the parser actually sees VOX_COST_MONTH / VOX_CCUSAGE_PROJECT.
-  npx --yes ccusage@latest daily --json --instances 2>/dev/null \
+  npx --yes "$CCUSAGE_SPEC" daily --json --instances 2>/dev/null \
     | VOX_COST_MONTH="$MONTH" VOX_CCUSAGE_PROJECT="$PROJECT_MATCH" node -e '
       let s = "";
       process.stdin.on("data", d => s += d);

@@ -70,7 +70,7 @@ gap/(verify). Auth verdicts come from live probes unless flagged **(verify)**.
 | 1 | GitHub Actions minutes (primary, **imputed list price**) | `GET /repos/{owner}/{repo}/actions/runs` + `.../runs/{run_id}/jobs`; per job `ceil((completed_at−started_at)/60s)`, bucket OS from labels, × per-OS list $/min | repo / `public_repo`; **plain `GITHUB_TOKEN` works** | per-job → per-month | **Yes** | `billable.*` is always 0 on public-repo standard runners; `run_duration_ms` is wall-clock. Imputed list price; actually billed $0. **Linux + Windows only**. |
 | 2 | Actions list rates / OS multipliers | Manual, date-stamped: <https://docs.github.com/en/billing/reference/actions-runner-pricing> | none | point-in-time | Partial | See rate table above. Legacy 2×/10× no longer exact **(verify)**. |
 | 3 | Actions per-repo $ (**billing cross-check**) | `GET /organizations/{org}/settings/billing/usage?year=&month=` (enhanced billing platform — `/organizations/{org}`, **not** `/orgs/{org}`; both verified to return 200); filter `repositoryName=='vox'`, read `grossAmount`/`netAmount`/`quantity` per SKU | **Org Administration: read** — GitHub App installation token (recommended) or fine-grained PAT; **org owner** to grant; billing-manager **not** sufficient | per-day / per-repo / per-SKU | **Yes**, with org-admin-granted identity | Classic `/orgs/{org}/settings/billing/actions` is **410 Gone**. **(verify)** an App installation token returns 200 on this path (not minted live). |
-| 4 | Claude Code tokens + $ estimate | Parse `~/.claude/projects/<p>/<session>.jsonl` `usage.*`; or `npx ccusage@latest --json`; `/usage`. **Window: trailing 30 days.** | local FS | per-message → session/day | **Yes** | JSONL `input_tokens` undercounted ~100× **(verify)**; output & cache accurate; JSONL auto-deleted after 30 d. |
+| 4 | Claude Code tokens + $ estimate (**maintainer-contributed**) | Collected locally with `npx ccusage@latest --json` over the **vox project** (`~/.claude/projects/<p>/<session>.jsonl` `usage.*`); reported in as a **month-to-date** total via a `repository_dispatch` (type `claude-cost`) → `claude.json` on the orphan `cost-data` branch. Today via a manual `gh api … -f event_type=claude-cost` dispatch; an opt-in `pre-push` hook to fire it on every push is tracked in [#142](https://github.com/digitale-barrierefreiheit/vox/issues/142). **Window: trailing 30 days.** | **none in this repo** (local `ccusage`; no billing creds stored here) | per-message → month-to-date | **Yes** (reported in) | Claude stores sessions **per project**, so unlike Copilot this is **vox-attributable**. JSONL `input_tokens` undercounted ~100× **(verify)**; output & cache accurate; JSONL auto-deleted after 30 d. |
 | 5 | Claude price table | Manual, date-stamped: <https://claude.com/pricing> | none | point-in-time | Partial | cache-create ≈25 % / cache-read ≈10 % of input **(verify per model)**. |
 | 6 | SonarCloud LOC (billing metric) | `GET https://sonarcloud.io/api/measures/component?component=vox&metricKeys=ncloc` | **none (public)** | latest analysis, per-branch | **Yes** | Record "as read on <date>". Public repo = 0 paid LOC; private free ceiling 50k; brackets **(verify)**. |
 | 7 | CodeScene (billing driver = active authors) | `GET https://api.codescene.io/v2/projects/81008` → `analysis.authors.active` | Bearer PAT (Admin / Architect / RestApi) | latest analysis | **Yes**, with token | 401 anon; bills per active author (last 3 mo); OSS free **(confirm eligibility)**; €18 / €27 per author/mo **(verify)**. |
@@ -85,19 +85,21 @@ Each item is either resolved (with date) or annotated `(unverified — subject t
 
 - [ ] App **installation**-token returns 200 on `GET /organizations/digitale-barrierefreiheit/settings/billing/usage` (docs + prior art support it; not minted live).
 - [ ] The AI-review contribution channel (a private collector → `repository_dispatch` `ai-review-cost` → `ai-review.json`) is wired and produces a monthly figure.
+- [ ] The Claude-token contribution channel (`repository_dispatch` `claude-cost` → `claude.json`, rendered month-to-date) produces a monthly figure; the opt-in `pre-push` hook that auto-fires it is tracked in #142.
 - [ ] Claude JSONL `input_tokens` ~100× undercount; cache-create ≈25 % / cache-read ≈10 % of input price, per model.
 - [ ] SonarCloud paid-LOC brackets / 2026 gradual scaling; CodeScene OSS-free eligibility and Standard €18 / Pro €27 per-author/mo rates.
 - [ ] Legacy Actions 2×/10× OS multipliers no longer exact under the 2026-01-01 per-OS $/min rates.
 - [ ] Dev-time heuristic: `150 LOC/h` divisor, `[0.25h, 8h]` clamp, generated-path exclusion globs (`vcpkg_installed`, `dist`, `*.lock`, `node_modules`) — tune after a few PRs.
 - [ ] Actions Linux figure — confirm against a live billing-usage probe (only the Windows row was probed live: 12,716 min / $127.16 gross for 2026-06).
-- [ ] Whether CI can reach a Claude session export for the token pull, or whether that factor stays a documented local/manual feed.
+- [x] Whether CI can reach a Claude session export for the token pull — *resolved: fed in from the maintainer's machine via the `claude-cost` channel (`ccusage` over the vox project), the same out-of-band pattern as factor 9; CI never reads `~/.claude` directly.*
 
 ## Snapshot
 
 The live snapshot is refreshed monthly on the orphan **[`cost-data`](https://github.com/digitale-barrierefreiheit/vox/tree/cost-data)** branch — kept independent of `dev`/`main` so a refresh never triggers the build / test / Sonar / benchmark pipelines (the same pattern as the `benchmark-data` and `cla-signatures` branches):
 
-- **[`snapshot.md`](https://github.com/digitale-barrierefreiheit/vox/blob/cost-data/snapshot.md)** — the aggregated cost lines (Sonar `ncloc`, Actions minutes, billing cross-check, AI review), regenerated by `tools/cost_collector.py`. The billing cross-check shows *"not configured (prerequisite)"* until its secret is wired; the AI-review line shows *"not yet reported"* until a figure is reported in.
+- **[`snapshot.md`](https://github.com/digitale-barrierefreiheit/vox/blob/cost-data/snapshot.md)** — the aggregated cost lines (Sonar `ncloc`, Actions minutes, billing cross-check, AI review, Claude tokens), regenerated by `tools/cost_collector.py`. The billing cross-check shows *"not configured (prerequisite)"* until its secret is wired; the AI-review and Claude lines show *"not yet reported"* until a figure is reported in (the Claude line then reads *month-to-date* for the still-open month).
 - **[`ai-review.json`](https://github.com/digitale-barrierefreiheit/vox/blob/cost-data/ai-review.json)** — the raw monthly AI-review figure, fed in via `repository_dispatch` (see [Credentials & prerequisites](#credentials--prerequisites)).
+- **[`claude.json`](https://github.com/digitale-barrierefreiheit/vox/blob/cost-data/claude.json)** — the raw monthly Claude-token figure (with an `updated` date), fed in via `repository_dispatch` (see [Credentials & prerequisites](#credentials--prerequisites)).
 
 ## Credentials & prerequisites
 
@@ -110,6 +112,7 @@ the maintainer runs in their own billing context — this repo holds **no** cred
 |------|----------|------------------|-----------|
 | Org Actions billing cross-check (factor 3) | **Primary:** the `cost-collector` workflow mints a short-lived installation token from an **org-owned GitHub App** (Organization → **Administration: read**) via `actions/create-github-app-token` and uses it for the billing read. **Fallback:** a fine-grained PAT in `COST_BILLING_TOKEN`. With neither, this line shows *"not configured (prerequisite)"*. | Org owner: create a GitHub App with **Administration: read**, install it on the org, then set repo variable `COST_APP_CLIENT_ID` + secret `COST_APP_PRIVATE_KEY`. *(Or set `COST_BILLING_TOKEN` to a fine-grained PAT with Administration: read.)* | var `COST_APP_CLIENT_ID` + secret `COST_APP_PRIVATE_KEY` *(or `COST_BILLING_TOKEN`)* |
 | AI code review (factor 9) | A **private collector** the maintainer runs in their own billing context. This public repo stores no billing identity, endpoint, or token — only the disclosed monthly figure. | Maintainer: wire the private collector to POST a `repository_dispatch` (type `ai-review-cost`, payload `{ month, usd, note? }`); `cost-contribution.yml` records it into `ai-review.json` on the orphan `cost-data` branch. | none here (the sender holds its own token) |
+| Claude Code tokens (factor 4) | The maintainer's **local machine** (`ccusage` over the vox project). This public repo stores no billing identity or token — only the disclosed month-to-date figure. | Maintainer: fire a `repository_dispatch` (type `claude-cost`, payload `{ month, usd, note? }`) — today via `gh api repos/digitale-barrierefreiheit/vox/dispatches -f event_type=claude-cost -f 'client_payload[month]=YYYY-MM' -f 'client_payload[usd]=12.34'`; `cost-contribution.yml` upserts it into `claude.json` on the orphan `cost-data` branch. An opt-in `pre-push` hook to automate this on every push is tracked in [#142](https://github.com/digitale-barrierefreiheit/vox/issues/142). | none here (the sender uses the maintainer's own `gh` auth) |
 
 Recommended pre-implementation smoke tests are listed in
 [issue #76](https://github.com/digitale-barrierefreiheit/vox/issues/76).
@@ -118,8 +121,9 @@ Recommended pre-implementation smoke tests are listed in
 
 - **Automated lines** (Sonar `ncloc`, Actions minutes, and — once wired — the billing cross-check):
   refreshed **monthly** by the `cost-collector` workflow (and on demand via `workflow_dispatch`;
-  preview locally with `just cost`). The **AI-review** line is reported in separately via
-  `repository_dispatch`.
+  preview locally with `just cost`). The **AI-review** and **Claude-token** lines are reported in
+  separately via `repository_dispatch` (the Claude line as a month-to-date running total; an opt-in
+  `pre-push` hook to fire it on every push is tracked in #142).
 - **Manual lines** (rate tables, Claude price table, CodeScene): reviewed **quarterly** or when a
   vendor changes prices; re-stamp the date.
 - **Developer time:** accrues per merged PR (opt-in), read back from issue comments.

@@ -138,10 +138,10 @@ cost *args:
 install-hooks:
     Copy-Item "{{root_native}}\tools\hooks\pre-push" "{{root_native}}\.git\hooks\pre-push" -Force; Write-Host "Installed .git/hooks/pre-push (Claude-cost reporter). Verify (no push): sh tools/hooks/pre-push --dry-run"
 
-# 🪝 Install the opt-in git hooks (pre-push: reports Claude-token month-to-date cost). Verify with `tools/hooks/pre-push --dry-run`.
+# 🪝 Install the opt-in git hooks (pre-push: reports Claude-token month-to-date cost). Verify with `sh tools/hooks/pre-push --dry-run`.
 [unix]
 install-hooks:
-    cp "{{root}}/tools/hooks/pre-push" "{{root}}/.git/hooks/pre-push" && chmod +x "{{root}}/.git/hooks/pre-push" && echo "Installed .git/hooks/pre-push (Claude-cost reporter). Verify (no push): tools/hooks/pre-push --dry-run"
+    cp "{{root}}/tools/hooks/pre-push" "{{root}}/.git/hooks/pre-push" && chmod +x "{{root}}/.git/hooks/pre-push" && echo "Installed .git/hooks/pre-push (Claude-cost reporter). Verify (no push): sh tools/hooks/pre-push --dry-run"
 
 # 🧽 Delete the build/ directory.
 clean:

@@ -32,8 +32,10 @@ DRY_RUN=0
 # Defensive: ccusage's field names vary by version/command (totalCost vs costUSD), and the
 # --instances output groups by a "projects" object; a parse miss prints nothing (we skip).
 compute_usd() {
-  VOX_COST_MONTH="$MONTH" VOX_CCUSAGE_PROJECT="$PROJECT_MATCH" \
-    npx --yes ccusage@latest daily --json --instances 2>/dev/null | node -e '
+  # The env assignment must sit on the `node` side of the pipe — a prefix applies only to the
+  # command it precedes — so the parser actually sees VOX_COST_MONTH / VOX_CCUSAGE_PROJECT.
+  npx --yes ccusage@latest daily --json --instances 2>/dev/null \
+    | VOX_COST_MONTH="$MONTH" VOX_CCUSAGE_PROJECT="$PROJECT_MATCH" node -e '
       let s = "";
       process.stdin.on("data", d => s += d);
       process.stdin.on("end", () => {

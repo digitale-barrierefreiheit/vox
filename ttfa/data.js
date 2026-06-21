@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781996816305,
+  "lastUpdate": 1782002200000,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -1048,6 +1048,35 @@ window.BENCHMARK_DATA = {
           "url": "https://github.com/digitale-barrierefreiheit/vox/commit/ba6000448279929502924835b44ba682e3877f24"
         },
         "date": 1781996815555,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.6,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "cbe9bf4e94065c82df9e21b9e2b23dbc10dc7164",
+          "message": "feat(cost): add optional month input to the cost-collector dispatch (#141)\n\nThe collector always closed out the last complete calendar month, so there was\nno way to preview the current (still-open) month or backfill a past one. Add an\noptional `month` (YYYY-MM) input to workflow_dispatch: blank — and every\nscheduled run — keeps the last-complete-month default; a value renders that\nmonth instead.\n\nThe input is read via an env var (never interpolated into the shell) and its\nshape is validated in the step, so a typo fails fast before any push to the\ncost-data branch. The collector's own --month check remains the second guard.\n\nCloses #140",
+          "timestamp": "2026-06-21T02:14:52+02:00",
+          "tree_id": "27adc9dfc1b3a10bc54ae3eefbf4581b34255668",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/cbe9bf4e94065c82df9e21b9e2b23dbc10dc7164"
+        },
+        "date": 1782002199450,
         "tool": "customSmallerIsBetter",
         "benches": [
           {

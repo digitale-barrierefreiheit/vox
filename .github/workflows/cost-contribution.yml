@@ -56,8 +56,9 @@ jobs:
             }
             // The dispatch type selects which feed file to write. Each lives at the root of the
             // cost-data branch (checked out above) and shares the record/commit/push logic below.
-            // `stampUpdated` marks running month-to-date feeds (Claude) so the snapshot can show
-            // "month-to-date, updated YYYY-MM-DD"; one-shot monthly feeds (Copilot) omit it.
+            // `stampUpdated` marks running feeds (Claude) so the snapshot can show the
+            // "updated YYYY-MM-DD" as-of date alongside the figure; one-shot monthly feeds
+            // (Copilot) omit it. (The "month-to-date" label itself is render-derived, not from this.)
             const FEEDS = {
               'ai-review-cost': {
                 file: 'ai-review.json',

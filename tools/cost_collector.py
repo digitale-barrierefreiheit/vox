@@ -415,8 +415,9 @@ def read_claude(month_label, path):
   Claude Code stores session transcripts per project, so this figure is
   attributable to vox specifically (unlike Copilot). It is typically a
   month-to-date running total refreshed often (e.g. from a pre-push hook running
-  `ccusage`); the 'updated' field lets the snapshot show it as month-to-date for
-  the still-open month rather than a settled total.
+  `ccusage`); the 'updated' field carries the as-of date shown alongside the
+  figure. Whether the line is labelled month-to-date or settled is decided in
+  render (rendered month vs generation month), not by 'updated'.
   """
   return _read_monthly_feed(path, month_label, fields=("note", "updated"))
 

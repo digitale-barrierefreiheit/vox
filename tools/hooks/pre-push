@@ -15,7 +15,7 @@
 #
 # Verify without pushing:   sh tools/hooks/pre-push --dry-run
 # Tune the project match:   VOX_CCUSAGE_PROJECT=vox          (substring of the ccusage project key)
-# Pin the ccusage version:  VOX_CCUSAGE_SPEC=ccusage@15.0.0  (default: ccusage@latest)
+# Pin the ccusage version:  VOX_CCUSAGE_SPEC=ccusage@latest  (default: pinned, see below)
 # Override the repo:        VOX_COST_REPO=digitale-barrierefreiheit/vox
 #
 # git invokes this as `pre-push <remote> <url>` with refs on stdin; we ignore both.
@@ -24,8 +24,10 @@ REPO="${VOX_COST_REPO:-digitale-barrierefreiheit/vox}"
 # ccusage keys projects by a slug derived from the path; vox's is c--…-vox, so a "vox"
 # substring match is enough and survives a different checkout location.
 PROJECT_MATCH="${VOX_CCUSAGE_PROJECT:-vox}"
-# Pin to a known-good ccusage when its JSON shape changes under you; @latest by default.
-CCUSAGE_SPEC="${VOX_CCUSAGE_SPEC:-ccusage@latest}"
+# Pinned by default for reproducibility / supply-chain safety — `npx` won't pull a fresh,
+# unreviewed ccusage on every push. Bump deliberately after verifying with --dry-run, or set
+# VOX_CCUSAGE_SPEC=ccusage@latest to float.
+CCUSAGE_SPEC="${VOX_CCUSAGE_SPEC:-ccusage@20.0.14}"
 MONTH="$(date -u +%Y-%m)"
 
 DRY_RUN=0
@@ -51,7 +53,9 @@ compute_usd() {
           for (const key of Object.keys(projects)) {
             if (!key.toLowerCase().includes(want)) continue;
             for (const row of (projects[key] || [])) {
-              if (month && row.date && !String(row.date).startsWith(month)) continue;
+              // With a month set, require a matching date — a missing/empty date is treated as
+              // non-matching so a dateless row can never be counted into the wrong month.
+              if (month && !(row.date && String(row.date).startsWith(month))) continue;
               total += Number(row.totalCost ?? row.costUSD ?? row.cost ?? 0) || 0;
             }
           }

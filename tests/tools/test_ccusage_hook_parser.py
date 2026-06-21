@@ -73,6 +73,16 @@ def test_project_match_is_configurable():
   assert _run(payload, project="vox") == ""  # no key contains "vox"
 
 
+def test_dateless_row_excluded_when_month_set():
+  # A row without a usable date must not be counted into the target month.
+  payload = {"projects": {"vox": [
+      {"date": "2026-06-01", "totalCost": 1.00},
+      {"totalCost": 99.00},  # no date -> excluded
+      {"date": "", "totalCost": 88.00},  # empty date -> excluded
+  ]}}
+  assert _run(payload) == "1.00"
+
+
 def test_empty_and_malformed_print_nothing():
   assert _run({}) == ""  # no projects
   assert _run({"projects": {"vox": [{"date": "2026-06-01", "totalCost": 0}]}}) == ""  # zero

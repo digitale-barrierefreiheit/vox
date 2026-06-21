@@ -49,9 +49,12 @@ jobs:
               core.setFailed(`invalid month (expected YYYY-MM, 01-12): ${month}`);
               return;
             }
-            const usd = Number(process.env.USD);
-            if (!Number.isFinite(usd) || usd < 0) {
-              core.setFailed(`invalid usd amount: ${process.env.USD}`);
+            // Number('') === 0, so reject an empty/missing amount explicitly — otherwise a
+            // malformed dispatch (no usd) would silently record a $0.00 month.
+            const usdRaw = String(process.env.USD || '').trim();
+            const usd = Number(usdRaw);
+            if (usdRaw === '' || !Number.isFinite(usd) || usd < 0) {
+              core.setFailed(`invalid usd amount: ${usdRaw || '(empty)'}`);
               return;
             }
             // The dispatch type selects which feed file to write. Each lives at the root of the

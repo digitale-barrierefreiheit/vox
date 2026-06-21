@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782002200000,
+  "lastUpdate": 1782016864290,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -1082,6 +1082,35 @@ window.BENCHMARK_DATA = {
           {
             "name": "ttfaPipeline p50",
             "value": 0.6,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "19c97a7ea384f7518bdb14075fef2de501211e33",
+          "message": "feat(cost): automated Claude-token (factor 4) reporting channel (#143)\n\n* feat(cost): automated Claude-token (factor 4) reporting channel\n\nMake factor 4 self-updating instead of a manual monthly step, mirroring the\nproven factor-9 (Copilot) channel.\n\n- cost_collector.py: add `--claude` (claude.json). A shared `_read_monthly_feed`\n  backs both `read_ai_review` and the new `read_claude` (which also carries an\n  `updated` date). The factor-4 line is now data-driven: it renders the figure\n  as \"month-to-date, updated YYYY-MM-DD\" for the still-open month and a settled\n  figure once the month has closed, or \"not yet reported\" until one arrives.\n- cost-contribution.yml: handle a second dispatch type `claude-cost`, selected\n  via a small FEEDS map, writing claude.json (upsert; stamps `updated`). The\n  factor-9 path is unchanged. Commit step parameterised by the feed file/noun.\n- cost-collector.yml: pass `--claude cost-data/claude.json`.\n- doc/cost-ledger.md: document the channel, the per-project (vox-attributable)\n  collection, and the credentials row.\n\nThe payload is a month-to-date running total; the receiver overwrites the month\n(latest wins) and the no-op guard skips unchanged values, so frequent partial\nreports are cheap. claude.json is seeded on the cost-data branch. 100% line\ncoverage on the collector retained (267 stmts).\n\nPart of #142\n\n* refactor(cost): extract AI-review/Claude line helpers (clear CodeScene Bumpy Road)\n\n* fix(cost): address Copilot review on the claude-cost channel\n\n- Only advance claude.json 'updated' when usd/note actually change, so an\n  identical re-dispatch stays a true no-op (no cost-data churn under the\n  high-frequency pre-push trigger).\n- Fail loudly when a feed file's 'months' is present but not an object, instead\n  of silently coercing it and dropping existing months.\n- doc: factor-4 window is calendar month-to-date (the ~30-day figure is local\n  JSONL retention, not the reporting window).\n\n* fix(cost): harden _read_monthly_feed against malformed JSON shapes\n\nValid JSON of the wrong shape (top-level array, or 'months' present but not an\nobject) used to raise AttributeError from .get() and abort the whole collector,\ncontradicting the dict|None|error contract. Now returns an {'error': ...} marker\nfor those, with a regression test. Also reconcile the Methodology section: the\nClaude window is calendar month-to-date (the ~30-day limit is local transcript\nretention, not the reporting window).\n\nAddresses Copilot review on #143.\n\n* fix(cost): validate top-level feed JSON is an object before writing\n\nMirror the reader hardening on the writer side: a corrupt top-level (valid JSON,\nbut an array/scalar) now fails loudly instead of having data.months set as a\nproperty JSON.stringify would silently drop (data loss).\n\nAddresses Copilot review on #143.\n\n* docs(cost): clarify that the month-to-date label is render-derived, not from 'updated'\n\nThe read_claude docstring and the cost-contribution.yml comment implied the\n'updated' field drives the month-to-date vs settled rendering; it does not — that\nis decided by rendered-month vs generation-month. 'updated' is the displayed\nas-of date only. Comment/docstring-only.\n\nAddresses Copilot review on #143.\n\n* fix(cost): reject empty/missing usd in a dispatch (Number('') === 0)\n\nA dispatch with no usd had Number('') coerce to 0, silently recording a $0.00\nmonth instead of failing. Validate the trimmed raw value is non-empty before\nparsing, and show it in the error. Closes the input-validation class (month is\nalready guarded by its regex).\n\nAddresses Copilot review on #143.",
+          "timestamp": "2026-06-21T06:23:24+02:00",
+          "tree_id": "0ff56f0e0a7aa6b86058e00f2c384462adb7d6ac",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/19c97a7ea384f7518bdb14075fef2de501211e33"
+        },
+        "date": 1782016863449,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.7,
             "unit": "us"
           }
         ]

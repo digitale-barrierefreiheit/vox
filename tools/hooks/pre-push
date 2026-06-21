@@ -30,8 +30,10 @@ PROJECT_MATCH="${VOX_CCUSAGE_PROJECT:-vox}"
 CCUSAGE_SPEC="${VOX_CCUSAGE_SPEC:-ccusage@20.0.14}"
 MONTH="$(date -u +%Y-%m)"
 
+# Only the explicit one-arg manual form enables dry-run. Git always invokes the hook with two
+# args (<remote> <url>), so a remote that happens to be named --dry-run can't disable dispatch.
 DRY_RUN=0
-[ "${1:-}" = "--dry-run" ] && DRY_RUN=1
+[ "$#" -eq 1 ] && [ "${1:-}" = "--dry-run" ] && DRY_RUN=1
 
 # Sum the vox project's daily costUSD for the current month from `ccusage --json`.
 # Defensive: ccusage's field names vary by version/command (totalCost vs costUSD), and the
@@ -94,4 +96,7 @@ if [ "$DRY_RUN" = "1" ]; then
 else
   ( report ) </dev/null >/dev/null 2>&1 & # detach so the push returns immediately
 fi
+# Drain the ref list git streams on stdin (only when it's a pipe, not a manual TTY run), so
+# exiting before git finishes writing can't raise a broken-pipe error on the push.
+[ -t 0 ] || cat >/dev/null 2>&1
 exit 0

@@ -91,6 +91,12 @@ jobs:
               // Self-describing payload, same shape as the seeded file.
               data = { schema: 1, currency: 'USD', about: feed.about, months: {} };
             }
+            if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+              // A corrupt top-level (valid JSON, but an array/scalar) must fail loudly. Writing
+              // data.months onto it would set a property JSON.stringify drops — silent data loss.
+              core.setFailed(`${path}: top-level JSON is not an object`);
+              return;
+            }
             if (data.months !== undefined &&
                 (typeof data.months !== 'object' || data.months === null || Array.isArray(data.months))) {
               // A corrupt months map must fail loudly, never be silently coerced away — that would

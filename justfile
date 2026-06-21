@@ -136,12 +136,12 @@ cost *args:
 # 🪝 Install the opt-in git hooks (pre-push: reports Claude-token month-to-date cost). Verify with `sh tools/hooks/pre-push --dry-run`.
 [windows]
 install-hooks:
-    Copy-Item "{{root_native}}\tools\hooks\pre-push" "{{root_native}}\.git\hooks\pre-push" -Force -ErrorAction Stop; Write-Host "Installed .git/hooks/pre-push (Claude-cost reporter). Verify (no push): sh tools/hooks/pre-push --dry-run"
+    $h = (git rev-parse --git-path hooks); New-Item -ItemType Directory -Force -Path $h | Out-Null; Copy-Item "{{root_native}}\tools\hooks\pre-push" (Join-Path $h "pre-push") -Force -ErrorAction Stop; Write-Host "Installed $h/pre-push (Claude-cost reporter). Verify (no push): sh tools/hooks/pre-push --dry-run"
 
 # 🪝 Install the opt-in git hooks (pre-push: reports Claude-token month-to-date cost). Verify with `sh tools/hooks/pre-push --dry-run`.
 [unix]
 install-hooks:
-    cp "{{root}}/tools/hooks/pre-push" "{{root}}/.git/hooks/pre-push" && chmod +x "{{root}}/.git/hooks/pre-push" && echo "Installed .git/hooks/pre-push (Claude-cost reporter). Verify (no push): sh tools/hooks/pre-push --dry-run"
+    h="$(git rev-parse --git-path hooks)" && mkdir -p "$h" && cp "{{root}}/tools/hooks/pre-push" "$h/pre-push" && chmod +x "$h/pre-push" && echo "Installed $h/pre-push (Claude-cost reporter). Verify (no push): sh tools/hooks/pre-push --dry-run"
 
 # 🧽 Delete the build/ directory.
 clean:

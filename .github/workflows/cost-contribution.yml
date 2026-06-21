@@ -91,6 +91,13 @@ jobs:
               // Self-describing payload, same shape as the seeded file.
               data = { schema: 1, currency: 'USD', about: feed.about, months: {} };
             }
+            if (data.months !== undefined &&
+                (typeof data.months !== 'object' || data.months === null || Array.isArray(data.months))) {
+              // A corrupt months map must fail loudly, never be silently coerced away — that would
+              // drop existing months while still committing a malformed file.
+              core.setFailed(`${path}: "months" is present but is not an object`);
+              return;
+            }
             data.months = data.months || {};
             const existing = data.months[month] || {};
             const entry = { usd: Math.round(usd * 100) / 100 };
@@ -99,8 +106,15 @@ jobs:
             const note = String(process.env.NOTE || '').replace(/\s+/g, ' ').trim().slice(0, 200);
             const keptNote = note || existing.note; // keep a prior note when this dispatch omits one
             if (keptNote) entry.note = keptNote;
-            // Stamp the UTC date for running totals so the reader can label it month-to-date.
-            if (feed.stampUpdated) entry.updated = new Date().toISOString().slice(0, 10);
+            if (feed.stampUpdated) {
+              // Only advance the timestamp when the figure or note actually changed (or was never
+              // stamped), so an identical re-dispatch stays a TRUE no-op — no churn on cost-data
+              // even under the high-frequency pre-push trigger.
+              const changed = existing.usd !== entry.usd || (existing.note || '') !== (entry.note || '');
+              entry.updated = (changed || !existing.updated)
+                ? new Date().toISOString().slice(0, 10)
+                : existing.updated;
+            }
             data.months[month] = entry;
             fs.writeFileSync(path, JSON.stringify(data, null, 2) + '\n');
             core.setOutput('month', month);

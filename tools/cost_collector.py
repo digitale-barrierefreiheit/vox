@@ -383,7 +383,16 @@ def _read_monthly_feed(path, month_label, fields=("note",)):
     payload = json.loads(_safe_path(path).read_text(encoding="utf-8"))
   except (OSError, ValueError) as exc:
     return {"error": str(exc)}  # file missing/unreadable or malformed JSON
-  entry = (payload.get("months") or {}).get(month_label)
+  # Valid JSON of the wrong shape must yield an error marker, never raise and abort the
+  # whole collector (a corrupt/hand-edited feed file is the likely cause).
+  if not isinstance(payload, dict):
+    return {"error": f"{path}: top-level JSON is not an object"}
+  months = payload.get("months")
+  if months is None:
+    return None  # nothing reported yet
+  if not isinstance(months, dict):
+    return {"error": f'{path}: "months" is not an object'}
+  entry = months.get(month_label)
   if not isinstance(entry, dict):
     return None  # no figure reported for this month yet
   usd = entry.get("usd")

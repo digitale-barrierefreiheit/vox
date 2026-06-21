@@ -365,6 +365,22 @@ def test_read_claude_signals_read_errors(tmp_path, monkeypatch):
     assert "error" in cc.read_claude("2026-06", "../escape.json")  # traversal rejected
 
 
+def test_read_monthly_feed_rejects_bad_shapes(tmp_path, monkeypatch):
+    # Syntactically-valid but structurally-wrong JSON must be an {'error': ...} marker,
+    # never an exception that aborts the whole collector (contract: dict | None | error).
+    monkeypatch.chdir(tmp_path)
+    arr = tmp_path / "arr.json"
+    arr.write_text("[1, 2, 3]", encoding="utf-8")  # top-level is not an object
+    assert "error" in cc.read_ai_review("2026-06", arr)
+    bad_months = tmp_path / "bad-months.json"
+    bad_months.write_text('{"months": "nope"}', encoding="utf-8")  # months not an object
+    assert "error" in cc.read_claude("2026-06", bad_months)
+    # A document with no "months" key is "nothing reported yet" (None), not an error.
+    no_months = tmp_path / "no-months.json"
+    no_months.write_text('{"schema": 1}', encoding="utf-8")
+    assert cc.read_ai_review("2026-06", no_months) is None
+
+
 def test_safe_path_confines(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     inside = cc._safe_path("sub/data.json")

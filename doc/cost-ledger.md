@@ -28,10 +28,12 @@ the headline figure is an **imputed list price** (what it *would* cost) shown ne
   unconfirmed against the live source and must be re-checked before they are relied upon.
 - **Currency.** GitHub bills in **USD**; SonarCloud and CodeScene list in **EUR**. v1 does **not**
   convert between them (no FX assumption); each line is shown in its vendor's currency.
-- **Collection windows differ, deliberately.** GitHub Actions minutes and the GitHub billing
-  cross-check are aggregated **per calendar month** (the billing API is month-bucketed). Claude
-  Code tokens are aggregated over the **trailing 30 days**, because the local session transcripts
-  are auto-deleted after 30 days. The snapshot states the window for each line.
+- **Calendar-month aggregation.** GitHub Actions minutes and the GitHub billing cross-check are
+  aggregated **per calendar month** (the billing API is month-bucketed). Claude Code tokens are
+  likewise reported **per calendar month** — *month-to-date* for the still-open month, settling
+  once it closes. The one caveat is a *source* limit, not a different window: the local session
+  transcripts that feed the Claude figure are auto-deleted after ~30 days, so it must be collected
+  before that retention rolls off. The snapshot states the window for each line.
 - **The collector itself costs a little.** The `cost-collector` workflow consumes a few Linux
   runner-minutes per run; that cost is itself captured in the Actions line.
 

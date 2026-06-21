@@ -1,0 +1,102 @@
+#!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
+#
+# Vox pre-push hook — best-effort, NON-BLOCKING report of this machine's Claude Code
+# month-to-date token cost for the vox project into the cost ledger (factor 4).
+#
+# It fires a `repository_dispatch` (type claude-cost) that cost-contribution.yml records,
+# upsert, into claude.json on the orphan cost-data branch. Only a single neutral USD figure
+# leaves the machine — no identity, no tokens. Opt in with `just install-hooks`.
+#
+# Hard guarantees:
+#   * It NEVER blocks or fails a push — the work runs detached and the hook always exits 0.
+#   * It skips silently when gh (authenticated), npx, or node is unavailable, or offline.
+#
+# Verify without pushing:   sh tools/hooks/pre-push --dry-run
+# Tune the project match:   VOX_CCUSAGE_PROJECT=vox          (substring of the ccusage project key)
+# Override ccusage version: VOX_CCUSAGE_SPEC=ccusage@latest  (default is pinned; @latest floats)
+# Override the repo:        VOX_COST_REPO=digitale-barrierefreiheit/vox
+#
+# git invokes this as `pre-push <remote> <url>` with refs on stdin; we ignore both.
+
+REPO="${VOX_COST_REPO:-digitale-barrierefreiheit/vox}"
+# ccusage keys projects by a slug derived from the path; vox's is c--…-vox, so a "vox"
+# substring match is enough and survives a different checkout location.
+PROJECT_MATCH="${VOX_CCUSAGE_PROJECT:-vox}"
+# Pinned by default for reproducibility / supply-chain safety — `npx` won't pull a fresh,
+# unreviewed ccusage on every push. Bump deliberately after verifying with --dry-run, or set
+# VOX_CCUSAGE_SPEC=ccusage@latest to float.
+CCUSAGE_SPEC="${VOX_CCUSAGE_SPEC:-ccusage@20.0.14}"
+MONTH="$(date -u +%Y-%m)"
+
+# Only the explicit one-arg manual form enables dry-run. Git always invokes the hook with two
+# args (<remote> <url>), so a remote that happens to be named --dry-run can't disable dispatch.
+DRY_RUN=0
+[ "$#" -eq 1 ] && [ "${1:-}" = "--dry-run" ] && DRY_RUN=1
+
+# Sum the vox project's daily costUSD for the current month from `ccusage --json`.
+# Defensive: ccusage's field names vary by version/command (totalCost vs costUSD), and the
+# --instances output groups by a "projects" object; a parse miss prints nothing (we skip).
+compute_usd() {
+  # The env assignment must sit on the `node` side of the pipe — a prefix applies only to the
+  # command it precedes — so the parser actually sees VOX_COST_MONTH / VOX_CCUSAGE_PROJECT.
+  npx --yes "$CCUSAGE_SPEC" daily --json --instances 2>/dev/null \
+    | VOX_COST_MONTH="$MONTH" VOX_CCUSAGE_PROJECT="$PROJECT_MATCH" node -e '
+      let s = "";
+      process.stdin.on("data", d => s += d);
+      process.stdin.on("end", () => {
+        try {
+          const j = JSON.parse(s);
+          const month = process.env.VOX_COST_MONTH || "";
+          const want = (process.env.VOX_CCUSAGE_PROJECT || "vox").toLowerCase();
+          const projects = j.projects || {};
+          let total = 0;
+          for (const key of Object.keys(projects)) {
+            if (!key.toLowerCase().includes(want)) continue;
+            for (const row of (projects[key] || [])) {
+              // With a month set, require a matching date — a missing/empty date is treated as
+              // non-matching so a dateless row can never be counted into the wrong month.
+              if (month && !(row.date && String(row.date).startsWith(month))) continue;
+              total += Number(row.totalCost ?? row.costUSD ?? row.cost ?? 0) || 0;
+            }
+          }
+          if (total > 0) process.stdout.write((Math.round(total * 100) / 100).toFixed(2));
+        } catch (e) { /* best-effort: print nothing on any parse/shape error */ }
+      });
+    ' 2>/dev/null
+}
+
+report() {
+  command -v npx  >/dev/null 2>&1 || return 0
+  command -v node >/dev/null 2>&1 || return 0
+  # gh is only needed to actually dispatch; --dry-run just prints, so don't require it there.
+  [ "$DRY_RUN" = "1" ] || command -v gh >/dev/null 2>&1 || return 0
+
+  usd="$(compute_usd)"
+  [ -n "${usd:-}" ] || return 0          # no usage yet this month, or ccusage/parse failed
+  case "$usd" in 0|0.0|0.00) return 0 ;; esac
+
+  if [ "$DRY_RUN" = "1" ]; then
+    echo "[pre-push] would dispatch claude-cost: month=$MONTH usd=$usd repo=$REPO"
+    return 0
+  fi
+  # The workflow validates month/usd again and overwrites the month (latest wins), so a
+  # repeated identical figure is a no-op there. Failures here are swallowed — never block.
+  gh api "repos/$REPO/dispatches" \
+    -f "event_type=claude-cost" \
+    -f "client_payload[month]=$MONTH" \
+    -f "client_payload[usd]=$usd" \
+    -f "client_payload[note]=ccusage month-to-date (vox project), pre-push hook" \
+    >/dev/null 2>&1 || true
+}
+
+if [ "$DRY_RUN" = "1" ]; then
+  report                                  # synchronous: print what it would do
+else
+  ( report ) </dev/null >/dev/null 2>&1 & # detach so the push returns immediately
+fi
+# Drain the ref list git streams on stdin (only when it's a pipe, not a manual TTY run), so
+# exiting before git finishes writing can't raise a broken-pipe error on the push.
+[ -t 0 ] || cat >/dev/null 2>&1
+exit 0

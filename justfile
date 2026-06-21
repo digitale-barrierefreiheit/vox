@@ -133,6 +133,16 @@ cost *args:
 cost *args:
     python3 tools/cost_collector.py --print {{args}}
 
+# 🪝 Install the opt-in git hooks (pre-push: reports Claude-token month-to-date cost). Verify with `sh tools/hooks/pre-push --dry-run`.
+[windows]
+install-hooks:
+    $h = (git rev-parse --git-path hooks); New-Item -ItemType Directory -Force -Path $h | Out-Null; Copy-Item "{{root_native}}\tools\hooks\pre-push" (Join-Path $h "pre-push") -Force -ErrorAction Stop; Write-Host "Installed $h/pre-push (Claude-cost reporter). Verify (no push): sh tools/hooks/pre-push --dry-run"
+
+# 🪝 Install the opt-in git hooks (pre-push: reports Claude-token month-to-date cost). Verify with `sh tools/hooks/pre-push --dry-run`.
+[unix]
+install-hooks:
+    h="$(git rev-parse --git-path hooks)" && mkdir -p "$h" && cp "{{root}}/tools/hooks/pre-push" "$h/pre-push" && chmod +x "$h/pre-push" && echo "Installed $h/pre-push (Claude-cost reporter). Verify (no push): sh tools/hooks/pre-push --dry-run"
+
 # 🧽 Delete the build/ directory.
 clean:
     cmake -E rm -rf "{{root}}/build"

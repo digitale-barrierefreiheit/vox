@@ -4,8 +4,8 @@
 # share this workflow, selected by the `repository_dispatch` type:
 #   - `ai-review-cost`  -> ai-review.json  (AI code review, e.g. GitHub Copilot)
 #   - `claude-cost`     -> claude.json     (Claude Code tokens; a month-to-date running total,
-#                                           sent from the maintainer's machine — a manual `gh api`
-#                                           dispatch today, an opt-in pre-push hook later, see #142)
+#                                           sent from the maintainer's machine — the opt-in pre-push
+#                                           hook (`just install-hooks`), or a manual `gh api` dispatch)
 # Each carries client_payload { month: "YYYY-MM", usd: <number>, note? }. The figure is written
 # to its data file on the orphan `cost-data` branch (never dev/main, so it triggers no code CI).
 # No billing identity, endpoint, or token is stored in this public repo. See issue #76 / #128 / #142.

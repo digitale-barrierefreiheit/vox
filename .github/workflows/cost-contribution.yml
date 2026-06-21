@@ -1,16 +1,19 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: 2026 Digitale Barrierefreiheit e.V. and the Vox contributors
-# Record an externally-reported AI code-review cost (e.g. GitHub Copilot) into the cost
-# ledger. The maintainer runs a private collector in their own billing context; it sends a
-# `repository_dispatch` of type `ai-review-cost` with client_payload { month: "YYYY-MM",
-# usd: <number>, note? }. This workflow writes that single neutral figure into ai-review.json
-# on the orphan `cost-data` branch (never dev/main, so it triggers no code CI). No billing
-# identity, endpoint, or token is stored in this public repo. See issue #76 / #128.
-name: Cost contribution (AI review)
+# Record an externally-reported, maintainer-disclosed cost into the cost ledger. Two feeds
+# share this workflow, selected by the `repository_dispatch` type:
+#   - `ai-review-cost`  -> ai-review.json  (AI code review, e.g. GitHub Copilot)
+#   - `claude-cost`     -> claude.json     (Claude Code tokens; a month-to-date running total,
+#                                           sent from the maintainer's machine — a manual `gh api`
+#                                           dispatch today, an opt-in pre-push hook later, see #142)
+# Each carries client_payload { month: "YYYY-MM", usd: <number>, note? }. The figure is written
+# to its data file on the orphan `cost-data` branch (never dev/main, so it triggers no code CI).
+# No billing identity, endpoint, or token is stored in this public repo. See issue #76 / #128 / #142.
+name: Cost contribution
 
 on:
   repository_dispatch:
-    types: [ai-review-cost]
+    types: [ai-review-cost, claude-cost]
 
 permissions: {}
 
@@ -22,7 +25,7 @@ concurrency:
 
 jobs:
   record:
-    name: Record the AI-review contribution
+    name: Record the cost contribution
     runs-on: ubuntu-24.04
     permissions:
       contents: write # push the cost-data branch (never dev/main)
@@ -46,13 +49,39 @@ jobs:
               core.setFailed(`invalid month (expected YYYY-MM, 01-12): ${month}`);
               return;
             }
-            const usd = Number(process.env.USD);
-            if (!Number.isFinite(usd) || usd < 0) {
-              core.setFailed(`invalid usd amount: ${process.env.USD}`);
+            // Number('') === 0, so reject an empty/missing amount explicitly — otherwise a
+            // malformed dispatch (no usd) would silently record a $0.00 month.
+            const usdRaw = String(process.env.USD || '').trim();
+            const usd = Number(usdRaw);
+            if (usdRaw === '' || !Number.isFinite(usd) || usd < 0) {
+              core.setFailed(`invalid usd amount: ${usdRaw || '(empty)'}`);
               return;
             }
-            // ai-review.json lives at the root of the cost-data branch (checked out above).
-            const path = 'ai-review.json';
+            // The dispatch type selects which feed file to write. Each lives at the root of the
+            // cost-data branch (checked out above) and shares the record/commit/push logic below.
+            // `stampUpdated` marks running feeds (Claude) so the snapshot can show the
+            // "updated YYYY-MM-DD" as-of date alongside the figure; one-shot monthly feeds
+            // (Copilot) omit it. (The "month-to-date" label itself is render-derived, not from this.)
+            const FEEDS = {
+              'ai-review-cost': {
+                file: 'ai-review.json',
+                noun: 'AI code-review',
+                stampUpdated: false,
+                about: "Monthly AI code-review cost (e.g. GitHub Copilot) voluntarily contributed by the maintainer for vox. Reported out-of-band via a repository_dispatch (type 'ai-review-cost') from the maintainer's separate billing context; no billing-account identity or mechanism is stored here. GitHub exposes no per-repository attribution, so figures are a good-faith monthly disclosure. tools/cost_collector.py reads this into the cost-ledger snapshot. Lives on the orphan cost-data branch so refreshes never trigger code CI.",
+              },
+              'claude-cost': {
+                file: 'claude.json',
+                noun: 'Claude token',
+                stampUpdated: true,
+                about: "Monthly Claude Code token cost (the AI assistant that writes vox's code) voluntarily disclosed by the maintainer. Reported out-of-band via a repository_dispatch (type 'claude-cost') — typically from a pre-push git hook running ccusage over the vox project — as a running month-to-date total; the 'updated' date marks the last refresh. Claude Code stores sessions per project, so unlike Copilot this is attributable to vox specifically. No billing-account identity is stored here. tools/cost_collector.py reads this into the cost-ledger snapshot. Lives on the orphan cost-data branch so refreshes never trigger code CI.",
+              },
+            };
+            const feed = FEEDS[context.payload.action];
+            if (!feed) {
+              core.setFailed(`unexpected dispatch type: ${context.payload.action}`);
+              return;
+            }
+            const path = feed.file;
             let data;
             try {
               data = JSON.parse(fs.readFileSync(path, 'utf8'));
@@ -64,12 +93,20 @@ jobs:
                 return;
               }
               // Self-describing payload, same shape as the seeded file.
-              data = {
-                schema: 1,
-                currency: 'USD',
-                about: "Monthly AI code-review cost (e.g. GitHub Copilot) voluntarily contributed by the maintainer for vox. Reported out-of-band via a repository_dispatch (type 'ai-review-cost') from the maintainer's separate billing context; no billing-account identity or mechanism is stored here. GitHub exposes no per-repository attribution, so figures are a good-faith monthly disclosure. tools/cost_collector.py reads this into the cost-ledger snapshot. Lives on the orphan cost-data branch so refreshes never trigger code CI.",
-                months: {},
-              };
+              data = { schema: 1, currency: 'USD', about: feed.about, months: {} };
+            }
+            if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+              // A corrupt top-level (valid JSON, but an array/scalar) must fail loudly. Writing
+              // data.months onto it would set a property JSON.stringify drops — silent data loss.
+              core.setFailed(`${path}: top-level JSON is not an object`);
+              return;
+            }
+            if (data.months !== undefined &&
+                (typeof data.months !== 'object' || data.months === null || Array.isArray(data.months))) {
+              // A corrupt months map must fail loudly, never be silently coerced away — that would
+              // drop existing months while still committing a malformed file.
+              core.setFailed(`${path}: "months" is present but is not an object`);
+              return;
             }
             data.months = data.months || {};
             const existing = data.months[month] || {};
@@ -79,26 +116,40 @@ jobs:
             const note = String(process.env.NOTE || '').replace(/\s+/g, ' ').trim().slice(0, 200);
             const keptNote = note || existing.note; // keep a prior note when this dispatch omits one
             if (keptNote) entry.note = keptNote;
+            if (feed.stampUpdated) {
+              // Only advance the timestamp when the figure or note actually changed (or was never
+              // stamped), so an identical re-dispatch stays a TRUE no-op — no churn on cost-data
+              // even under the high-frequency pre-push trigger.
+              const changed = existing.usd !== entry.usd || (existing.note || '') !== (entry.note || '');
+              entry.updated = (changed || !existing.updated)
+                ? new Date().toISOString().slice(0, 10)
+                : existing.updated;
+            }
             data.months[month] = entry;
             fs.writeFileSync(path, JSON.stringify(data, null, 2) + '\n');
             core.setOutput('month', month);
-            core.info(`recorded ${month}: $${entry.usd}`);
+            core.setOutput('file', feed.file);
+            core.setOutput('noun', feed.noun);
+            core.info(`recorded ${feed.noun} cost ${month}: $${entry.usd}`);
       - name: Commit and push to cost-data (no PR, no CI)
         env:
-          # Use the VALIDATED month from the step above (constrained to YYYY-MM), never the
-          # untrusted payload interpolated into the shell.
+          # Use the VALIDATED outputs from the step above (month constrained to YYYY-MM; file
+          # and noun are fixed strings from the FEEDS map), never the untrusted payload
+          # interpolated into the shell.
           MONTH: ${{ steps.record.outputs.month }}
+          FILE: ${{ steps.record.outputs.file }}
+          NOUN: ${{ steps.record.outputs.noun }}
         run: |
           git config user.name "vox cost collector"
           git config user.email "actions@github.com"
           # Stage first so the guard also detects a newly-created (untracked) file, not
           # just a modification to a tracked one.
-          git add ai-review.json
+          git add "$FILE"
           if git diff --cached --quiet; then
-            echo "AI-review contribution unchanged; nothing to do."
+            echo "$NOUN contribution unchanged; nothing to do."
             exit 0
           fi
-          git commit -m "chore(cost): record AI code-review cost ($MONTH)"
+          git commit -m "chore(cost): record $NOUN cost ($MONTH)"
           # Serialized by the concurrency group; rebase defensively in case a collector push
           # moved the branch between checkout and now, then push.
           git fetch origin cost-data

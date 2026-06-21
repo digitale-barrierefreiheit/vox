@@ -9,11 +9,12 @@ snapshot.md in CI). SonarCloud ncloc is auth-free;
 the GitHub Actions minutes line needs a GitHub token (GITHUB_TOKEN / GH_TOKEN,
 provided automatically in CI). The org-billing cross-check needs a provisioned
 secret, otherwise recording "not configured (prerequisite)". The AI code-review
-cost is reported out-of-band (ai-review.json on the cost-data branch) — no
-third-party billing credentials live here.
+and Claude-token costs are reported out-of-band (ai-review.json / claude.json on
+the cost-data branch) — no third-party billing credentials live here.
 
 Usage:
-  python tools/cost_collector.py [--month YYYY-MM] [--doc PATH] [--ai-review PATH]
+  python tools/cost_collector.py [--month YYYY-MM] [--doc PATH] \
+      [--ai-review PATH] [--claude PATH]
   python tools/cost_collector.py --print   # print the snapshot, do not write
 """
 from __future__ import annotations
@@ -176,6 +177,54 @@ def _line_or_prereq(out, label, value, prereq):
     out.append(f"- **{label}:** {value['text']}")
 
 
+def _ai_review_block(data, out):
+  """Append the factor-9 (AI code review, e.g. Copilot) line."""
+  ai = data.get("ai_review")
+  if ai is None:
+    out.append(
+        "- **AI code review, e.g. Copilot (factor 9):** not yet reported for "
+        f"{data['month_label']} — contributed by the maintainer and reported into this ledger "
+        "out-of-band (see [Credentials & prerequisites](#credentials--prerequisites)).")
+  elif "error" in ai:
+    out.append(
+        f"- **AI code review, e.g. Copilot (factor 9):** could not read "
+        f"`ai-review.json` ({ai['error']}).")
+  else:
+    note = f" {ai['note']}" if ai.get("note") else ""
+    out.append(
+        f"- **AI code review, e.g. Copilot (factor 9):** {_fmt_usd(ai['usd'])} for "
+        f"{data['month_label']} — voluntarily disclosed by the maintainer; GitHub exposes no "
+        f"per-repository attribution.{note}")
+
+
+def _claude_block(data, out):
+  """Append the factor-4 (Claude Code tokens) line.
+
+  Shows the figure as month-to-date for the still-open month (the rendered month
+  equals the generation month) and as a settled figure once the month has closed.
+  """
+  claude = data.get("claude")
+  if claude is None:
+    out.append(
+        "- **Claude Code tokens (factor 4):** not yet reported for "
+        f"{data['month_label']} — fed in out-of-band by the maintainer (`ccusage` over the "
+        "vox project; see [Credentials & prerequisites](#credentials--prerequisites)).")
+  elif "error" in claude:
+    out.append(
+        "- **Claude Code tokens (factor 4):** could not read "
+        f"`claude.json` ({claude['error']}).")
+  else:
+    # generated[:7] is the current calendar month; when the rendered month equals it the
+    # figure is still a running month-to-date total rather than a settled monthly close.
+    partial = " (month-to-date)" if data["month_label"] == data["generated"][:7] else ""
+    updated = f", updated {claude['updated']}" if claude.get("updated") else ""
+    note = f" {claude['note']}" if claude.get("note") else ""
+    out.append(
+        f"- **Claude Code tokens (factor 4):** {_fmt_usd(claude['usd'])} for "
+        f"{data['month_label']}{partial}{updated} — voluntarily disclosed by the maintainer; "
+        f"Claude Code stores sessions per project, so this is attributable to vox.{note}")
+
+
 def render_snapshot(data):
   """Render the full marker-bounded snapshot block from collected data."""
   out = [SNAPSHOT_START, ""]
@@ -202,28 +251,10 @@ def render_snapshot(data):
       "see [Credentials & prerequisites](#credentials--prerequisites)")
 
   out.append("")
-  ai = data.get("ai_review")
-  if ai is None:
-    out.append(
-        "- **AI code review, e.g. Copilot (factor 9):** not yet reported for "
-        f"{data['month_label']} — contributed by the maintainer and reported into this ledger "
-        "out-of-band (see [Credentials & prerequisites](#credentials--prerequisites)).")
-  elif "error" in ai:
-    out.append(
-        f"- **AI code review, e.g. Copilot (factor 9):** could not read "
-        f"`ai-review.json` ({ai['error']}).")
-  else:
-    note = f" {ai['note']}" if ai.get("note") else ""
-    out.append(
-        f"- **AI code review, e.g. Copilot (factor 9):** {_fmt_usd(ai['usd'])} for "
-        f"{data['month_label']} — voluntarily disclosed by the maintainer; GitHub exposes no "
-        f"per-repository attribution.{note}")
+  _ai_review_block(data, out)
 
   out.append("")
-  out.append(
-      "- **Claude Code tokens (factor 4):** manual / local feed in v1 — run "
-      "`npx ccusage@latest --json` or parse `~/.claude` (trailing 30 days); not collected "
-      "in CI yet.")
+  _claude_block(data, out)
 
   out.append("")
   out.append(
@@ -332,31 +363,63 @@ def _safe_path(path):
   return resolved
 
 
-def read_ai_review(month_label, path):
-  """Read the maintainer-contributed AI-review cost for a month.
+def _read_monthly_feed(path, month_label, fields=("note",)):
+  """Read a maintainer-contributed monthly cost figure keyed by 'YYYY-MM'.
 
-  Returns {'usd', 'note'} when a valid figure exists, None when none is reported
-  for that month, or {'error': ...} when the data file is missing/unreadable or
-  malformed — so the snapshot can distinguish "not yet reported" from "read failed".
+  Backs both out-of-band feeds (ai-review.json, claude.json). Returns
+  {'usd': float, <field>: str, ...} for each requested optional string field when
+  a valid figure exists, None when that month has no figure, or {'error': ...}
+  when the data file is missing/unreadable or malformed — so the snapshot can
+  distinguish "not yet reported" from "read failed".
 
-  The figure is reported into this repo out-of-band: a repository_dispatch updates
-  ai-review.json on the cost-data branch. No billing-account identity or mechanism is
-  stored in this public repo — only the voluntarily disclosed monthly amount.
+  These figures are reported into this public repo out-of-band (a
+  repository_dispatch updates the data file on the cost-data branch); no
+  billing-account identity or mechanism is stored here. The path is confined to
+  the working directory, and string fields are whitespace-collapsed and
+  length-capped, so a corrupt or oversized value cannot inject multi-line or
+  runaway content into the rendered public ledger.
   """
   try:
     payload = json.loads(_safe_path(path).read_text(encoding="utf-8"))
   except (OSError, ValueError) as exc:
     return {"error": str(exc)}  # file missing/unreadable or malformed JSON
-  entry = (payload.get("months") or {}).get(month_label)
+  # Valid JSON of the wrong shape must yield an error marker, never raise and abort the
+  # whole collector (a corrupt/hand-edited feed file is the likely cause).
+  if not isinstance(payload, dict):
+    return {"error": f"{path}: top-level JSON is not an object"}
+  months = payload.get("months")
+  if months is None:
+    return None  # nothing reported yet
+  if not isinstance(months, dict):
+    return {"error": f'{path}: "months" is not an object'}
+  entry = months.get(month_label)
   if not isinstance(entry, dict):
     return None  # no figure reported for this month yet
   usd = entry.get("usd")
   if not _valid_usd(usd):  # guard a hand-edited / corrupted figure
     return None
-  # Collapse whitespace and cap the note so a corrupt/oversized value cannot inject
-  # multi-line or runaway content into the rendered public ledger.
-  note = " ".join(str(entry.get("note") or "").split())[:200]
-  return {"usd": float(usd), "note": note}
+  result = {"usd": float(usd)}
+  for name in fields:
+    result[name] = " ".join(str(entry.get(name) or "").split())[:200]
+  return result
+
+
+def read_ai_review(month_label, path):
+  """AI code-review (e.g. Copilot) cost for a month; see _read_monthly_feed."""
+  return _read_monthly_feed(path, month_label)
+
+
+def read_claude(month_label, path):
+  """Claude Code token cost for a month; see _read_monthly_feed.
+
+  Claude Code stores session transcripts per project, so this figure is
+  attributable to vox specifically (unlike Copilot). It is typically a
+  month-to-date running total refreshed often (e.g. from a pre-push hook running
+  `ccusage`); the 'updated' field carries the as-of date shown alongside the
+  figure. Whether the line is labelled month-to-date or settled is decided in
+  render (rendered month vs generation month), not by 'updated'.
+  """
+  return _read_monthly_feed(path, month_label, fields=("note", "updated"))
 
 
 # --------------------------------------------------------------------------- #
@@ -372,7 +435,7 @@ def _guarded(fetch):
 
 
 def collect(now=None, month=None, *, github_token=None, billing_token=None,
-            ai_review_path=None):
+            ai_review_path=None, claude_path=None):
   """Gather every available cost line for the target month into a dict."""
   now = now or datetime.now(timezone.utc)
   year, mon, label = month_window(now, month)
@@ -394,6 +457,7 @@ def collect(now=None, month=None, *, github_token=None, billing_token=None,
       _guarded(lambda: fetch_org_billing(year, mon, billing_token))
       if billing_token else None)
   data["ai_review"] = read_ai_review(label, ai_review_path) if ai_review_path else None
+  data["claude"] = read_claude(label, claude_path) if claude_path else None
   return data
 
 
@@ -407,6 +471,9 @@ def main(argv=None):
   parser.add_argument("--ai-review", dest="ai_review", type=Path, default=None,
                       help="AI-review data file (ai-review.json); omit to leave the "
                            "AI-review line as 'not yet reported'")
+  parser.add_argument("--claude", dest="claude", type=Path, default=None,
+                      help="Claude token data file (claude.json); omit to leave the "
+                           "Claude line as 'not yet reported'")
   parser.add_argument("--print", dest="print_only", action="store_true",
                       help="print the snapshot instead of writing the document")
   args = parser.parse_args(argv)
@@ -418,7 +485,8 @@ def main(argv=None):
       month=args.month,
       github_token=os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN"),
       billing_token=os.environ.get("COST_BILLING_TOKEN"),
-      ai_review_path=args.ai_review)
+      ai_review_path=args.ai_review,
+      claude_path=args.claude)
   snapshot = render_snapshot(data)
 
   if args.print_only or args.doc is None:

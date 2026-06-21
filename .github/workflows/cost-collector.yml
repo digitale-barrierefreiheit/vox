@@ -4,8 +4,9 @@
 # complete calendar month and writes the result to the orphan `cost-data` branch
 # (snapshot.md) — never to dev/main, so a data refresh never triggers the build / test /
 # Sonar / benchmark pipelines (same pattern as the benchmark-data and cla-signatures
-# branches). Methodology lives in doc/cost-ledger.md on the code branches; the AI-review
-# figure is fed in by cost-contribution.yml (also on cost-data). See issue #76 / #128.
+# branches). Methodology lives in doc/cost-ledger.md on the code branches; the AI-review and
+# Claude-token figures are fed in by cost-contribution.yml (also on cost-data) and read here via
+# --ai-review / --claude. See issue #76 / #128 / #142.
 name: Cost ledger collector
 
 on:
@@ -81,7 +82,9 @@ jobs:
           fi
           echo "COST_MONTH=$month" >> "$GITHUB_ENV"
           python3 tools/cost_collector.py --month "$month" \
-            --doc cost-data/snapshot.md --ai-review cost-data/ai-review.json
+            --doc cost-data/snapshot.md \
+            --ai-review cost-data/ai-review.json \
+            --claude cost-data/claude.json
           {
             echo "## Cost ledger — $month"
             echo

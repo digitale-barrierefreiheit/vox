@@ -35,6 +35,9 @@ justfile text eol=lf
 # jq programs (tools/*.jq) run under jq in CI/WSL, whose lexer rejects the
 # stray \r of a CRLF checkout on code lines — keep them LF everywhere.
 *.jq    text eol=lf
+# Git hooks are extensionless shell scripts run by sh (incl. Git Bash on Windows);
+# a CRLF checkout breaks the shebang/parsing, so force LF regardless of platform.
+tools/hooks/* text eol=lf
 
 # Windows-native scripts must stay CRLF to run correctly.
 *.bat   text eol=crlf

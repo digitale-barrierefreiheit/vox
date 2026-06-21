@@ -1,0 +1,6 @@
+{
+  "schema": 1,
+  "currency": "USD",
+  "about": "Monthly Claude Code token cost (the AI assistant that writes vox's code) voluntarily disclosed by the maintainer. Reported out-of-band via a repository_dispatch (type 'claude-cost') — typically from a pre-push git hook running ccusage over the vox project — as a running month-to-date total; the 'updated' date marks the last refresh. Claude Code stores sessions per project, so unlike Copilot this is attributable to vox specifically. No billing-account identity is stored here. tools/cost_collector.py reads this into the cost-ledger snapshot. Lives on the orphan cost-data branch so refreshes never trigger code CI.",
+  "months": {}
+}

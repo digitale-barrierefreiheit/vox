@@ -31,7 +31,7 @@ jobs:
       contents: write # push the cost-data branch (never dev/main)
     steps:
       - name: Check out the cost-data branch
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: cost-data
           fetch-depth: 0

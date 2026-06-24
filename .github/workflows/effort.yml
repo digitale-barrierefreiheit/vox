@@ -24,7 +24,7 @@ jobs:
       contents: read # checkout (for the local upsert-comment action)
       pull-requests: write # upsert one suggestion comment on the PR
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/github-script@v9
         continue-on-error: true # opt-in suggestion only — an API hiccup must never fail the PR
         env:

@@ -52,7 +52,7 @@ jobs:
 
       - name: Check out dev (no persisted credentials)
         if: steps.guard.outputs.run == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: dev
           fetch-depth: 0

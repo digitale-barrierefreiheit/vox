@@ -13,9 +13,9 @@
 #   * It NEVER blocks or fails a push — the work runs detached and the hook always exits 0.
 #   * It skips silently when gh (authenticated), npx, or node is unavailable, or offline.
 #
-# Verify without pushing:   just hook-dry-run   (or: sh tools/hooks/pre-push --dry-run
-#                            where sh is on PATH — plain PowerShell has none; the just
-#                            recipe finds Git's bundled sh.exe)
+# Verify without pushing:   just hook-dry-run
+#                            Plain PowerShell has no `sh`; the recipe finds Git's bundled
+#                            sh.exe. With sh on PATH: `sh tools/hooks/pre-push --dry-run`.
 # Tune the project match:   VOX_CCUSAGE_PROJECT=vox          (substring of the ccusage project key)
 # Override ccusage version: VOX_CCUSAGE_SPEC=ccusage@latest  (default is pinned; @latest floats)
 # Override the repo:        VOX_COST_REPO=digitale-barrierefreiheit/vox

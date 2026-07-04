@@ -37,9 +37,9 @@ jobs:
       actions: read # read workflow runs/jobs for the Actions-minutes line
     steps:
       - name: Check out the code (for tools/cost_collector.py)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Check out the cost-data branch (the data lives here)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: cost-data
           path: cost-data

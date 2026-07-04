@@ -25,7 +25,7 @@ jobs:
     name: license-headers
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Check SPDX headers
         run: python3 tools/check-license-headers.py
 
@@ -33,7 +33,7 @@ jobs:
     name: clang-format
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install clang-format
         run: sudo apt-get update && sudo apt-get install -y clang-format-18
       - name: Check formatting
@@ -52,7 +52,7 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/test-matrix
         with:
           mode: init
@@ -87,8 +87,8 @@ jobs:
             msvc_arch: amd64_x86
             test_preset: x86-msvc-release
     steps:
-      - uses: actions/checkout@v6
-      - uses: lukka/get-cmake@591817e96fcad43505fb4eae36172462abb3a42e # v4.3.3
+      - uses: actions/checkout@v7
+      - uses: lukka/get-cmake@f5b8fbb4d77cec1acc5a5f9f0df4beffaf5d98d9 # v4.3.4
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
       - name: Install the VB-CABLE virtual audio device
         timeout-minutes: 5
@@ -139,8 +139,8 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v6
-      - uses: lukka/get-cmake@591817e96fcad43505fb4eae36172462abb3a42e # v4.3.3
+      - uses: actions/checkout@v7
+      - uses: lukka/get-cmake@f5b8fbb4d77cec1acc5a5f9f0df4beffaf5d98d9 # v4.3.4
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
       - name: Install the German text-to-speech voice
         shell: pwsh
@@ -205,8 +205,8 @@ jobs:
       contents: read
       pull-requests: write # per-run results comment + regression alerts
     steps:
-      - uses: actions/checkout@v6
-      - uses: lukka/get-cmake@591817e96fcad43505fb4eae36172462abb3a42e # v4.3.3
+      - uses: actions/checkout@v7
+      - uses: lukka/get-cmake@f5b8fbb4d77cec1acc5a5f9f0df4beffaf5d98d9 # v4.3.4
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
       - name: Install the German text-to-speech voice
         shell: pwsh
@@ -309,7 +309,7 @@ jobs:
     permissions:
       contents: write # push the new baseline to the benchmark-data branch
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           name: benchmark-data
@@ -335,8 +335,8 @@ jobs:
       contents: read
       pull-requests: write # post the clang-tidy summary comment on PRs
     steps:
-      - uses: actions/checkout@v6
-      - uses: lukka/get-cmake@591817e96fcad43505fb4eae36172462abb3a42e # v4.3.3
+      - uses: actions/checkout@v7
+      - uses: lukka/get-cmake@f5b8fbb4d77cec1acc5a5f9f0df4beffaf5d98d9 # v4.3.4
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
       - name: Install LLVM tools
         run: sudo apt-get update && sudo apt-get install -y clang-18 clang-tidy-18 clang-tools-18 ninja-build
@@ -405,8 +405,8 @@ jobs:
       CC: clang-18
       CXX: clang++-18
     steps:
-      - uses: actions/checkout@v6
-      - uses: lukka/get-cmake@591817e96fcad43505fb4eae36172462abb3a42e # v4.3.3
+      - uses: actions/checkout@v7
+      - uses: lukka/get-cmake@f5b8fbb4d77cec1acc5a5f9f0df4beffaf5d98d9 # v4.3.4
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
       - name: Install Clang + sanitizer runtimes
         run: sudo apt-get update && sudo apt-get install -y clang-18 ninja-build
@@ -436,7 +436,7 @@ jobs:
       run:
         working-directory: .github/actions/test-matrix
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: 24

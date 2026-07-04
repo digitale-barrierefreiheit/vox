@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782086062030,
+  "lastUpdate": 1783183249570,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -1140,6 +1140,35 @@ window.BENCHMARK_DATA = {
           {
             "name": "ttfaPipeline p50",
             "value": 0.6,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2f0a4a9684acfc819a408c6af533ce8249ef308f",
+          "message": "ci: bump the github-actions group with 2 updates\n\nBumps the github-actions group with 2 updates: [actions/checkout](https://github.com/actions/checkout) and [lukka/get-cmake](https://github.com/lukka/get-cmake).\n\n\nUpdates `actions/checkout` from 6 to 7\n- [Release notes](https://github.com/actions/checkout/releases)\n- [Changelog](https://github.com/actions/checkout/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/actions/checkout/compare/v6...v7)\n\nUpdates `lukka/get-cmake` from 4.3.3 to 4.3.4\n- [Release notes](https://github.com/lukka/get-cmake/releases)\n- [Changelog](https://github.com/lukka/get-cmake/blob/main/RELEASE_PROCESS.md)\n- [Commits](https://github.com/lukka/get-cmake/compare/591817e96fcad43505fb4eae36172462abb3a42e...f5b8fbb4d77cec1acc5a5f9f0df4beffaf5d98d9)\n\n---\nupdated-dependencies:\n- dependency-name: actions/checkout\n  dependency-version: '7'\n  dependency-type: direct:production\n  update-type: version-update:semver-major\n  dependency-group: github-actions\n- dependency-name: lukka/get-cmake\n  dependency-version: 4.3.4\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: github-actions\n...",
+          "timestamp": "2026-07-04T18:22:45+02:00",
+          "tree_id": "b47daf7d8a380ff980c9df29b1424ea9760db95e",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/2f0a4a9684acfc819a408c6af533ce8249ef308f"
+        },
+        "date": 1783183249022,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.5,
             "unit": "us"
           }
         ]

@@ -146,7 +146,7 @@ install-hooks:
 # 🪝 Dry-run the pre-push cost hook: print what it WOULD dispatch (no push, no dispatch). Plain PowerShell has no `sh`, so this finds Git's bundled sh.exe.
 [windows]
 hook-dry-run:
-    $g = Split-Path (Split-Path (Get-Command git).Source); $sh = Join-Path $g "bin\sh.exe"; if (-not (Test-Path $sh)) { $sh = Join-Path $g "usr\bin\sh.exe" }; if (-not (Test-Path $sh)) { throw "Git's bundled sh.exe not found under $g" }; & $sh tools/hooks/pre-push --dry-run
+    $g = Split-Path (Split-Path (Get-Command git).Source); $sh = Join-Path $g "bin\sh.exe"; if (-not (Test-Path $sh)) { $sh = Join-Path $g "usr\bin\sh.exe" }; if (-not (Test-Path $sh)) { throw "Git's bundled sh.exe not found under $g" }; & $sh "{{root}}/tools/hooks/pre-push" --dry-run
 
 # 🪝 Dry-run the pre-push cost hook: print what it WOULD dispatch (no push, no dispatch).
 [unix]

@@ -13,7 +13,9 @@
 #   * It NEVER blocks or fails a push — the work runs detached and the hook always exits 0.
 #   * It skips silently when gh (authenticated), npx, or node is unavailable, or offline.
 #
-# Verify without pushing:   sh tools/hooks/pre-push --dry-run
+# Verify without pushing:   just hook-dry-run
+#                            Plain PowerShell has no `sh`; the recipe finds Git's bundled
+#                            sh.exe. With sh on PATH: `sh tools/hooks/pre-push --dry-run`.
 # Tune the project match:   VOX_CCUSAGE_PROJECT=vox          (substring of the ccusage project key)
 # Override ccusage version: VOX_CCUSAGE_SPEC=ccusage@latest  (default is pinned; @latest floats)
 # Override the repo:        VOX_COST_REPO=digitale-barrierefreiheit/vox
@@ -35,13 +37,18 @@ MONTH="$(date -u +%Y-%m)"
 DRY_RUN=0
 [ "$#" -eq 1 ] && [ "${1:-}" = "--dry-run" ] && DRY_RUN=1
 
-# Sum the vox project's daily costUSD for the current month from `ccusage --json`.
-# Defensive: ccusage's field names vary by version/command (totalCost vs costUSD), and the
-# --instances output groups by a "projects" object; a parse miss prints nothing (we skip).
+# Sum the vox project's daily totalCost for the current month from ccusage's JSON.
+# ccusage >= 20 is multi-agent: the per-project (--instances) report lives under the `claude`
+# subcommand (`ccusage claude daily`), not the top-level `daily` (verified against 20.0.14).
+# Defensive: field names vary by version/command (totalCost vs costUSD), and the --instances
+# output groups by a "projects" object; a parse miss prints nothing (we skip).
 compute_usd() {
   # The env assignment must sit on the `node` side of the pipe — a prefix applies only to the
   # command it precedes — so the parser actually sees VOX_COST_MONTH / VOX_CCUSAGE_PROJECT.
-  npx --yes "$CCUSAGE_SPEC" daily --json --instances 2>/dev/null \
+  # --since (YYYYMMDD) trims the report to the current month; the parser still month-filters.
+  # Derived from $MONTH (not a second `date` call) so the two can never straddle a boundary.
+  npx --yes "$CCUSAGE_SPEC" claude daily --json --instances \
+      --since "$(printf '%s' "$MONTH" | tr -d -)01" 2>/dev/null \
     | VOX_COST_MONTH="$MONTH" VOX_CCUSAGE_PROJECT="$PROJECT_MATCH" node -e '
       let s = "";
       process.stdin.on("data", d => s += d);
@@ -87,7 +94,7 @@ report() {
     -f "event_type=claude-cost" \
     -f "client_payload[month]=$MONTH" \
     -f "client_payload[usd]=$usd" \
-    -f "client_payload[note]=ccusage month-to-date (vox project), pre-push hook" \
+    -f "client_payload[note]=ccusage month-to-date (vox project, imputed list price), pre-push hook" \
     >/dev/null 2>&1 || true
 }
 
@@ -95,8 +102,9 @@ if [ "$DRY_RUN" = "1" ]; then
   report                                  # synchronous: print what it would do
 else
   ( report ) </dev/null >/dev/null 2>&1 & # detach so the push returns immediately
+  # Drain the ref list git streams on stdin (git closes it, so cat terminates), so exiting
+  # before git finishes writing can't raise a broken-pipe error on the push. Hook mode ONLY:
+  # a manual dry-run may sit on a non-TTY stdin that never EOFs, and would hang here.
+  [ -t 0 ] || cat >/dev/null 2>&1
 fi
-# Drain the ref list git streams on stdin (only when it's a pipe, not a manual TTY run), so
-# exiting before git finishes writing can't raise a broken-pipe error on the push.
-[ -t 0 ] || cat >/dev/null 2>&1
 exit 0

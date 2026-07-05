@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783222438197,
+  "lastUpdate": 1783223938628,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -1227,6 +1227,35 @@ window.BENCHMARK_DATA = {
           {
             "name": "ttfaPipeline p50",
             "value": 0.7,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a883c16f63b617cc0970be2f832042ac96b82bda",
+          "message": "chore(release): promote dev to main — activate the Claude-token cost channel",
+          "timestamp": "2026-07-05T05:42:21+02:00",
+          "tree_id": "7c994a0f8d23c6c59638fb308a0316a9a5901a21",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/a883c16f63b617cc0970be2f832042ac96b82bda"
+        },
+        "date": 1783223937698,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.6,
             "unit": "us"
           }
         ]

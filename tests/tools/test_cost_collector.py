@@ -120,8 +120,8 @@ def test_render_snapshot_happy_path():
     assert "$0.00" in text  # actually billed
     assert "2 job(s)" in text and "excluded from the imputed cost" in text
     assert "not configured (prerequisite" in text  # billing line
-    assert "not yet reported" in text  # ai-review line
-    assert "manual / local feed" in text  # claude line
+    assert "AI code review, e.g. Copilot (factor 9):** not yet reported" in text
+    assert "Claude Code tokens (factor 4):** not yet reported" in text
 
 
 def test_render_snapshot_degraded_and_configured():
@@ -151,6 +151,42 @@ def test_render_snapshot_billing_configured():
     data["billing"] = {"text": "gross $1.00 / net $0.00 for 2026-06 (repository `vox`)."}
     text = cc.render_snapshot(data)
     assert "gross $1.00 / net $0.00" in text
+
+
+def test_render_snapshot_claude_month_to_date():
+    # Rendered month == current month (generated 2026-06-16) -> a running month-to-date total.
+    data = _full_data()
+    data["claude"] = {"usd": 12.34, "note": "ccusage", "updated": "2026-06-16"}
+    text = cc.render_snapshot(data)
+    assert "Claude Code tokens (factor 4):** $12.34 for 2026-06 (month-to-date), " \
+           "updated 2026-06-16" in text
+    assert "attributable to vox" in text and "ccusage" in text
+
+
+def test_render_snapshot_claude_settled_past_month():
+    # Rendered month precedes the current month -> a settled figure, no month-to-date tag.
+    data = _full_data()
+    data["month_label"] = "2026-05"
+    data["claude"] = {"usd": 9.0, "note": "", "updated": "2026-07-01"}
+    text = cc.render_snapshot(data)
+    assert "$9.00 for 2026-05, updated 2026-07-01" in text
+    assert "(month-to-date)" not in text
+
+
+def test_render_snapshot_claude_no_updated():
+    data = _full_data()
+    data["claude"] = {"usd": 5.0, "note": "n", "updated": ""}
+    text = cc.render_snapshot(data)
+    assert "$5.00 for 2026-06 (month-to-date) — voluntarily" in text  # no ', updated'
+    assert ", updated" not in text
+    assert "attributable to vox. n" in text  # note appended
+
+
+def test_render_snapshot_claude_read_error():
+    data = _full_data()
+    data["claude"] = {"error": "boom"}
+    text = cc.render_snapshot(data)
+    assert "could not read" in text and "claude.json" in text and "boom" in text
 
 
 def test_render_snapshot_no_unknown_jobs():
@@ -309,6 +345,42 @@ def test_read_ai_review_sanitizes_note(tmp_path, monkeypatch):
     assert len(note) <= 200
 
 
+def test_read_claude(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    path = tmp_path / "claude.json"
+    path.write_text(json.dumps({"months": {"2026-06": {
+        "usd": 12.34, "note": "ccusage", "updated": "2026-06-21"}}}), encoding="utf-8")
+    assert cc.read_claude("2026-06", path) == {
+        "usd": 12.34, "note": "ccusage", "updated": "2026-06-21"}
+    assert cc.read_claude("2026-05", path) is None  # month absent -> not reported
+    # Optional fields default to empty strings (not an error) when omitted.
+    bare = tmp_path / "bare.json"
+    bare.write_text(json.dumps({"months": {"2026-06": {"usd": 1}}}), encoding="utf-8")
+    assert cc.read_claude("2026-06", bare) == {"usd": 1.0, "note": "", "updated": ""}
+
+
+def test_read_claude_signals_read_errors(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assert "error" in cc.read_claude("2026-06", tmp_path / "nope.json")  # missing
+    assert "error" in cc.read_claude("2026-06", "../escape.json")  # traversal rejected
+
+
+def test_read_monthly_feed_rejects_bad_shapes(tmp_path, monkeypatch):
+    # Syntactically-valid but structurally-wrong JSON must be an {'error': ...} marker,
+    # never an exception that aborts the whole collector (contract: dict | None | error).
+    monkeypatch.chdir(tmp_path)
+    arr = tmp_path / "arr.json"
+    arr.write_text("[1, 2, 3]", encoding="utf-8")  # top-level is not an object
+    assert "error" in cc.read_ai_review("2026-06", arr)
+    bad_months = tmp_path / "bad-months.json"
+    bad_months.write_text('{"months": "nope"}', encoding="utf-8")  # months not an object
+    assert "error" in cc.read_claude("2026-06", bad_months)
+    # A document with no "months" key is "nothing reported yet" (None), not an error.
+    no_months = tmp_path / "no-months.json"
+    no_months.write_text('{"schema": 1}', encoding="utf-8")
+    assert cc.read_ai_review("2026-06", no_months) is None
+
+
 def test_safe_path_confines(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     inside = cc._safe_path("sub/data.json")
@@ -336,7 +408,8 @@ def test_collect_without_credentials(monkeypatch):
     assert data["sonar_ncloc"] == 13862
     assert data["actions"]["minutes"] == {"Linux": 1}
     assert data["actions"]["cost"]["total"] == pytest.approx(0.01)
-    assert data["billing"] is None and data["ai_review"] is None
+    # No data-file paths given -> the out-of-band feeds stay unread (None).
+    assert data["billing"] is None and data["ai_review"] is None and data["claude"] is None
 
 
 def test_collect_with_billing_and_ai_review(monkeypatch):
@@ -344,9 +417,13 @@ def test_collect_with_billing_and_ai_review(monkeypatch):
     monkeypatch.setattr(cc, "fetch_actions_jobs", lambda y, m, t: [])
     monkeypatch.setattr(cc, "fetch_org_billing", lambda y, m, t: {"text": "billed"})
     monkeypatch.setattr(cc, "read_ai_review", lambda label, path=None: {"usd": 12.5, "note": "n"})
-    data = cc.collect(month="2026-06", billing_token="b", ai_review_path="ai-review.json")
+    monkeypatch.setattr(cc, "read_claude",
+                        lambda label, path=None: {"usd": 3.0, "note": "", "updated": "2026-06-21"})
+    data = cc.collect(month="2026-06", billing_token="b", ai_review_path="ai-review.json",
+                      claude_path="claude.json")
     assert data["billing"] == {"text": "billed"}
     assert data["ai_review"] == {"usd": 12.5, "note": "n"}
+    assert data["claude"] == {"usd": 3.0, "note": "", "updated": "2026-06-21"}
 
 
 def test_collect_tolerates_read_failures(monkeypatch):
@@ -381,6 +458,18 @@ def test_main_default_preview(monkeypatch, capsys):
     monkeypatch.delenv("GH_TOKEN", raising=False)
     assert cc.main([]) == 0
     assert cc.SNAPSHOT_START in capsys.readouterr().out
+
+
+def test_main_threads_feed_paths(monkeypatch, capsys):
+    # --ai-review / --claude reach collect() as the corresponding *_path kwargs.
+    captured = {}
+    monkeypatch.setattr(cc, "collect", lambda **kw: captured.update(kw) or _full_data())
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    cc.main(["--print", "--month", "2026-06",
+             "--ai-review", "ai-review.json", "--claude", "claude.json"])
+    assert str(captured["ai_review_path"]) == "ai-review.json"
+    assert str(captured["claude_path"]) == "claude.json"
 
 
 def test_main_writes_doc(tmp_path, monkeypatch, capsys):

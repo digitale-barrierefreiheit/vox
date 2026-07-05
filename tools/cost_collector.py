@@ -368,17 +368,19 @@ def _load_month_entry(path, month_label):
 
   entry is the month's dict; it is None when nothing is reported for that month
   (no "months" map, no entry for the month, or a non-dict entry — all kept as
-  "not reported yet", preserving prior behavior). error is a string when the
-  path is rejected by _safe_path (escapes the working directory) or the file is
-  missing/unreadable or malformed — including a non-object top level or
-  "months" map — which must never raise and abort the whole collector (a
-  corrupt/hand-edited feed file is the likely cause).
+  "not reported yet", preserving prior behavior). error is a string for every
+  failure on the way to the entry: a path rejected by _safe_path (escapes the
+  working directory), a file that is missing, unreadable, or not valid UTF-8,
+  malformed JSON, or a non-object top level or "months" map. None of these may
+  ever raise and abort the whole collector (a corrupt/hand-edited feed file is
+  the likely cause).
   """
   try:
     payload = json.loads(_safe_path(path).read_text(encoding="utf-8"))
   except (OSError, ValueError) as exc:
-    # Unsafe path (_safe_path's ValueError), file missing/unreadable, or
-    # malformed JSON — each exception message names its own cause.
+    # ValueError spans _safe_path's rejection, UnicodeDecodeError (not UTF-8),
+    # and json's parse error; OSError the missing/unreadable file — each
+    # exception message names its own cause.
     return None, str(exc)
   if not isinstance(payload, dict):
     return None, f"{path}: top-level JSON is not an object"

@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783209624723,
+  "lastUpdate": 1783222438197,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -1193,6 +1193,35 @@ window.BENCHMARK_DATA = {
           "url": "https://github.com/digitale-barrierefreiheit/vox/commit/0e8065b512a9e10d738e8152076defe0022ef334"
         },
         "date": 1783209623844,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.7,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f3cb0cf836e0f45f368f7cda844b90372d082569",
+          "message": "refactor(cost): split feed reading from value extraction (CodeScene gate on #148) (#149)\n\n* refactor(cost): split feed reading from value extraction (CodeScene gate on #148)\n\nCodeScene's promotion-delta gate flagged _read_monthly_feed as a Complex Method\n(9.39 -> 9.21): the malformed-shape guards accumulated across review waves\npushed its cyclomatic complexity over the hotspot threshold. Split the IO +\nshape validation into _load_month_entry (returns an (entry, error) pair, so a\nraw entry containing an \"error\" key can never be mistaken for a read failure)\nand keep _read_monthly_feed to usd validation + field sanitising.\n\nNo behavior change: the dict | None | {'error': ...} contract and every guard\nare identical; all 84 tests pass unchanged and the collector stays at 100%\nline coverage (285 stmts).\n\nPart of #142\n\n* docs(cost): precise _load_month_entry docstring (#149)\n\nSpell out which shapes are 'not reported yet' (missing months map/entry,\nnon-dict entry — prior behavior preserved) vs a read error (non-object top\nlevel or months map), instead of the over-broad 'wrong shape included'.\n\nAddresses Copilot review on #149.\n\n* docs(cost): name the unsafe-path cause in _load_month_entry's error wording (#149)\n\nThe except also catches _safe_path's ValueError (path escapes the working\ndirectory); the docstring and inline comment now say so instead of describing\nonly missing/unreadable/malformed-JSON causes. Each exception message names its\nown cause, so the surfaced error string was already accurate. Comment-only.\n\nAddresses Copilot review on #149.\n\n* docs(cost): enumerate every caught cause in _load_month_entry (#149)\n\nValueError also spans UnicodeDecodeError (file not valid UTF-8); the docstring\nand inline comment now list the full set — unsafe path, missing/unreadable/\nnon-UTF-8 file, malformed JSON, wrong shape — instead of naming causes one at a\ntime. Comment-only.\n\nAddresses Copilot review on #149.",
+          "timestamp": "2026-07-05T05:16:27+02:00",
+          "tree_id": "7c994a0f8d23c6c59638fb308a0316a9a5901a21",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/f3cb0cf836e0f45f368f7cda844b90372d082569"
+        },
+        "date": 1783222437893,
         "tool": "customSmallerIsBetter",
         "benches": [
           {

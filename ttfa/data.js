@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783183249570,
+  "lastUpdate": 1783209624723,
   "repoUrl": "https://github.com/digitale-barrierefreiheit/vox",
   "entries": {
     "TTFA pipeline": [
@@ -1169,6 +1169,35 @@ window.BENCHMARK_DATA = {
           {
             "name": "ttfaPipeline p50",
             "value": 0.5,
+            "unit": "us"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "79368115+thomas-ej-worm@users.noreply.github.com",
+            "name": "Thomas Worm",
+            "username": "thomas-ej-worm"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0e8065b512a9e10d738e8152076defe0022ef334",
+          "message": "fix(cost): make the pre-push hook actually work (maintainer-machine verified) (#147)\n\n* fix(cost): make the pre-push hook actually work (verified on the maintainer machine)\n\nThree defects found the first time the hook ran outside the sandbox:\n\n- ccusage >= 20 is multi-agent: the per-project report moved under the `claude`\n  subcommand. The hook called top-level `daily --instances`, which 20.0.14\n  rejects (\"Unknown option\") — silently, because stderr is suppressed. Use\n  `claude daily --json --instances`, plus --since (derived from $MONTH, not a\n  second date call) to trim the report to the current month.\n- The stdin drain ran in dry-run mode too; with a non-TTY stdin that never EOFs\n  (CI, tool harnesses), `cat` blocked forever. Drain only in real-hook mode,\n  where git closes the ref stream.\n- Plain PowerShell has no `sh`, so the documented verify command failed. Add\n  `just hook-dry-run` (Windows locates Git's bundled sh.exe) and reference it\n  from install-hooks, the hook header, and the doc.\n\nAlso label the dispatched note as imputed list price (consistent with the\nledger's Actions line methodology).\n\nVerified end-to-end on the maintainer machine: dry-run prints\n\"would dispatch claude-cost: month=2026-07 usd=...\" and exits 0, no hang;\nthe project key c--Users-ThomasWorm-source-repos-vox matches the \"vox\" filter.\n\nPart of #142\n\n* fix(cost): use {{root}} in the Windows hook-dry-run recipe (#147)\n\nRelative tools/hooks/pre-push breaks when just runs with a different working\ndirectory; {{root}} makes it location-independent, matching the Unix variant.\nVerified live: Git's sh accepts the forward-slashed absolute path.\n\nAddresses Copilot review on #147.\n\n* docs(cost): include --since in the documented ccusage command (#147)\n\nThe factor-4 row now shows the same --since <YYYYMM>01 trimming the hook uses,\nso the documented data source matches the hook behavior.\n\nAddresses Copilot review on #147.\n\n* docs(cost): untangle the hook header's verify note (#147)\n\nThe parenthetical spanned three lines and read as unclosed; now each line is a\nplain sentence.\n\nAddresses Copilot review on #147.",
+          "timestamp": "2026-07-05T01:43:06+02:00",
+          "tree_id": "c78d2893c3035542ebe59f755754114ef5eb2279",
+          "url": "https://github.com/digitale-barrierefreiheit/vox/commit/0e8065b512a9e10d738e8152076defe0022ef334"
+        },
+        "date": 1783209623844,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "ttfaPipeline p50",
+            "value": 0.7,
             "unit": "us"
           }
         ]

@@ -363,6 +363,38 @@ def _safe_path(path):
   return resolved
 
 
+def _load_month_entry(path, month_label):
+  """Load the raw month entry from a feed file, as an (entry, error) pair.
+
+  entry is the month's dict; it is None when nothing is reported for that month
+  (no "months" map, no entry for the month, or a non-dict entry — all kept as
+  "not reported yet", preserving prior behavior). error is a string for every
+  failure on the way to the entry: a path rejected by _safe_path (escapes the
+  working directory), a file that is missing, unreadable, or not valid UTF-8,
+  malformed JSON, or a non-object top level or "months" map. None of these may
+  ever raise and abort the whole collector (a corrupt/hand-edited feed file is
+  the likely cause).
+  """
+  try:
+    payload = json.loads(_safe_path(path).read_text(encoding="utf-8"))
+  except (OSError, ValueError) as exc:
+    # ValueError spans _safe_path's rejection, UnicodeDecodeError (not UTF-8),
+    # and json's parse error; OSError the missing/unreadable file — each
+    # exception message names its own cause.
+    return None, str(exc)
+  if not isinstance(payload, dict):
+    return None, f"{path}: top-level JSON is not an object"
+  months = payload.get("months")
+  if months is None:
+    return None, None  # nothing reported yet
+  if not isinstance(months, dict):
+    return None, f'{path}: "months" is not an object'
+  entry = months.get(month_label)
+  if not isinstance(entry, dict):
+    return None, None  # no figure reported for this month yet
+  return entry, None
+
+
 def _read_monthly_feed(path, month_label, fields=("note",)):
   """Read a maintainer-contributed monthly cost figure keyed by 'YYYY-MM'.
 
@@ -379,22 +411,11 @@ def _read_monthly_feed(path, month_label, fields=("note",)):
   length-capped, so a corrupt or oversized value cannot inject multi-line or
   runaway content into the rendered public ledger.
   """
-  try:
-    payload = json.loads(_safe_path(path).read_text(encoding="utf-8"))
-  except (OSError, ValueError) as exc:
-    return {"error": str(exc)}  # file missing/unreadable or malformed JSON
-  # Valid JSON of the wrong shape must yield an error marker, never raise and abort the
-  # whole collector (a corrupt/hand-edited feed file is the likely cause).
-  if not isinstance(payload, dict):
-    return {"error": f"{path}: top-level JSON is not an object"}
-  months = payload.get("months")
-  if months is None:
-    return None  # nothing reported yet
-  if not isinstance(months, dict):
-    return {"error": f'{path}: "months" is not an object'}
-  entry = months.get(month_label)
-  if not isinstance(entry, dict):
-    return None  # no figure reported for this month yet
+  entry, error = _load_month_entry(path, month_label)
+  if error is not None:
+    return {"error": error}
+  if entry is None:
+    return None
   usd = entry.get("usd")
   if not _valid_usd(usd):  # guard a hand-edited / corrupted figure
     return None

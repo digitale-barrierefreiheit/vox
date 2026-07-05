@@ -366,10 +366,12 @@ def _safe_path(path):
 def _load_month_entry(path, month_label):
   """Load the raw month entry from a feed file, as an (entry, error) pair.
 
-  entry is the month's dict (or None when nothing is reported for that month);
-  error is a string when the file is missing/unreadable or malformed — valid
-  JSON of the wrong shape included, which must never raise and abort the whole
-  collector (a corrupt/hand-edited feed file is the likely cause).
+  entry is the month's dict; it is None when nothing is reported for that month
+  (no "months" map, no entry for the month, or a non-dict entry — all kept as
+  "not reported yet", preserving prior behavior). error is a string when the
+  file is missing/unreadable or malformed — including a non-object top level or
+  "months" map — which must never raise and abort the whole collector (a
+  corrupt/hand-edited feed file is the likely cause).
   """
   try:
     payload = json.loads(_safe_path(path).read_text(encoding="utf-8"))
